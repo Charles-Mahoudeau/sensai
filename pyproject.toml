@@ -1,0 +1,62 @@
+[project]
+name = "sensai"
+version = "0.1.0"
+description = "Epitech - Tek3 - Sensai"
+readme = "README.md"
+authors = [
+    { name = "Charles Mahoudeau", email = "charles.mahoudeau@epitech.eu" },
+    { name = "Matthieu Coraleau", email = "matthieu.coraleau@epitech.eu" },
+    { name = "Noé Caillaud", email = "noe.caillaud@epitech.eu" },
+    { name = "Tristan Fragnaud", email = "tristan.fragnaud@epitech.eu" },
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+sensai = "sensai:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+    "ty>=0.0.82",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", # pycodestyle (PEP 8)
+    "F", # pyflakes
+    "I", # import sorting
+    "B", # bugbear (likely bugs)
+    "UP", # modern syntax for your target version
+    "SIM", # simplifications
+    "C4", # comprehension improvements
+    "RUF", # Ruff-specific rules
+    "ANN", # require type annotations
+    "N", # pep8-naming
+    "PTH", # prefer pathlib over os.path
+    "PERF", # performance anti-patterns
+    "TC", # typing-only imports under TYPE_CHECKING
+    "D" # docstring rules
+]
+ignore = [
+    "ANN401", # allow explicit 'Any' where genuinely needed
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]        # optional: skip annotation requirement in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["sensai"]

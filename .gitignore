@@ -1,0 +1,7 @@
+# IDE configuration files
+.idea/
+.vscode/
+
+# Python working files
+.venv/
+__pycache__/

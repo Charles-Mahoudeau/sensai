@@ -1,0 +1,37 @@
+name: ✨ Feature request
+description: Suggest a new feature or improvement for Sensai.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea for Sensai? Describe it below for the team to discuss.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Is your request related to a limitation or pain point? Describe it.
+      placeholder: I'm trying to do X, but Sensai currently can't...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative solutions or workarounds you've thought of.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that could help us understand the request (mockups, examples, references, etc.).

@@ -1,0 +1,34 @@
+name: Mirror default branch
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    if: >-
+      vars.MIRROR_SOURCE_REPOSITORY != '' &&
+      github.repository == vars.MIRROR_SOURCE_REPOSITORY &&
+      github.ref_name == github.event.repository.default_branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: yesolutions/mirror-action@662fce0eced8996f64d7fa264d76cddd84827f33 # Commit: Aug 11, 2025
+        with:
+          REMOTE: ${{ vars.MIRROR_SSH_URL }}
+          GIT_SSH_PRIVATE_KEY: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+          GIT_SSH_KNOWN_HOSTS: ${{ vars.MIRROR_KNOWN_HOSTS }}
+          GIT_SSH_NO_VERIFY_HOST: ${{ vars.MIRROR_KNOWN_HOSTS == '' && 'true' || 'false' }}
+          PUSH_ALL_REFS: "false"
+          GIT_PUSH_ARGS: ${{ vars.MIRROR_PUSH_ARGS || '--force' }}
