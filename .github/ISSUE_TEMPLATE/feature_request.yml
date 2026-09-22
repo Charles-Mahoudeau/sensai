@@ -1,37 +1,91 @@
 name: ✨ Feature request
 description: Suggest a new feature or improvement for Sensai.
+title: "[Feature] "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Got an idea for Sensai? Describe it below for the team to discuss.
+        Propose a feature that makes Sensai more useful, reliable, or easier to evaluate.
+        Please connect the request to a concrete user need and to the Sensai feature catalogue when relevant.
 
-  - type: textarea
-    id: problem
+  - type: dropdown
+    id: scope
     attributes:
-      label: What problem does this solve?
-      description: Is your request related to a limitation or pain point? Describe it.
-      placeholder: I'm trying to do X, but Sensai currently can't...
+      label: Scope
+      description: Which part of Sensai would this change affect most?
+      multiple: true
+      options:
+        - core
+        - harness
+        - db
+        - memory
+        - context
+        - tools
+        - rag
+        - orchestration
+        - persona
+        - evaluation
+        - safety
+        - cli
+        - web-ui
+        - testing
+        - documentation
+        - other
     validations:
       required: true
 
   - type: textarea
-    id: solution
+    id: description
     attributes:
-      label: Proposed solution
-      description: What would you like to happen?
+      label: Description
+      description: Describe the feature, its intended use case, and the expected user-facing behavior.
+      placeholder: Explain what the feature is, who uses it, and what should be possible with it.
     validations:
       required: true
 
   - type: textarea
-    id: alternatives
+    id: implementation
     attributes:
-      label: Alternatives considered
-      description: Any alternative solutions or workarounds you've thought of.
+      label: Implementation
+      description: Describe the proposed technical approach and the main components or interfaces involved.
+      placeholder: |
+        - Components or modules to change:
+        - Data flow or API changes:
+        - Tests or evaluation to add:
+    validations:
+      required: true
 
   - type: textarea
-    id: additional
+    id: acceptance-criteria
     attributes:
-      label: Additional context
-      description: Anything else that could help us understand the request (mockups, examples, references, etc.).
+      label: Acceptance criteria
+      description: List observable conditions that must be true for this feature to be complete.
+      placeholder: |
+        - [ ] Observable behavior 1
+        - [ ] Observable behavior 2
+        - [ ] Tests or evaluation scenario added
+    validations:
+      required: true
+
+  - type: textarea
+    id: attention-points
+    attributes:
+      label: Points d’attention
+      description: Note edge cases, Ollama constraints, security or privacy risks, performance concerns, and trade-offs.
+      placeholder: |
+        - Compatibility or migration concerns:
+        - Failure and fallback behavior:
+        - Security, privacy, or resource limits:
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User stories (optional)
+      description: Add at least two stories using the format below.
+      placeholder: |
+        As a [type of user], I want to [action], so that [outcome].
+
+        As a [type of user], I want to [action], so that [outcome].
+    validations:
+      required: false
