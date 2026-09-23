@@ -21,6 +21,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "ruff>=0.16.8",
@@ -60,3 +61,32 @@ convention = "google"
 
 [tool.ruff.lint.isort]
 known-first-party = ["sensai"]
+
+[tool.importlinter]
+root_package = "sensai"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Core only imports core and the standard library"
+type = "forbidden"
+source_modules = ["sensai.core"]
+as_packages = true
+forbidden_modules = [
+    "sensai.*",
+    "httpx",
+    "fastapi",
+    "uvicorn",
+    "mcp",
+]
+
+[[tool.importlinter.contracts]]
+name = "Models are a leaf: they import nothing else from the core"
+type = "forbidden"
+source_modules = ["sensai.core.models"]
+as_packages = true
+forbidden_modules = ["sensai.core.*"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters do not import each other"
+type = "independence"
+modules = ["sensai.adapters.*"]
