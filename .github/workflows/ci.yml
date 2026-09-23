@@ -35,6 +35,9 @@ jobs:
   format:
     name: Format (ruff format --check)
     runs-on: ubuntu-latest
+    if: >-
+      vars.MIRROR_SOURCE_REPOSITORY != '' &&
+      github.repository == vars.MIRROR_SOURCE_REPOSITORY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -49,6 +52,9 @@ jobs:
   typecheck:
     name: Type check (ty)
     runs-on: ubuntu-latest
+    if: >-
+      vars.MIRROR_SOURCE_REPOSITORY != '' &&
+      github.repository == vars.MIRROR_SOURCE_REPOSITORY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -63,6 +69,9 @@ jobs:
   test:
     name: Test (pytest)
     runs-on: ubuntu-latest
+    if: >-
+      vars.MIRROR_SOURCE_REPOSITORY != '' &&
+      github.repository == vars.MIRROR_SOURCE_REPOSITORY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

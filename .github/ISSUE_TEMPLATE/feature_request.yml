@@ -53,8 +53,6 @@ body:
         - Components or modules to change:
         - Data flow or API changes:
         - Tests or evaluation to add:
-    validations:
-      required: true
 
   - type: textarea
     id: acceptance-criteria
@@ -65,13 +63,11 @@ body:
         - [ ] Observable behavior 1
         - [ ] Observable behavior 2
         - [ ] Tests or evaluation scenario added
-    validations:
-      required: true
 
   - type: textarea
     id: attention-points
     attributes:
-      label: Points d’attention
+      label: Attention points
       description: Note edge cases, Ollama constraints, security or privacy risks, performance concerns, and trade-offs.
       placeholder: |
         - Compatibility or migration concerns:
