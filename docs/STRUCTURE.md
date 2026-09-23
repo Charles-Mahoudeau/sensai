@@ -103,8 +103,7 @@ dependencies through constructors:
 ```python
 # core/pipeline/rag.py
 class RagInjector:
-    def __init__(self, embedder: Embedder, store: VectorStore, k: int = 5) -> None:
-        ...
+    def __init__(self, embedder: Embedder, store: VectorStore, k: int = 5) -> None: ...
 ```
 
 It never does `from sensai.adapters.ollama import OllamaClient`.
@@ -262,7 +261,7 @@ Two gaps to close:
       from sensai.core.ports import LLM
 
       def _conforms(x: OllamaChat) -> LLM:
-          return x   # type error here if OllamaChat doesn't fit LLM
+          return x  # type error here if OllamaChat doesn't fit LLM
   ```
 
 - **Unannotated methods make the check toothless.** An unannotated parameter is `Any`, which matches anything, and mypy
@@ -329,7 +328,7 @@ class ModelNotFound(LLMError): ...  # model not pulled
 
 class LLM(Protocol):
     def chat(
-            self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
+        self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
     ) -> AsyncIterator[ChatEvent]: ...
 ```
 
@@ -376,7 +375,14 @@ from collections.abc import AsyncIterator, Sequence
 
 import httpx
 
-from sensai.core.models import ChatEvent, Message, TextDelta, ToolCall, ToolCallRequest, ToolSpec
+from sensai.core.models import (
+    ChatEvent,
+    Message,
+    TextDelta,
+    ToolCall,
+    ToolCallRequest,
+    ToolSpec,
+)
 from sensai.core.ports import LLMUnavailable, ModelNotFound
 
 
@@ -385,7 +391,7 @@ class OllamaChat:
         self._client, self._url, self._model = client, base_url, model
 
     async def chat(
-            self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
+        self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
     ) -> AsyncIterator[ChatEvent]:
         payload = {
             "model": self._model,
@@ -394,7 +400,9 @@ class OllamaChat:
             "stream": True,
         }
         try:
-            async with self._client.stream("POST", f"{self._url}/api/chat", json=payload) as r:
+            async with self._client.stream(
+                "POST", f"{self._url}/api/chat", json=payload
+            ) as r:
                 if r.status_code == 404:
                     raise ModelNotFound(self._model)
                 r.raise_for_status()
@@ -421,7 +429,7 @@ class FakeLLM:
         self.received: list[list[Message]] = []  # for assertions
 
     async def chat(
-            self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
+        self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
     ) -> AsyncIterator[ChatEvent]:
         self.received.append(list(messages))
         for event in next(self._turns):
@@ -432,10 +440,12 @@ class FakeLLM:
 
 ```python
 async def test_agent_requests_tool_then_answers():
-    llm = FakeLLM([
-        [ToolCallRequest(ToolCall("read_file", {"path": "notes.txt"}))],
-        [TextDelta("The file says hello.")],
-    ])
+    llm = FakeLLM(
+        [
+            [ToolCallRequest(ToolCall("read_file", {"path": "notes.txt"}))],
+            [TextDelta("The file says hello.")],
+        ]
+    )
     agent = Agent(llm, registry=fake_registry(), bus=EventBus())
 
     calls = await agent.step([Message("user", "What's in notes.txt?")])
