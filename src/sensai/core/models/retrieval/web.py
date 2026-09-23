@@ -1,7 +1,4 @@
-from dataclasses import dataclass, field
-from types import MappingProxyType
-from typing import TypeAlias, Mapping
-
+from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class WebSearchResult:
