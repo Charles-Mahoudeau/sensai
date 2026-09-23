@@ -12,6 +12,12 @@ technical reasoning and architectural choices — not maximizing feature count.
 The codebase is currently a minimal scaffold (`src/sensai/__init__.py` only exposes a `main()`
 entry point). Expect to build out the package structure as features are added.
 
+## Project structure
+
+The source structure convention — where code goes and why (the `core`/`adapters`/`app.py` zones,
+ports, models, import rules, naming, the PR checklist) — is defined in `docs/STRUCTURE.md`. Read
+it before adding a module, and follow it when deciding where new code belongs.
+
 ## Commands
 
 This project uses `uv` for dependency management and packaging, and requires Python 3.14+.
