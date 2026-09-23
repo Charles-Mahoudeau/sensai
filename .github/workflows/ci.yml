@@ -18,6 +18,9 @@ jobs:
   lint:
     name: Lint (ruff check)
     runs-on: ubuntu-latest
+    if: >-
+      vars.MIRROR_SOURCE_REPOSITORY != '' &&
+      github.repository == vars.MIRROR_SOURCE_REPOSITORY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
