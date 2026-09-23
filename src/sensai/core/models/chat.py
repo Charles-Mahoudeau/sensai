@@ -77,3 +77,12 @@ class Usage:
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+
+# ATTENTION : différence entre ToolCall et ToolCallRequest, la persitence
+# au moment ou le modele fait un appel à un outil, c'est une instance de ToolCallRequest qui est créée
+# mais une fois l'appel effectué, c'est une instance de ToolCall qui est persistée 
+# et stocké dans l'historique des appels mais dans un message assitance
+@dataclass(frozen=True, slots=True)
+class ToolCallRequest:
+    call: ToolCall
