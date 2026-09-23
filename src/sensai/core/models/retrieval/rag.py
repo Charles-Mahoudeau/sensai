@@ -24,3 +24,18 @@ class Chunk:
 class ScoredChunk:
     chunk: Chunk
     score: float # a définir la norme de scoring pour la pertinence des données
+
+
+# la classe document est ce que le loader va renvoyer, par exemple pour passer de pdf a format de txt pure
+# ainsi le chunker peut utiliser le texte
+@dataclass(frozen=True, slots=True)
+class Document:
+    id: str
+    text: str
+    source: str
+    metadata: Metadata = field(default_factory=dict, hash=False)
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("Document.id must be a non-empty string")
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
