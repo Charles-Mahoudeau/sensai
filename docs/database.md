@@ -146,8 +146,10 @@ WITH RECURSIVE branch(id, parent_id, role, content, depth) AS (
 SELECT * FROM branch ORDER BY depth DESC;
 """
 
+
 class SqliteMessageStore:  # implements the MessageStore port
-    def __init__(self, conn): self.conn = conn
+    def __init__(self, conn):
+        self.conn = conn
 
     def branch(self, leaf_id: int) -> list[Message]:
         rows = self.conn.execute(BRANCH_SQL, {"leaf": leaf_id}).fetchall()
@@ -159,6 +161,7 @@ class SqliteMessageStore:  # implements the MessageStore port
 ```python
 # adapters/storage/sqlite_db.py
 import sqlite3, sqlite_vec
+
 
 def connect(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path, isolation_level=None)  # explicit transactions
@@ -216,6 +219,7 @@ adapters/storage/migrations/
 from pathlib import Path
 
 MIGRATIONS = Path(__file__).parent / "migrations"
+
 
 def migrate(conn, folder: Path = MIGRATIONS) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
