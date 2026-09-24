@@ -28,7 +28,7 @@ class Message:
 
     role: Role
     content: str = ""
-    tool_call_id: str  # id de l'appel associé à un résultat d'outil
+    tool_call_id: str | None = None  # id de l'appel associé à un résultat d'outil
     tool_calls: tuple[
         ToolCall, ...
     ] = ()  # exemple ToolCall("calculator", {"expression": "2+2"})
@@ -171,7 +171,7 @@ class ThinkingDelta:
 class ChatDone:
     """Represent the completion of a chat session."""
 
-    usage: Usage = Usage()
+    usage: Usage = field(default_factory=lambda: Usage(0, 0))
     done_reason: str | None = None
 
 
