@@ -62,3 +62,11 @@ class ToolResult:
     def error(cls, name: str, message: str, call_id: str) -> Self:
         """Build an error result for a tool invocation."""
         return cls(name, message, call_id, is_error=True)
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionDecision:
+    """Represent the decision of a permission check."""
+
+    allowed: bool
+    reason: str | None = None  # Optional
