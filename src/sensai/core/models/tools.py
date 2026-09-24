@@ -45,14 +45,3 @@ class ToolResult:
 # A FAIRE MAIS PAS ICI, AVANT d'UTILISER LES TOOLS IL FAUT VÉRIFIER QU'ILS EXISTENT ET SONT AUTORISÉS
 # pour tool spec et tool call
 # en attendant création d'un filtre minimal avec vérification du nom par regex
-
-@dataclass(frozen=True, slots=True)
-class ToolCallRequest:
-    name: str
-    arguments: Mapping[str, Any] = field(default_factory=dict, hash=False)
-    id: str | None = None # not always give
-
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("ToolCallRequest.name must not be empty")
-        object.__setattr__(self, "arguments", MappingProxyType(dict(self.arguments)))
