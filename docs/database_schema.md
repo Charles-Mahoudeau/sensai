@@ -678,6 +678,247 @@ Virtual tables; `rowid` mirrors the id of the source table. Dimension must match
 
 ## 13. Relationships at a glance
 
+Diagram of every foreign key (primary and foreign key columns only; see sections 2 to 11 for full columns). Solid lines are mandatory relationships (`NOT NULL` FK), dashed lines are optional ones (nullable FK). Each line is labelled with the FK column on the child table. The view (`v_llm_metrics`) and the optional virtual tables (section 12) are left out.
+
+```mermaid
+erDiagram
+    %% Core
+    schema_migrations {
+        int version PK
+    }
+    app_settings {
+        text key PK
+    }
+
+    %% Memory & context
+    user_profile {
+        text key PK
+    }
+    personas {
+        int id PK
+    }
+    sessions {
+        int id PK
+        int persona_id FK
+    }
+    messages {
+        int id PK
+        int session_id FK
+        int parent_id FK
+        int persona_id FK
+        int summary_id FK
+    }
+    session_summaries {
+        int id PK
+        int session_id FK
+        int from_message_id FK
+        int to_message_id FK
+    }
+
+    %% External memory & artifacts
+    memories {
+        int id PK
+    }
+    artifacts {
+        int id PK
+        int session_id FK
+        int current_version FK
+    }
+    artifact_versions {
+        int id PK
+        int artifact_id FK
+        int message_id FK
+    }
+
+    %% Tools, MCP, agents
+    mcp_servers {
+        int id PK
+    }
+    mcp_secrets {
+        int id PK
+        int server_id FK
+    }
+    agent_definitions {
+        int id PK
+    }
+    agent_runs {
+        int id PK
+        int session_id FK
+        int parent_run_id FK
+        int agent_id FK
+    }
+    tool_calls {
+        int id PK
+        int session_id FK
+        int run_id FK
+        int message_id FK
+        int mcp_server_id FK
+    }
+    fs_permissions {
+        int id PK
+        int session_id FK
+    }
+
+    %% Plans & questions
+    plans {
+        int id PK
+        int session_id FK
+        int run_id FK
+    }
+    plan_steps {
+        int id PK
+        int plan_id FK
+    }
+    user_questions {
+        int id PK
+        int session_id FK
+        int tool_call_id FK
+    }
+
+    %% RAG & cache
+    rag_documents {
+        int id PK
+    }
+    rag_chunks {
+        int id PK
+        int document_id FK
+    }
+    semantic_cache {
+        int id PK
+        int persona_id FK
+        int prompt_version_id FK
+    }
+
+    %% Prompts
+    prompt_versions {
+        int id PK
+    }
+    few_shot_examples {
+        int id PK
+    }
+
+    %% Guardrails & evaluation
+    guardrail_rules {
+        int id PK
+    }
+    guardrail_events {
+        int id PK
+        int session_id FK
+        int message_id FK
+        int rule_id FK
+    }
+    eval_cases {
+        int id PK
+    }
+    eval_runs {
+        int id PK
+        int persona_id FK
+    }
+    eval_results {
+        int id PK
+        int run_id FK
+        int case_id FK
+        int message_id FK
+    }
+
+    %% Observability
+    llm_calls {
+        int id PK
+        int session_id FK
+        int run_id FK
+        int message_id FK
+        int prompt_version_id FK
+    }
+    events {
+        int id PK
+        int session_id FK
+        int run_id FK
+    }
+
+    %% Export & scheduling
+    shared_links {
+        text token PK
+        int session_id FK
+        int artifact_id FK
+    }
+    scheduled_tasks {
+        int id PK
+        int persona_id FK
+    }
+    scheduled_runs {
+        int id PK
+        int task_id FK
+        int session_id FK
+    }
+
+    %% Sessions and personas
+    personas |o..o{ sessions : persona_id
+    personas |o..o{ messages : persona_id
+    personas |o..o{ semantic_cache : persona_id
+    personas |o..o{ eval_runs : persona_id
+    personas |o..o{ scheduled_tasks : persona_id
+
+    %% Everything a session owns
+    sessions ||--o{ messages : session_id
+    sessions ||--o{ session_summaries : session_id
+    sessions ||--o{ artifacts : session_id
+    sessions ||--o{ agent_runs : session_id
+    sessions ||--o{ tool_calls : session_id
+    sessions ||--o{ plans : session_id
+    sessions ||--o{ user_questions : session_id
+    sessions |o..o{ fs_permissions : session_id
+    sessions |o..o{ guardrail_events : session_id
+    sessions |o..o{ llm_calls : session_id
+    sessions |o..o{ events : session_id
+    sessions |o..o{ shared_links : session_id
+    sessions |o..o{ scheduled_runs : session_id
+
+    %% Messages
+    messages |o..o{ messages : parent_id
+    session_summaries |o..o{ messages : summary_id
+    messages ||--o{ session_summaries : from_message_id
+    messages ||--o{ session_summaries : to_message_id
+    messages |o..o{ artifact_versions : message_id
+    messages |o..o{ tool_calls : message_id
+    messages |o..o{ guardrail_events : message_id
+    messages |o..o{ eval_results : message_id
+    messages |o..o{ llm_calls : message_id
+
+    %% Artifacts
+    artifacts ||--o{ artifact_versions : artifact_id
+    artifact_versions |o..o{ artifacts : current_version
+    artifacts |o..o{ shared_links : artifact_id
+
+    %% Agents, tools, MCP
+    agent_definitions |o..o{ agent_runs : agent_id
+    agent_runs |o..o{ agent_runs : parent_run_id
+    agent_runs |o..o{ tool_calls : run_id
+    agent_runs |o..o{ plans : run_id
+    agent_runs |o..o{ llm_calls : run_id
+    agent_runs |o..o{ events : run_id
+    mcp_servers ||--o{ mcp_secrets : server_id
+    mcp_servers |o..o{ tool_calls : mcp_server_id
+    tool_calls |o..o{ user_questions : tool_call_id
+
+    %% Plans
+    plans ||--o{ plan_steps : plan_id
+
+    %% RAG, prompts, cache
+    rag_documents ||--o{ rag_chunks : document_id
+    prompt_versions |o..o{ semantic_cache : prompt_version_id
+    prompt_versions |o..o{ llm_calls : prompt_version_id
+
+    %% Guardrails & evaluation
+    guardrail_rules |o..o{ guardrail_events : rule_id
+    eval_runs ||--o{ eval_results : run_id
+    eval_cases |o..o{ eval_results : case_id
+
+    %% Scheduling
+    scheduled_tasks ||--o{ scheduled_runs : task_id
+```
+
+Same relationships in table form:
+
 | From | Relation | To |
 |---|---|---|
 | `sessions` | 1 → N | `messages`, `session_summaries`, `agent_runs`, `plans`, `fs_permissions`, `user_questions`, `guardrail_events`, `events`, `artifacts`, `tool_calls`, `llm_calls` |
