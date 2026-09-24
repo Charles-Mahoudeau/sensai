@@ -1,9 +1,10 @@
+from __future__ import annotations # pour que Message.system, Message.user, etc. retournent des instances de Message
+
 from dataclasses import dataclass, field
 from typing import Mapping, Any
 from types import MappingProxyType
 from typing import TypeAlias, Literal
 from .tools import ToolCall
-from __future__ import annotations # pour que Message.system, Message.user, etc. retournent des instances de Message
 
 # plusieurs interlocuteurs possibles, mais que parmis cette liste
 # system pour les messages du debut, context, persona ...
