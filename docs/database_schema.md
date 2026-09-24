@@ -29,7 +29,7 @@
 | **Base / settings** | Selected model, toggles (semantic cache, tool exec mode, fs permissions), thresholds | `app_settings`, `schema_migrations` |
 | **M1** Session persistence & profiles | Sessions, messages, user profile (preferences, custom instructions) | `sessions`, `messages`, `user_profile` |
 | **M2** Token budgeting & compression | Per-turn token counts, budget, summary blocks replacing old turns | `messages` (token cols), `sessions.token_budget`, `session_summaries` |
-| **M3** External structured memory | Entities, facts, relationships | `memory_entities`, `memory_facts`, `memory_relations` |
+| **M3** External structured memory | Long-term memory records (name, type, description) | `memories` |
 | **M4** Artifact & state document | Living documents + version history of applied edits | `artifacts`, `artifact_versions` |
 | **T1** MCP | MCP server configs, encrypted credentials per auth method, every tool call (args, result, approval) | `mcp_servers`, `mcp_secrets`, `tool_calls` |
 | **T2** Sandboxed exec | Code run, stdout/stderr, exit code | `tool_calls` |
@@ -687,8 +687,6 @@ Virtual tables; `rowid` mirrors the id of the source table. Dimension must match
 | `agent_runs` | 1 → N | `tool_calls`, `llm_calls` |
 | `plans` | 1 → N | `plan_steps` |
 | `artifacts` | 1 → N | `artifact_versions` |
-| `memory_entities` | 1 → N | `memory_facts` |
-| `memory_entities` | N ↔ N via `memory_relations` | `memory_entities` |
 | `rag_documents` | 1 → N | `rag_chunks` |
 | `prompt_versions` | 1 → N | `llm_calls`, `semantic_cache` |
 | `eval_runs` | 1 → N | `eval_results` |
@@ -700,7 +698,7 @@ Virtual tables; `rowid` mirrors the id of the source table. Dimension must match
 ## 14. Design notes
 
 - **Not stored in the DB on purpose:** `.aiignore` (file on disk), exports (generated on demand), structured-output JSON (validated in memory, persisted through `messages` / `tool_calls`), the Ollama model list (queried live).
-- **Global vs per-session data:** `user_profile`, `memory_*`, `rag_*`, `semantic_cache`, `personas`, `prompt_versions` are global. Everything else hangs off a session and cascades on delete.
+- **Global vs per-session data:** `user_profile`, `memories`, `rag_*`, `semantic_cache`, `personas`, `prompt_versions` are global. Everything else hangs off a session and cascades on delete.
 - **Repository pattern (no ORM):** one repository per aggregate, e.g. `SessionRepository` (sessions, messages, summaries), `MemoryRepository`, `ArtifactRepository`, `RagRepository`, `CacheRepository`, `ToolCallRepository`, `PlanRepository`, `PromptRepository`, `EvalRepository`, `ObservabilityRepository`, `SchedulerRepository`, `ShareRepository`, `SettingsRepository`.
 - **Secrets and logs:** `mcp_secrets` is the only place credentials are persisted, and only encrypted. `tool_calls.arguments_json`, `tool_calls.result`, `llm_calls.request_json` and `events.payload_json` must be redacted before insert (mask any value that came from `mcp_secrets`), otherwise the logging tables would leak what the encryption protects.
 - **Per-feature migrations:** tables for optional features (M3, M4, RAG, cache, eval, scheduling…) can be created lazily, so only the features actually implemented ship their tables.

@@ -62,7 +62,7 @@ Three of these need **vector similarity** (RAG, cache, optionally memory search)
 
 - **`sensai.db`** (SQLite, WAL mode):
   - `sessions`, `messages` (with `parent_id`), `tool_calls`, `profiles`
-  - `memory_facts`, `memory_entities`, `memory_relations`, `memory_audit` (M3)
+  - `memories`, `memory_audit` (M3)
   - `chunks` (text + metadata), `vec_chunks_<model><dim>` (sqlite-vec), `fts_chunks` (FTS5)
   - `cache_entries` (embedding, response, persona/model key, created_at, TTL)
   - `artifacts`, `artifact_versions`, `schedules`, `permissions`
@@ -266,7 +266,7 @@ Rules:
 
 - **The model never writes SQL.** It picks a tool and arguments; the repository runs a fixed, parameterized statement.
 - **Whitelist** the fields each tool can touch, and validate arguments (type, length, allowed values) before the repository call.
-- **Soft deletes** (`deleted_at`) on memory facts, plus a `memory_audit` table (what changed, when, previous value). This supports the human-in-the-loop story (A3) and lets us undo a bad model edit.
+- **Soft deletes** (`deleted_at`) on `memories`, plus a `memory_audit` table (what changed, when, previous value). This supports the human-in-the-loop story (A3) and lets us undo a bad model edit.
 - **Stored memory is untrusted text.** A fact saved from a web page or document can carry a prompt injection into later sessions. This belongs in the adversarial test suite (EV4).
 
 ## 10. Semantic cache correctness
