@@ -8,19 +8,21 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sensai.core.models import Message
+
 
 @dataclass(frozen=True)
 class Continue:
     """Request go to the next stage."""
 
-    messages: tuple[str, ...]
+    messages: tuple[Message, ...]
 
 
 @dataclass(frozen=True)
 class ShortCircuit:
     """The stage cut and give the response."""
 
-    reply: str
+    reply: Message
 
 
 StageResult = Continue | ShortCircuit
@@ -29,7 +31,7 @@ StageResult = Continue | ShortCircuit
 class Stage(Protocol):
     """A single step of the pipeline that processes the messages."""
 
-    def process(self, messages: tuple[str, ...]) -> StageResult:
+    def process(self, messages: tuple[Message, ...]) -> StageResult:
         """Process the messages and decide how the pipeline continues.
 
         Args:
@@ -53,7 +55,7 @@ class Pipeline:
         """
         self._stages = tuple(stages)
 
-    def run(self, messages: Sequence[str]) -> StageResult:
+    def run(self, messages: Sequence[Message]) -> StageResult:
         """Run the messages through every stage.
 
         Args:
