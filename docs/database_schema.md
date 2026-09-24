@@ -191,7 +191,7 @@ Living deliverable, distinct from the chat transcript.
 | `session_id` | INTEGER | NOT NULL, FK → `sessions.id` ON DELETE CASCADE | |
 | `title` | TEXT | NOT NULL | |
 | `format` | TEXT | NOT NULL, DEFAULT `'markdown'` | `markdown` \| `json` \| `text` \| `code` |
-| `current_version` | INTEGER | NOT NULL, DEFAULT 1, FK → `artifact_versions.id` ON DELETE SET NULL | |
+| `current_version` | INTEGER | FK → `artifact_versions.id` ON DELETE SET NULL | |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
 
