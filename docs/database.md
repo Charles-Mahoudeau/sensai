@@ -63,8 +63,8 @@ Three of these need **vector similarity** (RAG, cache, optionally memory search)
 - **`sensai.db`** (SQLite, WAL mode):
   - `sessions`, `messages` (with `parent_id`), `tool_calls`, `profiles`
   - `memories`, `memory_audit` (M3)
-  - `chunks` (text + metadata), `vec_chunks_<model><dim>` (sqlite-vec), `fts_chunks` (FTS5)
-  - `cache_entries` (embedding, response, persona/model key, created_at, TTL)
+  - `rag_documents`, `rag_chunks` (text + metadata), `vec_rag_chunks` (sqlite-vec), `rag_chunks_fts` (FTS5)
+  - `semantic_cache` (response, persona/model key, created_at, TTL), `vec_semantic_cache` (sqlite-vec)
   - `artifacts`, `artifact_versions`, `schedules`, `permissions`
 - **`logs.db`**: separate SQLite file for events and metrics. Its write pattern (constant appends) is different, and a separate file avoids lock contention with the main database. It is accessed through the `LogSink` port.
 - **`config/`**: personas, prompts and settings as YAML/TOML, versioned in git. Prompt versioning (A4) can store timestamped copies and eval scores in the database.
@@ -97,7 +97,7 @@ Extension loading can fail (macOS system Python, some locked-down machines). Fal
 ### Vector rules
 
 - **Normalize embeddings at write time** and use cosine/dot product consistently, for chunks and cache alike.
-- **One vec table per (model, dimension)**, for example `vec_chunks_nomic768`, since `vec0` fixes the dimension at creation. Switching embedding models means a new table and a re-index. Store the model name with each vector.
+- **One vec table per (model, dimension)**, for example `vec_rag_chunks_nomic768`, since `vec0` fixes the dimension at creation. Switching embedding models means a new table and a re-index. Store the model name with each vector.
 - Embeddings come from Ollama's `/api/embed`, called directly.
 
 ## 5. Repositories, and why there is no ORM
@@ -213,7 +213,7 @@ Each feature ships its own numbered migration with the tables it needs. There is
 adapters/storage/migrations/
 ├── 001_sessions.sql   # sessions, messages, profiles
 ├── 002_memory.sql     # memory tables
-└── 003_rag.sql        # chunks, vec_chunks_*, fts_chunks (+ triggers)
+└── 003_rag.sql        # rag_documents, rag_chunks, vec_rag_chunks*, rag_chunks_fts (+ triggers)
 ```
 
 ```python
@@ -252,6 +252,7 @@ def migrate(conn, folder: Path = MIGRATIONS) -> None:
 Rules:
 
 - **Never edit an applied migration.** Add a new numbered file.
+- **No gaps in the numbering.** Versions must be consecutive (`001`, `002`, `003`…). Never delete or skip a migration file, and never renumber applied ones: a gap means the migration history no longer matches what was applied to existing databases.
 - The connection must come from `connect()` first: `vec0` and FTS5 migrations need the extension loaded.
 - Test migrations from an empty database in CI.
 

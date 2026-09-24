@@ -4,7 +4,7 @@
 > - **`sqlite-vec` (optional)**: provides `vec0` virtual tables for fast KNN search over embeddings (RAG + semantic cache). **Without it**, embeddings are stored as `BLOB` (float32, little-endian) and cosine similarity is computed in Python. The schema works in both modes (see [section 12](#12-optional-tables-with-extensions)).
 > - **FTS5** (built into most CPython SQLite builds): optional, only for keyword search over RAG chunks (hybrid retrieval).
 > - **JSON1**: built-in. JSON is stored as `TEXT`.
-> - **Encryption (`mcp_secrets`)**: done in Python (e.g. the `cryptography` package for AES-GCM/scrypt), not in SQLite. No SQLCipher or DB extension needed.
+> - **Encryption (`mcp_secrets`)**: done in Python, not in SQLite. No SQLCipher or DB extension needed.
 > - Pragmas to set on every connection: `PRAGMA foreign_keys = ON;` and `PRAGMA journal_mode = WAL;`
 
 ## Conventions
@@ -229,25 +229,23 @@ Constraints: `UNIQUE (artifact_id, version)`
 
 ### `mcp_secrets` (T1)
 
-Credentials for MCP servers, **encrypted at rest**. One row per secret, so one server can hold several (e.g. OAuth access token + refresh token + client secret). The plaintext never touches the DB, and the encryption key is never stored: only *where it comes from* (`key_source` / `key_ref`) is recorded.
+Credentials for MCP servers, **encrypted at rest**. One row per secret, so one server can hold several (e.g. OAuth access token + refresh token + client secret). The plaintext never touches the DB. All secrets use the same cipher and the same key. The key is never stored in the DB: it is supplied at startup from outside the database (e.g. environment variable or OS keyring).
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY | |
 | `server_id` | INTEGER | NOT NULL, FK → `mcp_servers.id` ON DELETE CASCADE | |
-| `name` | TEXT | NOT NULL | Logical name: `API_KEY`, `access_token`, `refresh_token`, `client_secret`, `username`, `password`… |
-| `auth_type` | TEXT | NOT NULL | `api_key` \| `bearer` \| `basic_username` \| `basic_password` \| `oauth_access_token` \| `oauth_refresh_token` \| `oauth_client_secret` \| `custom` |
+| `role` | TEXT | NOT NULL | What the secret is for, fixed per `mcp_servers.auth_method`: `api_key` → `api_key`; `bearer` → `token`; `basic` → `username`, `password`; `oauth2` → `access_token`, `refresh_token`, `client_secret`; `custom` → free-form |
 | `ciphertext` | BLOB | NOT NULL | Encrypted secret |
 | `expires_at` | TEXT | | OAuth token expiry, to trigger a refresh |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
-| `rotated_at` | TEXT | | Last re-encryption or token refresh |
 
-Constraints: `UNIQUE (server_id, name)`. Indexes: `(server_id)`
+Constraints: `UNIQUE (server_id, role)`. Indexes: `(server_id)`
 
 Implementation notes:
 
-- **Decrypt at the last moment:** only when spawning the MCP server (env/args) or building the HTTP request (headers). Never put plaintext in `messages`, `tool_calls`, `llm_calls` or `events`, and never in the prompt sent to the model.
+- **Decrypt at the last moment:** only when building the HTTP request to the MCP server (headers). Never put plaintext in `messages`, `tool_calls`, `llm_calls` or `events`, and never in the prompt sent to the model.
 
 ### `agent_definitions` (A2)
 
@@ -318,7 +316,7 @@ Per-directory consent. `session_id` NULL means a persistent grant. The `.aiignor
 | `access` | TEXT | NOT NULL, DEFAULT `'read'` | `read` \| `write` \| `read_write` |
 | `granted_at` | TEXT | NOT NULL, DEFAULT now | |
 
-Constraints: `UNIQUE (session_id, path)`
+Constraints: `UNIQUE (session_id, path)` for session-scoped grants, plus a partial unique index `UNIQUE (path) WHERE session_id IS NULL` for persistent grants (SQLite treats NULLs as distinct, so the first constraint alone would allow duplicate persistent paths).
 
 ---
 
@@ -604,7 +602,7 @@ Derived from `llm_calls`, grouped by `day, stage, model, prompt_version_id`.
 | `calls` | INTEGER | `COUNT(*)` |
 | `avg_latency_ms` | REAL | `AVG(latency_ms)` |
 | `avg_ttft_ms` | REAL | `AVG(ttft_ms)` |
-| `total_tokens` | INTEGER | `SUM(prompt_tokens + completion_tokens)` |
+| `total_tokens` | INTEGER | `SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0))` |
 | `error_rate` | REAL | `AVG(error IS NOT NULL)` |
 | `cache_hit_rate` | REAL | `AVG(cache_hit)` |
 
@@ -673,6 +671,8 @@ Virtual tables; `rowid` mirrors the id of the source table. Dimension must match
 | `vec_rag_chunks` | `sqlite-vec` `vec0` | `embedding float[768] distance_metric=cosine` | `rag_chunks.id` |
 | `vec_semantic_cache` | `sqlite-vec` `vec0` | `embedding float[768] distance_metric=cosine` | `semantic_cache.id` |
 | `rag_chunks_fts` | FTS5 | `content`, external content `rag_chunks`, `content_rowid = id` | `rag_chunks.id` |
+
+External-content FTS5 tables are not synchronized automatically. `rag_chunks_fts` is kept in sync by `AFTER INSERT`, `AFTER UPDATE` and `AFTER DELETE` triggers on `rag_chunks` (created in the same migration as the table), which write to the index using the FTS5 `'delete'` command for removals and updates. Rows that already exist when the table is created are indexed once with `INSERT INTO rag_chunks_fts(rag_chunks_fts) VALUES ('rebuild');`, which is also the recovery procedure if the index ever drifts.
 
 ---
 
@@ -939,7 +939,7 @@ Same relationships in table form:
 ## 14. Design notes
 
 - **Not stored in the DB on purpose:** `.aiignore` (file on disk), exports (generated on demand), structured-output JSON (validated in memory, persisted through `messages` / `tool_calls`), the Ollama model list (queried live).
-- **Global vs per-session data:** `user_profile`, `memories`, `rag_*`, `semantic_cache`, `personas`, `prompt_versions` are global. Everything else hangs off a session and cascades on delete.
+- **Global vs per-session data:** `user_profile`, `memories`, `rag_*`, `semantic_cache`, `personas`, `prompt_versions` are global, as are `app_settings`, `mcp_servers`, `agent_definitions`, `guardrail_rules`, `eval_cases` and `scheduled_tasks`. Tables that reference `sessions` cascade on session delete.
 - **Repository pattern (no ORM):** one repository per aggregate, e.g. `SessionRepository` (sessions, messages, summaries), `MemoryRepository`, `ArtifactRepository`, `RagRepository`, `CacheRepository`, `ToolCallRepository`, `PlanRepository`, `PromptRepository`, `EvalRepository`, `ObservabilityRepository`, `SchedulerRepository`, `ShareRepository`, `SettingsRepository`.
 - **Secrets and logs:** `mcp_secrets` is the only place credentials are persisted, and only encrypted. `tool_calls.arguments_json`, `tool_calls.result`, `llm_calls.request_json` and `events.payload_json` must be redacted before insert (mask any value that came from `mcp_secrets`), otherwise the logging tables would leak what the encryption protects.
 - **Per-feature migrations:** tables for optional features (M3, M4, RAG, cache, eval, scheduling…) can be created lazily, so only the features actually implemented ship their tables.
