@@ -205,13 +205,15 @@ Two extra files appear next to the database, `sensai.db-wal` and `sensai.db-shm`
 
 ## 7. Migrations
 
-Schema changes are **numbered SQL files** applied in order. The applied version is stored in `PRAGMA user_version`. No Alembic: the runner is small and enough for this project.
+Schema changes are **numbered SQL files** applied in order. Applied versions are recorded in the `schema_migrations` table (see the [schema](database_schema.md)), which the runner creates itself with a small bootstrap statement before applying anything. No Alembic: the runner is small and enough for this project.
+
+Each feature ships its own numbered migration with the tables it needs. There is no shared "core" file.
 
 ```
 adapters/storage/migrations/
-├── 001_core.sql     # sessions, messages, tool_calls, profiles
-├── 002_rag.sql      # chunks, vec_chunks_*, fts_chunks (+ triggers)
-└── 003_cache.sql    # cache_entries
+├── 001_sessions.sql   # sessions, messages, profiles
+├── 002_memory.sql     # memory tables
+└── 003_rag.sql        # chunks, vec_chunks_*, fts_chunks (+ triggers)
 ```
 
 ```python
@@ -220,18 +222,27 @@ from pathlib import Path
 
 MIGRATIONS = Path(__file__).parent / "migrations"
 
+BOOTSTRAP = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+"""
+
 
 def migrate(conn, folder: Path = MIGRATIONS) -> None:
-    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    conn.executescript(BOOTSTRAP)
+    applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
     for f in sorted(folder.glob("*.sql")):
         version = int(f.name.split("_")[0])
-        if version <= current:
+        if version in applied:
             continue
         try:
             conn.executescript(
-                f"BEGIN; {f.read_text()}\n; PRAGMA user_version = {version};"
+                f"BEGIN; {f.read_text()}\n;"
+                f" INSERT INTO schema_migrations (version) VALUES ({version});"
+                " COMMIT;"
             )
-            conn.execute("COMMIT")
         except Exception:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
