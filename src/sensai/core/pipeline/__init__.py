@@ -1,0 +1,1 @@
+"""Chat processing pipeline: stages chained to build a reply."""
