@@ -14,9 +14,7 @@ class Chunk:
     id: str
     text: str
     document_id: str
-    index: int = 0  # position dans le document source
-    # (peut etre définir une taille max dans le chunker)
-    # aussi ca peut servir a prendre les chunks autour d'un pertinent
+    index: int = 0
     metadata: Metadata = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
@@ -33,12 +31,8 @@ class ScoredChunk:
     """A chunk paired with its retrieval relevance score."""
 
     chunk: Chunk
-    score: float  # a définir la norme de scoring pour la pertinence des données
+    score: float
 
-
-# la classe document est ce que le loader va renvoyer,
-# par exemple pour passer de pdf a format de txt pure
-# ainsi le chunker peut utiliser le texte
 @dataclass(frozen=True, slots=True)
 class Document:
     """A source document before it is split into chunks."""

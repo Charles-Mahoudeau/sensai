@@ -17,7 +17,7 @@ class ToolCall:
 
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict, hash=False)
-    id: str | None = None  # not always give
+    id: str | None = None
 
     def __post_init__(self) -> None:
         """Validate and freeze the tool arguments."""
@@ -34,8 +34,8 @@ class ToolSpec:
     description: str
     parameters: Mapping[str, Any] = field(
         default_factory=lambda: {"type": "object", "properties": {}}, hash=False
-    )  # description JSON des champs atte,dus
-    requires_confirmation: bool = False  # human in the loop actions sensibles
+    )
+    requires_confirmation: bool = False
 
     def __post_init__(self) -> None:
         """Validate the name and freeze the parameter schema."""
@@ -51,20 +51,15 @@ class ToolResult:
     name: str
     content: str
     call_id: str
-    is_error: bool = False  # l'erreur est renvoyée au modèle, pas levée
+    is_error: bool = False
 
     def __post_init__(self) -> None:
         """Validate the tool name."""
         if not _NAME_RE.match(self.name):
             raise ValueError(f"ToolResult.name {self.name!r} must match [A-Za-z0-9_-]+")
 
-    @classmethod  # créer une instance de ToolResult représentant une erreur
+    @classmethod
     def error(cls, name: str, message: str, call_id: str) -> Self:
         """Build an error result for a tool invocation."""
         return cls(name, message, call_id, is_error=True)
 
-
-# A FAIRE MAIS PAS ICI, AVANT d'UTILISER LES TOOLS
-# IL FAUT VÉRIFIER QU'ILS EXISTENT ET SONT AUTORISÉS
-# pour tool spec et tool call
-# en attendant création d'un filtre minimal avec vérification du nom par regex

@@ -10,7 +10,6 @@ class WebSearchResult:
     title: str
     url: str
     snippet: str
-    # content: str = "" on peut ajouter un content sauf si pas tout renvoyer
 
     def __post_init__(self) -> None:
         """Require the fields needed to identify the result."""
