@@ -11,14 +11,15 @@ if TYPE_CHECKING:
     from sensai.core.models import Message
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Continue:
     """Request go to the next stage."""
 
     messages: tuple[Message, ...]
 
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class ShortCircuit:
     """The stage cut and give the response."""
 
