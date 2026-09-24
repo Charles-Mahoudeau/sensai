@@ -42,7 +42,7 @@ sensai/
 │   ├── sensai.toml           # default model, feature toggles
 │   └── personas/             # one .toml per persona
 ├── docs/
-│   ├── STRUCTURE.md          # this file
+│   ├── structure.md          # this file
 │   └── user-stories/         # one .md per feature
 ├── src/sensai/
 │   ├── __main__.py           # `python -m sensai` → calls cli.main()
