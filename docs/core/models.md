@@ -62,6 +62,10 @@ An `assistant` message may contain multiple `ToolCall` objects and a reasoning s
 
 Checking tool existence, permissions, and arguments belongs to the registry and the core tool components, not to the models.
 
+### `PermissionDecision`
+
+`PermissionDecision` represents the result of a permission check performed before a tool call is executed. `allowed` indicates whether execution is authorized, while the optional `reason` can explain why a request was denied or provide additional context. Permission policies such as `AllowAll` and `DenyAll` produce this model for the tool registry.
+
 ## Retrieval
 
 ### `Document`
