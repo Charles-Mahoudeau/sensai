@@ -119,7 +119,6 @@ Personas are data, not code.
 | `thinking` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: ReAct on/off |
 | `tool_exec_mode` | TEXT | NOT NULL, DEFAULT `'ask'` | `ask` \| `auto` |
 | `token_budget` | INTEGER | | M2: max context tokens for this session |
-| `active_message_id` | INTEGER | | X2: tip of the displayed branch. Plain integer (no FK) to avoid a circular FK with `messages` |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
 
@@ -141,7 +140,7 @@ X2: messages form a tree. A branch is the path from a leaf up to the root throug
 | `status` | TEXT | NOT NULL, DEFAULT `'complete'` | `streaming` \| `complete` \| `interrupted` \| `error` \| `cached` |
 | `prompt_tokens` | INTEGER | | M2: Ollama `prompt_eval_count` |
 | `completion_tokens` | INTEGER | | Ollama `eval_count` |
-| `is_compressed` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: replaced by a summary in context |
+| `summary_id` | INTEGER | FK → `session_summaries.id` ON DELETE SET NULL  | Replaced by a summary id if it's a summary block |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 
 Indexes: `(session_id, id)`, `(parent_id)`
@@ -167,7 +166,7 @@ Indexes: `(session_id)`
 
 ## 4. External structured memory (M3) & artifacts (M4)
 
-### `memory_entities` (M3)
+### `memories` (M3)
 
 Long-term, cross-session memory driven by the agent through CRUD tool calls.
 
@@ -182,33 +181,6 @@ Long-term, cross-session memory driven by the agent through CRUD tool calls.
 
 Constraints: `UNIQUE (name, type)`
 
-### `memory_facts` (M3)
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY | |
-| `entity_id` | INTEGER | NOT NULL, FK → `memory_entities.id` ON DELETE CASCADE | |
-| `content` | TEXT | NOT NULL | |
-| `confidence` | REAL | NOT NULL, DEFAULT 1.0 | Between 0 and 1 |
-| `source_session_id` | INTEGER | FK → `sessions.id` ON DELETE SET NULL | Where the fact was learned |
-| `created_at` | TEXT | NOT NULL, DEFAULT now | |
-| `updated_at` | TEXT | NOT NULL, DEFAULT now | |
-
-Indexes: `(entity_id)`
-
-### `memory_relations` (M3)
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY | |
-| `subject_id` | INTEGER | NOT NULL, FK → `memory_entities.id` ON DELETE CASCADE | |
-| `predicate` | TEXT | NOT NULL | `works_on`, `synonym_of`… |
-| `object_id` | INTEGER | NOT NULL, FK → `memory_entities.id` ON DELETE CASCADE | |
-| `source_session_id` | INTEGER | FK → `sessions.id` ON DELETE SET NULL | |
-| `created_at` | TEXT | NOT NULL, DEFAULT now | |
-
-Constraints: `UNIQUE (subject_id, predicate, object_id)`. Indexes: `(object_id)`
-
 ### `artifacts` (M4)
 
 Living deliverable, distinct from the chat transcript.
@@ -219,7 +191,7 @@ Living deliverable, distinct from the chat transcript.
 | `session_id` | INTEGER | NOT NULL, FK → `sessions.id` ON DELETE CASCADE | |
 | `title` | TEXT | NOT NULL | |
 | `format` | TEXT | NOT NULL, DEFAULT `'markdown'` | `markdown` \| `json` \| `text` \| `code` |
-| `current_version` | INTEGER | NOT NULL, DEFAULT 1 | |
+| `current_version` | INTEGER | NOT NULL, DEFAULT 1, FK → `artifact_versions.id` ON DELETE SET NULL | |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
 
@@ -249,11 +221,8 @@ Constraints: `UNIQUE (artifact_id, version)`
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY | |
 | `name` | TEXT | NOT NULL, UNIQUE | |
-| `transport` | TEXT | NOT NULL | `stdio` \| `http` |
-| `command` | TEXT | | stdio only |
-| `args_json` | TEXT | JSON | stdio only |
+| `transport` | TEXT | NOT NULL | `http` |
 | `url` | TEXT | | http only |
-| `env_json` | TEXT | JSON | Non-secret environment only (e.g. `LOG_LEVEL`). Anything sensitive goes in `mcp_secrets` |
 | `auth_method` | TEXT | NOT NULL, DEFAULT `'none'` | `none` \| `api_key` \| `bearer` \| `basic` \| `oauth2` \| `custom` |
 | `enabled` | INTEGER | NOT NULL, DEFAULT 1 | Boolean |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
@@ -268,35 +237,17 @@ Credentials for MCP servers, **encrypted at rest**. One row per secret, so one s
 | `server_id` | INTEGER | NOT NULL, FK → `mcp_servers.id` ON DELETE CASCADE | |
 | `name` | TEXT | NOT NULL | Logical name: `API_KEY`, `access_token`, `refresh_token`, `client_secret`, `username`, `password`… |
 | `auth_type` | TEXT | NOT NULL | `api_key` \| `bearer` \| `basic_username` \| `basic_password` \| `oauth_access_token` \| `oauth_refresh_token` \| `oauth_client_secret` \| `custom` |
-| `inject_as` | TEXT | NOT NULL | How the decrypted value is handed to the server: `env` \| `header` \| `arg` \| `body` |
-| `inject_key` | TEXT | | Env var / header / arg name (e.g. `GITHUB_TOKEN`, `Authorization`) |
-| `inject_prefix` | TEXT | | Optional value prefix, e.g. `Bearer ` |
-| `ciphertext` | BLOB | NOT NULL | Encrypted secret (includes the auth tag for AEAD ciphers) |
-| `nonce` | BLOB | NOT NULL | Unique per encryption (12 bytes for AES-GCM). Never reused with the same key |
-| `cipher` | TEXT | NOT NULL, DEFAULT `'aes-256-gcm'` | `aes-256-gcm` \| `chacha20-poly1305` \| `fernet` |
-| `key_source` | TEXT | NOT NULL | Where the key comes from: `env` \| `password` \| `keyring` \| `keyfile` |
-| `key_ref` | TEXT | | Name only, never the key: env var name (`SENSAI_SECRET_KEY`), keyring entry, or keyfile path. NULL for `password` |
-| `kdf` | TEXT | NOT NULL, DEFAULT `'none'` | `none` (raw 32-byte key) \| `scrypt` \| `argon2id` \| `pbkdf2` (needed for `password`, and for `env` if it holds a passphrase) |
-| `kdf_salt` | BLOB | | Random per secret. NULL when `kdf = 'none'` |
-| `kdf_params_json` | TEXT | JSON | Cost params (e.g. scrypt `n`, `r`, `p`) so they can be raised later without breaking old rows |
-| `key_version` | INTEGER | NOT NULL, DEFAULT 1 | Incremented on key rotation. Lets old and new rows coexist during re-encryption |
-| `metadata_json` | TEXT | JSON | Non-secret info: OAuth scopes, token type, issuer |
+| `ciphertext` | BLOB | NOT NULL | Encrypted secret |
 | `expires_at` | TEXT | | OAuth token expiry, to trigger a refresh |
 | `created_at` | TEXT | NOT NULL, DEFAULT now | |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
 | `rotated_at` | TEXT | | Last re-encryption or token refresh |
 
-Constraints: `UNIQUE (server_id, name)`. `CHECK` that `key_ref IS NOT NULL` when `key_source IN ('env','keyring','keyfile')`, and that `kdf_salt IS NOT NULL` when `kdf <> 'none'`. Indexes: `(server_id)`
+Constraints: `UNIQUE (server_id, name)`. Indexes: `(server_id)`
 
 Implementation notes:
 
-- **Authenticated encryption:** use an AEAD cipher (AES-256-GCM via the `cryptography` package, a Python dependency, not a SQLite extension). A wrong key or tampered row fails at decryption instead of returning garbage.
-- **Bind ciphertext to its row:** pass `server_id || name` as the AEAD associated data, so a ciphertext copied to another row will not decrypt.
-- **`env`:** read the key from the env var named in `key_ref` at startup. Non-interactive, so the best fit for scheduled tasks (X5). The env var must never be logged.
-- **`password`:** prompt at startup, derive the key with a KDF and the per-row `kdf_salt`. Keep the derived key in memory only, for the process lifetime.
-- **`keyring` / `keyfile`:** OS keychain or a file outside the repo (`chmod 600`, git-ignored).
 - **Decrypt at the last moment:** only when spawning the MCP server (env/args) or building the HTTP request (headers). Never put plaintext in `messages`, `tool_calls`, `llm_calls` or `events`, and never in the prompt sent to the model.
-- **Rotation:** decrypt with the old key, re-encrypt with a fresh nonce, bump `key_version` and set `rotated_at`.
 
 ### `agent_definitions` (A2)
 
@@ -432,7 +383,6 @@ Questions asked by the LLM through the `ask_user_question` tool.
 | `author` | TEXT | | R2: metadata filter |
 | `doc_date` | TEXT | | R2: ISO date, metadata filter |
 | `category` | TEXT | | R2: metadata filter |
-| `metadata_json` | TEXT | JSON | Any other metadata |
 | `ingested_at` | TEXT | NOT NULL, DEFAULT now | |
 
 Indexes: `(category, doc_date, author)`
@@ -451,7 +401,6 @@ Indexes: `(category, doc_date, author)`
 | `embedding` | BLOB | NOT NULL | float32[`embedding_dim`] |
 | `embedding_model` | TEXT | NOT NULL | e.g. `nomic-embed-text`. Re-embed if it changes |
 | `embedding_dim` | INTEGER | NOT NULL | |
-| `metadata_json` | TEXT | JSON | Page, heading… |
 
 Constraints: `UNIQUE (document_id, chunk_index)`. Indexes: `(document_id)`
 
