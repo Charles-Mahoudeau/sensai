@@ -4,14 +4,10 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from sensai.exceptions import ConfigError
+
 if TYPE_CHECKING:
     import pathlib
-
-
-class ConfigError(Exception):
-    """Raised when a configuration error occurs."""
-
-    ...
 
 
 @dataclass(frozen=True)
