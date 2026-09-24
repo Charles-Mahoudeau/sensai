@@ -33,6 +33,7 @@ class ScoredChunk:
     chunk: Chunk
     score: float
 
+
 @dataclass(frozen=True, slots=True)
 class Document:
     """A source document before it is split into chunks."""

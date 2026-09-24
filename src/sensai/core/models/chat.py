@@ -21,12 +21,8 @@ class Message:
     role: Role
     tool_call_id: str | None = None
     content: str = ""
-    tool_calls: tuple[
-        ToolCall, ...
-    ] = ()
-    tool_name: str | None = (
-        None
-    )
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_name: str | None = None
     reasoning_summary: str = ""
 
     def __post_init__(self) -> None:
@@ -48,6 +44,7 @@ class Message:
             raise ValueError("only assistant messages can have a reasoning_summary")
         if self.tool_name and self.role != "tool":
             raise ValueError("only tool messages can have a tool_name")
+
     @classmethod
     def system(cls, content: str) -> Message:
         """Build a system message."""
@@ -85,9 +82,7 @@ class ChatOptions:
     seed: int | None = None
     num_ctx: int | None = None
     max_tokens: int | None = None
-    response_schema: Mapping[str, Any] | None = field(
-        default=None, hash=False
-    )
+    response_schema: Mapping[str, Any] | None = field(default=None, hash=False)
     think: bool | None = None
 
     def __post_init__(self) -> None:
