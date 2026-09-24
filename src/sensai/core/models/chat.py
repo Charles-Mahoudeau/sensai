@@ -22,16 +22,21 @@ class Message:
     role: Role
     content: str = ""
     tool_calls: tuple[ToolCall, ...] = () # exemple ToolCall("calculator", {"expression": "2+2"})
+    tool_call_id: str # que pour role = tool, correspond à l'id de l'appel tool associé
     tool_name: str | None = None  # que pour role = tool, a voir si on decide de créer une liste possible
-    thinking_description: str = "" # pour ne pas perdre la ou le modèle en est dans sa réflexion entre des appels tools
+    reasoning_summary: str = "" # pour ne pas perdre la ou le modèle en est dans sa réflexion entre des appels tools
 
     def __post_init__(self) -> None:
+        if self.role not in ("system", "user", "assistant", "tool"): # pas de verif runtime avec Literal
+            raise ValueError(f"Invalid role {self.role!r}")
         if self.role == "tool" and not self.tool_name:
             raise ValueError("tool_name must be provided for role 'tool'")
         if self.tool_calls and self.role != "assistant":
             raise ValueError("only assistant messages can carry tool_calls")
         if self.thinking_description and self.role != "assistant":
             raise ValueError("only assistant messages can have a thinking_description")
+        if self.tool_name and self.role != "tool":
+            raise ValueError("only tool messages can have a tool_name")
         # if self.role == "tool" and self.tool_name not_in_list
         #     raise ValueError("tool_name must be a valid tool for role 'tool'")
         # ATTENTION, A NE PAS FAIRE ICI MAIS DANS LE CORE
@@ -74,6 +79,12 @@ class ChatOptions: # les nones signifient que la valeur par défaut du modèle s
 class Usage:
     completion_tokens: int
     prompt_tokens: int
+
+    def __post_init__(self) -> None:
+        if self.completion_tokens < 0:
+            raise ValueError("completion_tokens must be non-negative")
+        if self.prompt_tokens < 0:
+            raise ValueError("prompt_tokens must be non-negative")
 
     @property
     def total_tokens(self) -> int:

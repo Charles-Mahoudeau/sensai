@@ -37,6 +37,11 @@ class ToolResult:
     name: str
     content: str
     is_error: bool = False  # l'erreur est renvoyée au modèle, pas levée
+    call_id: str
+
+    def __post_init__(self) -> None:
+        if not _NAME_RE.match(self.name):
+            raise ValueError(f"ToolResult.name {self.name!r} must match [A-Za-z0-9_-]+")
 
     @classmethod # créer une instance de ToolResult représentant une erreur
     def error(cls, name: str, message: str) -> Self:

@@ -8,7 +8,7 @@ Metadata: TypeAlias = Mapping[str, str | int | float | bool]
 class Chunk:
     id: str
     text: str
-    doc_source: str
+    document_id: str
     index: int = 0 # position dans le document source (peut etre définir une taille max dans le chunker)
     # aussi ca peut servir a prendre les chunks autour d'un pertinent
     metadata: Metadata = field(default_factory=dict, hash=False)
