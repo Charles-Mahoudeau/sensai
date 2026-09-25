@@ -8,4 +8,4 @@ from sensai.core.models.tools import (
     ToolSpec,
 )
 
-__all__ = ["PermissionDecision", "ToolCall", "ToolResult", "ToolSpec", "Message"]
+__all__ = ["Message", "PermissionDecision", "ToolCall", "ToolResult", "ToolSpec"]
