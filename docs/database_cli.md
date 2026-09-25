@@ -26,7 +26,7 @@ db migrations status
 
 ### `nuke`: delete the database
 
-Deletes the `sensai.db` file. It asks `Are you sure you want to nuke the database? (y/N)` and aborts with exit code 1 unless you answer `y`. Pass `-y` / `--yes` to skip the prompt (scripts, CI).
+Deletes the `sensai.db` file together with its `sensai.db-wal` and `sensai.db-shm` sidecar files, so no database state remains. Close every process or connection using the database first (the app, other shells, DB browsers); otherwise SQLite may recreate the sidecars or leave stale state. It asks `Are you sure you want to nuke the database? (y/N)` and aborts with exit code 1 unless you answer `y`. Pass `-y` / `--yes` to skip the prompt (scripts, CI).
 
 ```sh
 db nuke        # interactive confirmation
