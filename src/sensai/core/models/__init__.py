@@ -7,5 +7,23 @@ from sensai.core.models.tools import (
     ToolResult,
     ToolSpec,
 )
+from sensai.core.models.events import (
+    MessageStarted,
+    TokenGenerated,
+    MessageCompleted,
+    ErrorEvent,
+    Done,
+)
 
-__all__ = ["Message", "PermissionDecision", "ToolCall", "ToolResult", "ToolSpec"]
+__all__ = [
+    "Message",
+    "PermissionDecision",
+    "ToolCall",
+    "ToolResult",
+    "ToolSpec",
+    "MessageStarted",
+    "TokenGenerated",
+    "MessageCompleted",
+    "ErrorEvent",
+    "Done",
+]
