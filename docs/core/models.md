@@ -84,6 +84,18 @@ Checking tool existence, permissions, and arguments belongs to the registry and 
 
 `WebSearchResult` represents a result returned by a web search, including its title, URL, and snippet. Full content is not stored in this model in order to keep the result lightweight; any later loading belongs to the web adapter.
 
+## Memory
+
+### `Session`
+
+`Session` represents a saved conversation. It has an identifier, the model it talks to, an optional title, and creation and update timestamps. Its messages are not stored in the model: they are loaded separately through the session store as `Message` objects, so that listing sessions stays lightweight.
+
+### `MemoryRecord`
+
+`MemoryRecord` is a long-term memory entry that the agent can create, read, update, and delete. It has an identifier, a `name`, a `type` (for example `person`, `project`, or `concept`), an optional free-text description, and creation and update timestamps. The pair `name` and `type` identifies a record; the store rejects duplicates, not the model.
+
+Timestamps are `datetime` values, expected to be timezone-aware (UTC). The models only check that the fields identifying them are not empty.
+
 ## Organization
 
 Docstrings in the Python files describe only the public API required by the code and quality tools. Design decisions and detailed explanations are kept in this document so that the model modules remain readable and free of inline comments.
