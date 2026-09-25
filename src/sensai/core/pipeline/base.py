@@ -18,7 +18,6 @@ class Continue:
     messages: tuple[Message, ...]
 
 
-
 @dataclass(frozen=True, slots=True)
 class ShortCircuit:
     """The stage cut and give the response."""
