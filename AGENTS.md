@@ -15,7 +15,7 @@ entry point). Expect to build out the package structure as features are added.
 ## Project structure
 
 The source structure convention — where code goes and why (the `core`/`adapters`/`app.py` zones,
-ports, models, import rules, naming, the PR checklist) — is defined in `docs/STRUCTURE.md`. Read
+ports, models, import rules, naming, the PR checklist) — is defined in `docs/structure.md`. Read
 it before adding a module, and follow it when deciding where new code belongs.
 
 ## Commands
