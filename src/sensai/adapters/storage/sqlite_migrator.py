@@ -23,9 +23,13 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 
 def nuke_database() -> None:
-    """Deletes all the content from the database."""
-    if DB_FILE.exists():
-        DB_FILE.unlink()
+    """Deletes the database file along with its WAL and SHM sidecar files.
+
+    All SQLite connections to the database must be closed before calling this,
+    otherwise the sidecars may be recreated or stale state may remain.
+    """
+    for suffix in ("", "-wal", "-shm"):
+        DB_FILE.with_name(DB_FILE.name + suffix).unlink(missing_ok=True)
 
 
 def create_migration(name: str) -> Path:
