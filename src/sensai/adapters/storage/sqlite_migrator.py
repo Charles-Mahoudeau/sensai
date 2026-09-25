@@ -40,7 +40,7 @@ def create_migration(name: str) -> Path:
     _ensure_dir_exists(MIGRATIONS_DIR)
     migration_id = _get_next_migration_id()
     path = Path(f"{MIGRATIONS_DIR}/{migration_id}_{name}.sql")
-    with path.open("w") as f:
+    with path.open("x") as f:
         f.writelines(
             [
                 "--\n",
@@ -57,11 +57,7 @@ def create_migration(name: str) -> Path:
 def _get_latest_migration_id() -> int:
     if not MIGRATIONS_DIR.exists():
         return -1
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        return -1
-    latest_migration_file = migration_files[-1]
-    return int(latest_migration_file.stem.split("_")[0])
+    return max((mid for mid, _ in _get_filesystem_migrations()), default=-1)
 
 
 def _get_next_migration_id() -> int:
@@ -108,8 +104,11 @@ def _apply_migration_file(db_connection: sqlite3.Connection, path: Path) -> None
 
 
 def _get_filesystem_migrations() -> Iterator[tuple[int, Path]]:
-    for migration_file in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        yield _get_migration_id_from_filename(migration_file.stem), migration_file
+    migrations = [
+        (_get_migration_id_from_filename(migration_file.stem), migration_file)
+        for migration_file in MIGRATIONS_DIR.glob("*.sql")
+    ]
+    yield from sorted(migrations, key=lambda migration: migration[0])
 
 
 def _get_migration_id_from_filename(filename: str) -> int:
