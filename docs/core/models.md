@@ -62,6 +62,10 @@ An `assistant` message may contain multiple `ToolCall` objects and a reasoning s
 
 Checking tool existence, permissions, and arguments belongs to the registry and the core tool components, not to the models.
 
+### `PermissionDecision`
+
+`PermissionDecision` represents the result of a permission check performed before a tool call is executed. `allowed` indicates whether execution is authorized, while the optional `reason` can explain why a request was denied or provide additional context. Permission policies such as `AllowAll` and `DenyAll` produce this model for the tool registry.
+
 ## Retrieval
 
 ### `Document`
@@ -79,6 +83,18 @@ Checking tool existence, permissions, and arguments belongs to the registry and 
 ### `WebSearchResult`
 
 `WebSearchResult` represents a result returned by a web search, including its title, URL, and snippet. Full content is not stored in this model in order to keep the result lightweight; any later loading belongs to the web adapter.
+
+## Memory
+
+### `Session`
+
+`Session` represents a saved conversation. It has an identifier, the model it talks to, an optional title, and creation and update timestamps. Its messages are not stored in the model: they are loaded separately through the session store as `Message` objects, so that listing sessions stays lightweight.
+
+### `MemoryRecord`
+
+`MemoryRecord` is a long-term memory entry that the agent can create, read, update, and delete. It has an identifier, a `name`, a `type` (for example `person`, `project`, or `concept`), an optional free-text description, and creation and update timestamps. The pair `name` and `type` identifies a record; the store rejects duplicates, not the model.
+
+Timestamps are `datetime` values, expected to be timezone-aware (UTC). The models only check that the fields identifying them are not empty.
 
 ## Organization
 
