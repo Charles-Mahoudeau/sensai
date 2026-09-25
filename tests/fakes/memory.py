@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from sensai.core.ports import MemoryStore, SessionStore
 
 
-def _ticking_clock() -> Callable[[], datetime]:
+def ticking_clock() -> Callable[[], datetime]:
     """Return a clock that advances one second per call, so order is testable."""
     start = datetime(2026, 1, 1, tzinfo=UTC)
     counter = itertools.count()
@@ -33,7 +33,7 @@ class InMemorySessionStore:
 
     def __init__(self, clock: Callable[[], datetime] | None = None) -> None:
         """Start empty; `clock` supplies timestamps (deterministic by default)."""
-        self._clock = clock or _ticking_clock()
+        self._clock = clock or ticking_clock()
         self._ids = itertools.count(1)
         self._sessions: dict[int, Session] = {}
         self._messages: dict[int, list[Message]] = {}
@@ -96,7 +96,7 @@ class InMemoryMemoryStore:
 
     def __init__(self, clock: Callable[[], datetime] | None = None) -> None:
         """Start empty; `clock` supplies timestamps (deterministic by default)."""
-        self._clock = clock or _ticking_clock()
+        self._clock = clock or ticking_clock()
         self._ids = itertools.count(1)
         self._records: dict[int, MemoryRecord] = {}
 

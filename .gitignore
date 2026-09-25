@@ -5,3 +5,8 @@
 # Python working files
 .venv/
 __pycache__/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
