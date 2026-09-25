@@ -157,6 +157,16 @@ def check_migrations_state(db_connection: sqlite3.Connection) -> bool:
             raise ValueError(f"missing migration in table, id: {row_id}")
         last_table_id = migration_id
 
+    # Both sequences are gap-free from 0, so a longer table means recorded
+    # migrations with no corresponding file.
+    # noinspection unsupported-operator
+    if last_table_id is not None and (
+        last_file_id is None or last_table_id > last_file_id
+    ):
+        raise ValueError(
+            f"migration table records id {last_table_id} with no migration file"
+        )
+
     return last_file_id == last_table_id
 
 
