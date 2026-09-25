@@ -59,11 +59,11 @@ class OllamaChat:
             async with self._client.stream(
                 "POST", f"{self._url}/api/chat", json=payload
             ) as response:
-                if response.status_code >= 400:
+                if response.is_error:
                     message = _wire.error_message(
                         response.status_code, await response.aread()
                     )
-                    if response.status_code == 404:
+                    if response.status_code == httpx.codes.NOT_FOUND:
                         raise ModelNotFoundError(message)
                     raise LLMResponseError(message)
 

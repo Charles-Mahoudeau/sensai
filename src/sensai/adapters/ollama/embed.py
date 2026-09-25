@@ -55,9 +55,9 @@ class OllamaEmbedder:
                 f"cannot reach Ollama at {self._url}: {e}"
             ) from e
 
-        if response.status_code >= 400:
+        if response.is_error:
             message = _wire.error_message(response.status_code, response.content)
-            if response.status_code == 404:
+            if response.status_code == httpx.codes.NOT_FOUND:
                 raise EmbeddingModelNotFoundError(message)
             raise RetrievalError(message)
 
