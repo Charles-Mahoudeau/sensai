@@ -45,7 +45,7 @@ class Engine:
         """Initialize the engine with its processing dependencies."""
         self._runner = runner
         self._pipeline = pipeline
-        self._bus = bus # delegue des abonnements et publication a un bus
+        self._bus = bus  # delegue des abonnements et publication a un bus
         self._history: list[Message] = []
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
