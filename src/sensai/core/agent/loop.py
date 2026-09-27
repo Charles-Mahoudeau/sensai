@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class AgentError(SensaiError):
     """Raised when the agent cannot obtain a response from its LLM."""
 
+
 # Implementation of a Runner that streams one LLM response
 class Agent:
     """Stream one LLM response for the prepared conversation history."""
@@ -29,6 +30,6 @@ class Agent:
         """Relay LLM events and translate LLM failures to a core error."""
         try:
             async for event in self._llm.chat(messages):
-                yield event # Relay each event but keep function alive
+                yield event  # Relay each event but keep function alive
         except LLMError as error:
             raise AgentError(str(error)) from error
