@@ -18,15 +18,13 @@ class EventBus:
         """Initialize the bus without subscribers."""
         self._subscribers: set[asyncio.Queue[Event]] = set()
 
-    # une entité s'inscris pour recevoir les événements
     def subscribe(self) -> AsyncGenerator[Event]:
-        """Return an independent event stream for one subscriber."""
+        """For an entity for subscribe and receive events."""
         queue: asyncio.Queue[Event] = asyncio.Queue()
         self._subscribers.add(queue)
         return self._drain(queue)
 
-    # APPELE UNIQUEMENT PAR RUN de engine
-    # publish un event dans la queue des suscribers
+    # CALLED ONLY BY ENGINE'S RUN METHOD
     async def publish(self, event: Event) -> None:
         """Send an event to every subscriber active at publication time."""
         for queue in tuple(self._subscribers):
