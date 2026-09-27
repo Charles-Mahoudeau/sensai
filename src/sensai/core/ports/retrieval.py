@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from sensai.core.errors import SensaiError
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -12,7 +14,7 @@ if TYPE_CHECKING:
 type Vector = Sequence[float]
 
 
-class RetrievalError(Exception):
+class RetrievalError(SensaiError):
     """Base class for every error raised by an embedder or a vector store."""
 
 

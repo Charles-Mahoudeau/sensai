@@ -1,11 +1,9 @@
 """Project's root exceptions."""
 
-
-class SensaiError(Exception):
-    """Base class for all Sensai-related errors."""
+from sensai.core.errors import SensaiError
 
 
-class ConfigError(Exception):
+class ConfigError(SensaiError):
     """Raised when a configuration error occurs."""
 
     ...
