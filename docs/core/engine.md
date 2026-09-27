@@ -126,13 +126,7 @@ not miss the first `MessageStarted` event.
 All consumers receive the same `Event` union:
 
 ```python
-Event = (
-    MessageStarted
-    | TokenGenerated
-    | MessageCompleted
-    | ErrorEvent
-    | Done
-)
+Event = MessageStarted | TokenGenerated | MessageCompleted | ErrorEvent | Done
 ```
 
 Every event includes `submission_id`. A front-end uses it to associate events
