@@ -10,8 +10,7 @@ from sensai.core.models.memory import MemoryRecord
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-    from datetime import datetime
+    from collections.abc import Sequence
 
 _COLUMNS = "id, name, type, created_at, updated_at, description"
 
