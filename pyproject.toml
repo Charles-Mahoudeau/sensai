@@ -10,7 +10,9 @@ authors = [
     { name = "Tristan Fragnaud", email = "tristan.fragnaud@epitech.eu" },
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+]
 
 [project.scripts]
 sensai = "sensai.cli:main"

@@ -12,7 +12,7 @@ def main() -> None:
     Returns:
         None
     """
-    parser = argparse.ArgumentParser(prog="Sensai", description="An advanced AI agent.")
+    parser = argparse.ArgumentParser(prog="sensai", description="An advanced AI agent.")
 
     parser.add_argument(
         "--model", help="the model identifier to use", type=str, required=True

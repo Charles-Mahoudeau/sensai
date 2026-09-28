@@ -5,3 +5,8 @@
 # Python working files
 .venv/
 __pycache__/
+
+# Project data
+*.db
+*.db-wal
+*.db-shm
