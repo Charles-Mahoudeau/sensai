@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from sensai.adapters.storage.repositories._sqlite import SqliteRepository, from_db_time
+from sensai.adapters.storage.repositories._sqlite import SqliteDatabase, from_db_time
 from sensai.core.models.memory import MemoryRecord
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
@@ -37,20 +37,20 @@ def _is_duplicate(error: sqlite3.IntegrityError) -> bool:
     return error.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE"
 
 
-class SqliteMemoryRepository(SqliteRepository):
+class SqliteMemoryRepository:
     """Stores long-term memory records in the `memories` table."""
 
     def __init__(
-        self, conn: sqlite3.Connection, clock: Callable[[], datetime] | None = None
+        self,
+        db: SqliteDatabase,
     ) -> None:
         """Wrap a migrated connection and register the text-search function.
 
         Args:
-            conn: The connection, already migrated. Give each store its own.
-            clock: Supplies timestamps; the current UTC time by default.
+            db: The database instance.
         """
-        super().__init__(conn, clock)
-        conn.create_function("sensai_lower", 1, _lower, deterministic=True)
+        self._db = db
+        db.conn.create_function("sensai_lower", 1, _lower, deterministic=True)
 
     async def create(
         self, *, name: str, type: str, description: str | None = None
@@ -58,9 +58,9 @@ class SqliteMemoryRepository(SqliteRepository):
         """Insert a record, refusing a duplicate name and type."""
 
         def create() -> MemoryRecord:
-            now = self._now()
+            now = self._db.now()
             try:
-                with self._write() as conn:
+                with self._db.write() as conn:
                     row = conn.execute(
                         "INSERT INTO memories"
                         " (name, type, description, created_at, updated_at)"
@@ -73,20 +73,20 @@ class SqliteMemoryRepository(SqliteRepository):
                     raise DuplicateMemoryError(f"{type}/{name}") from error
                 raise
 
-        return await self._run(create)
+        return await self._db.run(create)
 
     async def get(self, memory_id: int) -> MemoryRecord:
         """Return a record or raise `MemoryNotFoundError`."""
 
         def get() -> MemoryRecord:
-            row = self._conn.execute(
+            row = self._db.conn.execute(
                 f"SELECT {_COLUMNS} FROM memories WHERE id = ?", (memory_id,)
             ).fetchone()
             if row is None:
                 raise MemoryNotFoundError(memory_id)
             return _to_record(row)
 
-        return await self._run(get)
+        return await self._db.run(get)
 
     async def find(
         self, *, type: str | None = None, query: str | None = None
@@ -94,7 +94,7 @@ class SqliteMemoryRepository(SqliteRepository):
         """Return matching records, most recently updated first."""
 
         def find() -> list[MemoryRecord]:
-            rows = self._conn.execute(
+            rows = self._db.conn.execute(
                 f"SELECT {_COLUMNS} FROM memories"
                 " WHERE (:type IS NULL OR type = :type)"
                 " AND (:query IS NULL"
@@ -106,7 +106,7 @@ class SqliteMemoryRepository(SqliteRepository):
             ).fetchall()
             return [_to_record(row) for row in rows]
 
-        return await self._run(find)
+        return await self._db.run(find)
 
     async def update(
         self,
@@ -120,13 +120,13 @@ class SqliteMemoryRepository(SqliteRepository):
 
         def update() -> MemoryRecord:
             try:
-                with self._write() as conn:
+                with self._db.write() as conn:
                     row = conn.execute(
                         "UPDATE memories SET name = coalesce(?, name),"
                         " type = coalesce(?, type),"
                         " description = coalesce(?, description), updated_at = ?"
                         f" WHERE id = ? RETURNING {_COLUMNS}",
-                        (name, type, description, self._now(), memory_id),
+                        (name, type, description, self._db.now(), memory_id),
                     ).fetchone()
                     if row is None:
                         raise MemoryNotFoundError(memory_id)
@@ -138,17 +138,17 @@ class SqliteMemoryRepository(SqliteRepository):
                     ) from error
                 raise
 
-        return await self._run(update)
+        return await self._db.run(update)
 
     async def delete(self, memory_id: int) -> None:
         """Delete a record or raise `MemoryNotFoundError`."""
 
         def delete() -> None:
-            with self._write() as conn:
+            with self._db.write() as conn:
                 deleted = conn.execute(
                     "DELETE FROM memories WHERE id = ?", (memory_id,)
                 ).rowcount
                 if not deleted:
                     raise MemoryNotFoundError(memory_id)
 
-        await self._run(delete)
+        await self._db.run(delete)

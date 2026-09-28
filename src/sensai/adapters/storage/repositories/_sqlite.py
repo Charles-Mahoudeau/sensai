@@ -29,7 +29,7 @@ def from_db_time(text: str) -> datetime:
     return datetime.fromisoformat(text)
 
 
-class SqliteRepository:
+class SqliteDatabase:
     """Runs blocking SQLite calls in a worker thread, one at a time."""
 
     def __init__(
@@ -41,14 +41,14 @@ class SqliteRepository:
             conn: The connection, already migrated. Give each store its own.
             clock: Supplies timestamps; the current UTC time by default.
         """
-        self._conn = conn
+        self.conn = conn
         self._clock = clock or _utc_now
         self._lock = threading.Lock()
 
-    def _now(self) -> str:
+    def now(self) -> str:
         return to_db_time(self._clock())
 
-    async def _run[T](self, operation: Callable[[], T]) -> T:
+    async def run[T](self, operation: Callable[[], T]) -> T:
         """Run `operation` off the event loop, turning SQLite errors into ours."""
 
         def locked() -> T:
@@ -61,12 +61,12 @@ class SqliteRepository:
         return await asyncio.to_thread(locked)
 
     @contextmanager
-    def _write(self) -> Iterator[sqlite3.Connection]:
+    def write(self) -> Iterator[sqlite3.Connection]:
         """Hold a write transaction, rolled back if the block raises."""
-        self._conn.execute("BEGIN IMMEDIATE")
+        self.conn.execute("BEGIN IMMEDIATE")
         try:
-            yield self._conn
+            yield self.conn
         except BaseException:
-            self._conn.execute("ROLLBACK")
+            self.conn.execute("ROLLBACK")
             raise
-        self._conn.execute("COMMIT")
+        self.conn.execute("COMMIT")
