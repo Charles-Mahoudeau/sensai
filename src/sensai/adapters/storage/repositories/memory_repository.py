@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from sensai.adapters.storage.repositories._sqlite import SqliteDatabase, from_db_time
+from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
 from sensai.core.models.memory import MemoryRecord
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 

@@ -46,6 +46,7 @@ class SqliteDatabase:
         self._lock = threading.Lock()
 
     def now(self) -> str:
+        """Return the current timestamp in the format used by the schema."""
         return to_db_time(self._clock())
 
     async def run[T](self, operation: Callable[[], T]) -> T:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from sensai.adapters.storage.repositories._sqlite import SqliteDatabase, from_db_time
+from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
 from sensai.core.models.llm import Message
 from sensai.core.models.memory import Session
 from sensai.core.models.tools import ToolCall
