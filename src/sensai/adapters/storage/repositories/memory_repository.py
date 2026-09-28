@@ -12,8 +12,6 @@ from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-_COLUMNS = "id, name, type, created_at, updated_at, description"
-
 
 def _to_record(row: Sequence[Any]) -> MemoryRecord:
     id_, name, type_, created_at, updated_at, description = row
@@ -49,6 +47,12 @@ class SqliteMemoryRepository:
             db: The database instance.
         """
         self._db = db
+        cur = db.conn.cursor()
+        cur.execute("PRAGMA table_info(ma_table)")
+        column = [row[1] for row in cur.fetchall()]
+
+        self._columns = ", ".join(column)
+
         db.conn.create_function("sensai_lower", 1, _lower, deterministic=True)
 
     async def create(
@@ -63,7 +67,7 @@ class SqliteMemoryRepository:
                     row = conn.execute(
                         "INSERT INTO memories"
                         " (name, type, description, created_at, updated_at)"
-                        f" VALUES (?, ?, ?, ?, ?) RETURNING {_COLUMNS}",
+                        f" VALUES (?, ?, ?, ?, ?) RETURNING {self._columns}",
                         (name, type, description, now, now),
                     ).fetchone()
                     return _to_record(row)
@@ -79,7 +83,7 @@ class SqliteMemoryRepository:
 
         def get() -> MemoryRecord:
             row = self._db.conn.execute(
-                f"SELECT {_COLUMNS} FROM memories WHERE id = ?", (memory_id,)
+                f"SELECT {self._columns} FROM memories WHERE id = ?", (memory_id,)
             ).fetchone()
             if row is None:
                 raise MemoryNotFoundError(memory_id)
@@ -94,7 +98,7 @@ class SqliteMemoryRepository:
 
         def find() -> list[MemoryRecord]:
             rows = self._db.conn.execute(
-                f"SELECT {_COLUMNS} FROM memories"
+                f"SELECT {self._columns} FROM memories"
                 " WHERE (:type IS NULL OR type = :type)"
                 " AND (:query IS NULL"
                 "      OR instr(sensai_lower(name), sensai_lower(:query)) > 0"
@@ -124,7 +128,7 @@ class SqliteMemoryRepository:
                         "UPDATE memories SET name = coalesce(?, name),"
                         " type = coalesce(?, type),"
                         " description = coalesce(?, description), updated_at = ?"
-                        f" WHERE id = ? RETURNING {_COLUMNS}",
+                        f" WHERE id = ? RETURNING {self._columns}",
                         (name, type, description, self._db.now(), memory_id),
                     ).fetchone()
                     if row is None:
