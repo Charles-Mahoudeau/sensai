@@ -1,12 +1,35 @@
 """Main application code."""
 
+from __future__ import annotations
+
 import sys
 from typing import TYPE_CHECKING
+
+from sensai.adapters.ollama import OllamaChat
+from sensai.config import Config, load_config
+from sensai.core.agent import Agent
+from sensai.core.engine import Engine
+from sensai.core.events import EventBus
+from sensai.core.pipeline.base import Pipeline
 
 if TYPE_CHECKING:
     import pathlib
 
-from sensai.config import Config, load_config
+    import httpx
+
+    from sensai.core.ports import LLM
+
+
+# So this function will be call at start and the engine will be built
+# and returned for the TUI or CLI to use.
+def build_engine(config: Config, client: httpx.AsyncClient) -> Engine:
+    """Build an Engine using the configured Ollama adapter."""
+    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    return Engine(
+        runner=Agent(llm),
+        pipeline=Pipeline(),
+        bus=EventBus(),
+    )
 
 
 def main(model: str, config_path: pathlib.Path) -> None:
