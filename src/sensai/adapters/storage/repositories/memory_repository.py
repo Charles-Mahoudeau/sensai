@@ -5,15 +5,13 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from sensai.adapters.memory._sqlite import SqliteStore, from_db_time
+from sensai.adapters.storage.repositories._sqlite import SqliteRepository, from_db_time
 from sensai.core.models.memory import MemoryRecord
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import datetime
-
-    from sensai.core.ports import MemoryStore
 
 _COLUMNS = "id, name, type, created_at, updated_at, description"
 
@@ -39,7 +37,7 @@ def _is_duplicate(error: sqlite3.IntegrityError) -> bool:
     return error.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE"
 
 
-class SqliteMemoryStore(SqliteStore):
+class SqliteMemoryRepository(SqliteRepository):
     """Stores long-term memory records in the `memories` table."""
 
     def __init__(
@@ -154,9 +152,3 @@ class SqliteMemoryStore(SqliteStore):
                     raise MemoryNotFoundError(memory_id)
 
         await self._run(delete)
-
-
-if TYPE_CHECKING:
-
-    def _conforms(store: SqliteMemoryStore) -> MemoryStore:
-        return store

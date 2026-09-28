@@ -1,4 +1,4 @@
-"""Plumbing shared by the SQLite stores: worker thread, transactions, timestamps."""
+"""Plumbing shared by the SQLite Repository: worker thread, transactions, timestamps."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def from_db_time(text: str) -> datetime:
     return datetime.fromisoformat(text)
 
 
-class SqliteStore:
+class SqliteRepository:
     """Runs blocking SQLite calls in a worker thread, one at a time."""
 
     def __init__(

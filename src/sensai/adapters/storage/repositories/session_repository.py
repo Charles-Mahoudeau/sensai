@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from sensai.adapters.memory._sqlite import SqliteStore, from_db_time
+from sensai.adapters.storage.repositories._sqlite import SqliteRepository, from_db_time
 from sensai.core.models.llm import Message
 from sensai.core.models.memory import Session
 from sensai.core.models.tools import ToolCall
@@ -13,8 +13,6 @@ from sensai.core.ports import SessionNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-
-    from sensai.core.ports import SessionStore
 
 _SESSION_COLUMNS = "id, model, created_at, updated_at, title"
 _MESSAGE_COLUMNS = "role, content, thinking, tool_calls_json, tool_name"
@@ -67,7 +65,7 @@ def _to_message(row: Sequence[Any]) -> Message:
     )
 
 
-class SqliteSessionStore(SqliteStore):
+class SqliteSessionRepository(SqliteRepository):
     """Stores sessions, their messages and the user profile in SQLite."""
 
     async def create_session(self, *, model: str, title: str | None = None) -> Session:
@@ -190,9 +188,3 @@ class SqliteSessionStore(SqliteStore):
                 conn.execute("DELETE FROM user_profile WHERE key = ?", (key,))
 
         await self._run(delete)
-
-
-if TYPE_CHECKING:
-
-    def _conforms(store: SqliteSessionStore) -> SessionStore:
-        return store
