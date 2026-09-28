@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from sensai.core.ports import LLM
 
+
 # So this function will be call at start and the engine will be built
 # and returned for the TUI or CLI to use.
 def build_engine(config: Config, client: httpx.AsyncClient) -> Engine:
