@@ -30,6 +30,26 @@ uv run ty check        # type check
 uv run pytest          # run tests
 ```
 
+### SQL formatting
+
+Format all SQL files with the project-specific continuation indentation:
+
+```bash
+uv run python scripts/format_sql.py
+```
+
+Check the formatting without modifying files:
+
+```bash
+uv run python scripts/format_sql.py --check
+```
+
+Run SQLFluff's remaining SQL checks:
+
+```bash
+uv run sqlfluff lint .
+```
+
 ### Pre-commit hooks
 
 This repo uses [pre-commit](https://pre-commit.com/) to run lint, format, and type checks
