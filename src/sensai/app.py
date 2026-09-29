@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from typing import TYPE_CHECKING
 
+import httpx
+
 from sensai.adapters.ollama import OllamaChat
+from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
 from sensai.core.agent import Agent
 from sensai.core.engine import Engine
@@ -14,8 +18,6 @@ from sensai.core.pipeline.base import Pipeline
 
 if TYPE_CHECKING:
     import pathlib
-
-    import httpx
 
     from sensai.core.ports import LLM
 
@@ -44,7 +46,13 @@ def main(model: str, config_path: pathlib.Path) -> None:
     """
     config = _parse_config(model, config_path)
 
-    print("Sensai config:", config)
+    asyncio.run(_serve(config))
+
+
+async def _serve(config: Config) -> None:
+    async with httpx.AsyncClient(timeout=None) as client:
+        engine = build_engine(config, client)
+        await SensaiApp(engine, model=config.model).run_async()
 
 
 def _parse_config(model: str, config_path: pathlib.Path) -> Config:

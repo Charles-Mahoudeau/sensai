@@ -1,0 +1,101 @@
+/*
+ * Sensai chat app stylesheet.
+ */
+
+Screen {
+    layout: vertical;
+    background: $background;
+}
+
+#transcript {
+    height: 1fr;
+    padding: 0 3 1 3;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $background;
+    scrollbar-background-hover: $background;
+    scrollbar-background-active: $background;
+    scrollbar-color: $panel-lighten-1;
+    scrollbar-color-hover: $primary-muted;
+    scrollbar-color-active: $primary;
+}
+
+UserMessage {
+    margin: 1 0 0 0;
+    padding: 0 1;
+    border-left: outer $accent;
+    background: $boost;
+    color: $foreground;
+    text-style: bold;
+}
+
+AssistantMessage {
+    margin: 1 0 0 0;
+    padding: 0 1 0 2;
+    background: transparent;
+
+    MarkdownParagraph {
+        margin: 0 0 1 0;
+    }
+
+    MarkdownH1, MarkdownH2, MarkdownH3 {
+        margin: 0 0 1 0;
+        color: $primary;
+        background: transparent;
+    }
+
+    MarkdownFence {
+        margin: 0 0 1 0;
+        border-left: outer $primary-muted;
+        background: $surface;
+    }
+
+    MarkdownBlockQuote {
+        border-left: outer $accent-muted;
+        background: transparent;
+        color: $text-muted;
+    }
+}
+
+ErrorMessage {
+    margin: 1 0 0 0;
+    padding: 0 1;
+    border-left: outer $error;
+    background: $error-muted;
+    color: $text-error;
+}
+
+HintMessage {
+    margin: 1 0 0 0;
+    padding: 0 1;
+    color: $text-disabled;
+    text-style: italic;
+}
+
+#prompt {
+    margin: 0 2;
+    padding: 0 1;
+    border: round $panel-lighten-2;
+    background: $background;
+
+    &:focus {
+        border: round $accent;
+        background-tint: $foreground 3%;
+    }
+
+    &:disabled {
+        border: round $panel;
+        opacity: 70%;
+    }
+
+    & > .input--placeholder {
+        color: $text-disabled;
+        text-style: italic;
+    }
+}
+
+#status {
+    height: 1;
+    padding: 0 3;
+    color: $text-muted;
+    background: $background;
+}
