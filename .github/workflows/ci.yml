@@ -49,6 +49,8 @@ jobs:
 
       - run: uv run ruff format --check .
 
+      - run: uv run python scripts/format_sql.py --check
+
   typecheck:
     name: Type check (ty)
     runs-on: ubuntu-latest
