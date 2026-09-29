@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from sensai.core.errors import SensaiError
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
@@ -11,7 +13,7 @@ if TYPE_CHECKING:
     from sensai.core.models.tools import ToolSpec
 
 
-class LLMError(Exception):
+class LLMError(SensaiError):
     """Base class for every error raised by an LLM adapter."""
 
 
