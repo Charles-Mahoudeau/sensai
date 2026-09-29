@@ -12,6 +12,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1",
+    "textual>=8.2.8",
 ]
 
 [project.scripts]
@@ -79,6 +80,7 @@ forbidden_modules = [
     "fastapi",
     "uvicorn",
     "mcp",
+    "textual",
 ]
 
 [[tool.importlinter.contracts]]
