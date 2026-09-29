@@ -1,0 +1,25 @@
+/* Layout of the Sensai chat app. Widget defaults live in widgets.py (DEFAULT_CSS). */
+
+Screen {
+    layout: vertical;
+}
+
+#transcript {
+    height: 1fr;
+    padding: 0 2;
+    scrollbar-size-vertical: 1;
+}
+
+#prompt {
+    border: round $primary;
+    margin: 0 1;
+}
+
+#prompt:disabled {
+    border: round $panel-lighten-2;
+}
+
+#status {
+    color: $text-muted;
+    padding: 0 2;
+}
