@@ -1,5 +1,6 @@
 """Web search tool."""
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from ddgs import DDGS
@@ -36,5 +37,9 @@ async def _web_search(args: Mapping[str, Any]) -> str:
     query = args.get("query")
     if not query:
         return "Invalid query."
-    with DDGS() as ddgs:
-        return str(ddgs.text(str(query)))
+
+    def _search() -> str:
+        with DDGS() as ddgs:
+            return str(ddgs.text(str(query)))
+
+    return await asyncio.to_thread(_search)
