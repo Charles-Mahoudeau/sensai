@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sensai.core.errors import SensaiError
+    from sensai.core.models import ToolCall, ToolResult
     from sensai.core.models.llm import Message
 
 
@@ -42,10 +43,35 @@ class ErrorEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolRunStarted:
+    """Event emitted when a tool run is started."""
+
+    submission_id: str
+    call: ToolCall
+
+
+@dataclass(frozen=True, slots=True)
+class ToolRunFinished:
+    """Event emitted when a tool run is finished."""
+
+    submission_id: str
+    call: ToolCall
+    result: ToolResult
+
+
+@dataclass(frozen=True, slots=True)
 class Done:
     """Event indicating that message processing is done."""
 
     submission_id: str
 
 
-type Event = MessageStarted | TokenGenerated | MessageCompleted | ErrorEvent | Done
+type Event = (
+    MessageStarted
+    | TokenGenerated
+    | MessageCompleted
+    | ErrorEvent
+    | ToolRunStarted
+    | ToolRunFinished
+    | Done
+)

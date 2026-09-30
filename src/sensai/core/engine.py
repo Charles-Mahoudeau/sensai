@@ -7,11 +7,8 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Protocol
 
-from sensai.core.agent.events import (
-    ToolRunFinished,
-    ToolRunStarted,
-    TurnCompleted,
-)
+from sensai.core import agent
+from sensai.core.agent.events import TurnCompleted
 from sensai.core.errors import EngineError, SensaiError, SubmissionInProgressError
 from sensai.core.events import (
     Done,
@@ -22,6 +19,7 @@ from sensai.core.events import (
     MessageStarted,
     TokenGenerated,
 )
+from sensai.core.events.types import ToolRunFinished, ToolRunStarted
 from sensai.core.models import Message, TextDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
@@ -104,11 +102,11 @@ class Engine:
             match event:
                 case TextDelta(text):
                     await self._bus.publish(TokenGenerated(submission_id, text))
-                case ToolRunStarted(call):
-                    self._logger.info(f"Tool started: {call.name}")
-                case ToolRunFinished(call, result):
-                    self._logger.info(
-                        f"Tool finished: {call.name}, with result: {result.content}"
+                case agent.events.ToolRunStarted(call):
+                    await self._bus.publish(ToolRunStarted(submission_id, call))
+                case agent.events.ToolRunFinished(call, result):
+                    await self._bus.publish(
+                        ToolRunFinished(submission_id, call, result)
                     )
                 case TurnCompleted(messages=produced):
                     return produced
