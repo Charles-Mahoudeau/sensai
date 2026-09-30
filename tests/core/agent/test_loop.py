@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from sensai.core.agent import Agent, AgentError
+from sensai.core.agent.events import TurnCompleted
 from sensai.core.models import ChatDone, Message, TextDelta
 from sensai.core.ports import LLMUnavailableError, ModelNotFoundError
 from tests.fakes import FakeLLM
@@ -15,13 +16,13 @@ from tests.fakes import FakeLLM
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from sensai.core.models import ChatEvent
+    from sensai.core.agent.events import AgentEvent
 
 
 HISTORY = (Message.user("Hello"),)
 
 
-async def _collect(events: AsyncIterator[ChatEvent]) -> list[ChatEvent]:
+async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
     """Collect every event from an asynchronous stream."""
     return [event async for event in events]
 
@@ -33,7 +34,11 @@ def test_agent_relays_events_and_history() -> None:
 
     events = asyncio.run(_collect(agent.run(HISTORY)))
 
-    assert events == [TextDelta("Hel"), TextDelta("lo"), ChatDone()]
+    assert events == [
+        TextDelta("Hel"),
+        TextDelta("lo"),
+        TurnCompleted([Message.assistant("Hello")]),
+    ]
     assert llm.messages == [list(HISTORY)]
 
 

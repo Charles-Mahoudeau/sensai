@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from sensai.core.models import ToolCall, ToolResult, ToolSpec
-from sensai.core.tools.builtin.permissions import AllowAll, PermissionPolicy
+from sensai.core.tools.permissions import AllowAll, PermissionPolicy
 
 type ToolHandler = Callable[[Mapping[str, Any]], Awaitable[str]]
 

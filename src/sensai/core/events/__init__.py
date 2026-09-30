@@ -8,6 +8,8 @@ from sensai.core.events.types import (
     MessageCompleted,
     MessageStarted,
     TokenGenerated,
+    ToolRunFinished,
+    ToolRunStarted,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "MessageCompleted",
     "MessageStarted",
     "TokenGenerated",
+    "ToolRunFinished",
+    "ToolRunStarted",
 ]
