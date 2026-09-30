@@ -13,6 +13,7 @@ from sensai.adapters.tui.widgets import (
     AssistantMessage,
     ErrorMessage,
     HintMessage,
+    ToolCallLine,
     UserMessage,
 )
 from sensai.core.events import (
@@ -21,6 +22,8 @@ from sensai.core.events import (
     MessageCompleted,
     MessageStarted,
     TokenGenerated,
+    ToolRunFinished,
+    ToolRunStarted,
 )
 
 if TYPE_CHECKING:
@@ -31,6 +34,7 @@ if TYPE_CHECKING:
 
     from sensai.core.engine import Engine
     from sensai.core.events import Event
+    from sensai.core.models import ToolCall
 
 EXIT_COMMANDS = frozenset({"/exit", "/quit"})
 EMPTY_INPUT_HINT = "Type a message and press Enter. /exit to quit."
@@ -59,6 +63,8 @@ class SensaiApp(App[None]):
         self._events: AsyncGenerator[Event] | None = None
         self._submission: str | None = None
         self._reply: AssistantMessage | None = None
+        self._streamed = False
+        self._running_tools: list[tuple[ToolCall, ToolCallLine]] = []
         self._interrupted = False
 
     def compose(self) -> ComposeResult:
@@ -88,6 +94,7 @@ class SensaiApp(App[None]):
         await self._write(UserMessage(text))
         self._submission = self._engine.submit(text)
         self._interrupted = False
+        self._streamed = False
         event.input.disabled = True
         self._set_status("generating…")
 
@@ -108,13 +115,24 @@ class SensaiApp(App[None]):
     async def _render(self, event: Event) -> None:
         match event:
             case MessageStarted():
-                self._reply = AssistantMessage()
-                await self._write(self._reply)
+                pass  # the answer is mounted lazily, below any tool call
             case TokenGenerated(text=text):
-                if self._reply is not None:
-                    await self._reply.add_fragment(text)
+                self._streamed = True
+                if self._reply is None:
+                    self._reply = AssistantMessage()
+                    await self._write(self._reply)
+                await self._reply.add_fragment(text)
+            case ToolRunStarted(call=call):
+                await self._finish_reply()
+                line = ToolCallLine(call.name)
+                self._running_tools.append((call, line))
+                await self._write(line)
+            case ToolRunFinished(call=call, result=result):
+                self._finish_tool(call, result.content, is_error=result.is_error)
             case MessageCompleted(message=message):
-                if self._reply is not None and not self._reply.text:
+                if not self._streamed and message.content:
+                    self._reply = AssistantMessage()
+                    await self._write(self._reply)
                     await self._reply.add_fragment(message.content)
                 await self._finish_reply()
             case ErrorEvent(error=error):
@@ -122,6 +140,9 @@ class SensaiApp(App[None]):
                 await self._write(ErrorMessage(str(error) or type(error).__name__))
             case Done():
                 await self._finish_reply()
+                for _, line in self._running_tools:
+                    line.interrupt()
+                self._running_tools.clear()
                 if self._interrupted:
                     await self._write(HintMessage("(interrupted)"))
                 self._submission = None
@@ -129,6 +150,13 @@ class SensaiApp(App[None]):
                 prompt.disabled = False
                 prompt.focus()
                 self._set_status("ready")
+
+    def _finish_tool(self, call: ToolCall, content: str, *, is_error: bool) -> None:
+        for index, (started, line) in enumerate(self._running_tools):
+            if started is call or started == call:
+                line.finish(content, is_error=is_error)
+                del self._running_tools[index]
+                return
 
     async def _finish_reply(self) -> None:
         if self._reply is not None:
