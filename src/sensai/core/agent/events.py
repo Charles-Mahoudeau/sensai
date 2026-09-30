@@ -28,6 +28,6 @@ class TurnCompleted:
     messages: list[Message]  # the list of produced messages this turn
 
 
-AgentEvent = (
+type AgentEvent = (
     TextDelta | ThinkingDelta | ToolRunStarted | ToolRunFinished | TurnCompleted
 )
