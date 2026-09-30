@@ -37,6 +37,7 @@ class Agent:
         self._llm = llm
         self._tool_registry = ToolRegistry()
         web_search.register_self(self._tool_registry)
+        self._max_tool_calls = 10
         self._logger = logging.getLogger("Agent")
 
     async def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
@@ -45,7 +46,7 @@ class Agent:
         produced: list[Message] = []
 
         try:
-            while True:
+            for _ in range(self._max_tool_calls):
                 text_parts: list[str] = []
                 calls: list[ToolCall] = []
 
@@ -80,6 +81,8 @@ class Agent:
                     produced.append(
                         Message.tool(result.content, result.name, result.call_id)
                     )
+            else:
+                raise RuntimeError("maximum number of tool calls reached")
 
             yield TurnCompleted(produced)
         except LLMError as error:
