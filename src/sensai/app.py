@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from typing import TYPE_CHECKING
 
@@ -44,6 +45,7 @@ def main(model: str, config_path: pathlib.Path) -> None:
     Returns:
         None
     """
+    logging.basicConfig(level=logging.INFO, filename="sensai.log")
     config = _parse_config(model, config_path)
 
     asyncio.run(_serve(config))
