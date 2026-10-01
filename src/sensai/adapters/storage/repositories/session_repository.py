@@ -12,7 +12,7 @@ from sensai.core.models.tools import ToolCall
 from sensai.core.ports import SessionNotFoundError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
 _SESSIONS_TABLE = "sessions"
 _MESSAGES_TABLE = "messages"

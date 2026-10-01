@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from sensai.core.models.llm import Message
     from sensai.core.models.memory import MemoryRecord, Session, UserProfile
@@ -31,6 +31,7 @@ class DuplicateMemoryError(StorageError):
 
 class ProfileNotFoundError(StorageError):
     """The requested profile entry does not exist."""
+
 
 class UserProfileRepository(Protocol):
     """Saves the persistent user profile."""
@@ -58,6 +59,7 @@ class UserProfileRepository(Protocol):
             StorageError: The store failed to write.
         """
         ...
+
 
 class SessionRepository(Protocol):
     """Saves conversations."""

@@ -15,10 +15,10 @@ from sensai.core.ports import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Sequence
 
     from sensai.core.models.llm import Message
-    from sensai.core.ports import MemoryStore, SessionStore
+    from sensai.core.ports import MemoryRepository, SessionRepository
 
 
 def _ticking_clock() -> Callable[[], datetime]:
@@ -37,7 +37,6 @@ class InMemorySessionStore:
         self._ids = itertools.count(1)
         self._sessions: dict[int, Session] = {}
         self._messages: dict[int, list[Message]] = {}
-        self._profile: dict[str, str] = {}
 
     async def create_session(self, *, model: str, title: str | None = None) -> Session:
         """Create an empty session."""
@@ -77,18 +76,6 @@ class InMemorySessionStore:
         await self.get_session(session_id)
         del self._sessions[session_id]
         del self._messages[session_id]
-
-    async def get_profile(self) -> Mapping[str, str]:
-        """Return a copy of the profile."""
-        return dict(self._profile)
-
-    async def set_profile_value(self, key: str, value: str) -> None:
-        """Create or replace a profile entry."""
-        self._profile[key] = value
-
-    async def delete_profile_value(self, key: str) -> None:
-        """Remove a profile entry if it exists."""
-        self._profile.pop(key, None)
 
 
 class InMemoryMemoryStore:
@@ -170,8 +157,8 @@ class InMemoryMemoryStore:
 
 if TYPE_CHECKING:
 
-    def _session_conforms(fake: InMemorySessionStore) -> SessionStore:
+    def _session_conforms(fake: InMemorySessionStore) -> SessionRepository:
         return fake
 
-    def _memory_conforms(fake: InMemoryMemoryStore) -> MemoryStore:
+    def _memory_conforms(fake: InMemoryMemoryStore) -> MemoryRepository:
         return fake
