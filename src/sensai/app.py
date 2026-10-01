@@ -73,6 +73,7 @@ def _get_db() -> SqliteDatabase:
     sqlite_migrator.apply_migrations(conn)
     return SqliteDatabase(conn)
 
+
 async def _get_profile_sys_prompt(config: Config, db: SqliteDatabase) -> str:
     profile_repo = SqliteProfileRepository(db)
     wanted = read_profile_file(config.user_profile.profile)

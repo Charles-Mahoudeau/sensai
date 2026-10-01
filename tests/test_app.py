@@ -19,7 +19,7 @@ def test_build_engine_wires_the_configured_ollama_client() -> None:
         config = Config(
             model="test-model",
             ollama=OllamaConfig("http://ollama"),
-            user_profile=ProfileConfig(profile=Path("/tmp/test-profile.json")),
+            user_profile=ProfileConfig(profile=Path()),
         )
         async with httpx.AsyncClient() as client:
             engine = build_engine(config, client, "")
