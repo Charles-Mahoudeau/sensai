@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from sensai.adapters.storage.repositories import SqliteProfileRepository
 from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
@@ -36,15 +37,16 @@ class ProfileNotFoundError(StorageError):
 class UserProfileRepository(Protocol):
     """Saves the persistent user profile."""
 
-    async def get_profile(self) -> UserProfile:
+    async def get_profile(self, key: str) -> UserProfile:
         """Return the user profile as key/value pairs (empty if none is set).
 
         Raises:
             StorageError: The store failed to read.
+            ProfileNotFoundError: No profile entry has this key.
         """
         ...
 
-    async def set_profile_value(self, key: str, value: str) -> None:
+    async def set_profile_value(self, key: str, value: str, *, category: str | None = None) -> UserProfile:
         """Create or replace one profile entry.
 
         Raises:
@@ -57,6 +59,17 @@ class UserProfileRepository(Protocol):
 
         Raises:
             StorageError: The store failed to write.
+        """
+        ...
+
+    async def find(self, *, category: str | None = None) -> Sequence[UserProfile]:
+        """Return matching profile entries.
+
+        Args:
+            category: The category of the profile entries to return.
+
+        Raises:
+            StorageError: The store failed to read.
         """
         ...
 
@@ -198,3 +211,10 @@ class MemoryRepository(Protocol):
             StorageError: The store failed to write.
         """
         ...
+
+if TYPE_CHECKING:
+    from sensai.core.ports import UserProfileRepository
+
+    # static type checkers cannot verify that SqliteProfileRepository implements UserProfileRepository, so we add a dummy function to make ty happy
+    def _conforms(repo: SqliteProfileRepository) -> UserProfileRepository:
+        return repo
