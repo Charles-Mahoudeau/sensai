@@ -7,12 +7,13 @@ from sensai.core.ports.llm import (
     LLMUnavailableError,
     ModelNotFoundError,
 )
-from sensai.core.ports.memory import (
+from sensai.core.ports.repositories.memory import (
     DuplicateMemoryError,
     MemoryNotFoundError,
-    MemoryStore,
+    SessionRepository,
+    ProfileNotFoundError,
     SessionNotFoundError,
-    SessionStore,
+    SessionRepository,
     StorageError,
 )
 from sensai.core.ports.retrieval import (
@@ -37,6 +38,7 @@ __all__ = [
     "MemoryNotFoundError",
     "MemoryStore",
     "ModelNotFoundError",
+    "ProfileNotFoundError",
     "RetrievalError",
     "SessionNotFoundError",
     "SessionStore",
