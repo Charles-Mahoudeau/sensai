@@ -173,35 +173,3 @@ class SqliteSessionRepository:
                     raise SessionNotFoundError(session_id)
 
         await self._db.run(delete)
-
-    async def get_profile(self) -> Mapping[str, str]:
-        """Return the whole profile."""
-
-        def get() -> dict[str, str]:
-            rows = self._db.conn.execute("SELECT key, value FROM user_profile")
-            return dict(rows.fetchall())
-
-        return await self._db.run(get)
-
-    async def set_profile_value(self, key: str, value: str) -> None:
-        """Create or replace a profile entry."""
-
-        def set_() -> None:
-            with self._db.write() as conn:
-                conn.execute(
-                    "INSERT INTO user_profile (key, value, updated_at) VALUES (?, ?, ?)"
-                    " ON CONFLICT (key) DO UPDATE"
-                    " SET value = excluded.value, updated_at = excluded.updated_at",
-                    (key, value, self._db.now()),
-                )
-
-        await self._db.run(set_)
-
-    async def delete_profile_value(self, key: str) -> None:
-        """Remove a profile entry if it exists."""
-
-        def delete() -> None:
-            with self._db.write() as conn:
-                conn.execute("DELETE FROM user_profile WHERE key = ?", (key,))
-
-        await self._db.run(delete)
