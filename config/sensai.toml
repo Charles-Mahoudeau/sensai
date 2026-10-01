@@ -1,2 +1,5 @@
 [ollama]
 url = "http://localhost:11434"
+
+[profile]
+path = "config/profile.toml"

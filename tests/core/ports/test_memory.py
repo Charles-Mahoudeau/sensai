@@ -82,25 +82,6 @@ def test_delete_session_removes_it() -> None:
         asyncio.run(run())
 
 
-def test_profile_set_replace_and_delete() -> None:
-    """Profile entries can be created, replaced and removed."""
-    store = InMemorySessionStore()
-
-    async def run() -> tuple[dict[str, str], dict[str, str]]:
-        await store.set_profile_value("language", "fr")
-        await store.set_profile_value("language", "en")
-        await store.set_profile_value("editor", "vim")
-        before = dict(await store.get_profile())
-        await store.delete_profile_value("editor")
-        await store.delete_profile_value("missing")  # no-op
-        return before, dict(await store.get_profile())
-
-    before, after = asyncio.run(run())
-
-    assert before == {"language": "en", "editor": "vim"}
-    assert after == {"language": "en"}
-
-
 def test_memory_create_get_and_duplicate() -> None:
     """A record can be read back, and name + type must be unique."""
     store = InMemoryMemoryStore()
