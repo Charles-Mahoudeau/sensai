@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from sensai.core.models.llm import Message
-    from sensai.core.models.memory import MemoryRecord, Session
+    from sensai.core.models.memory import MemoryRecord, Session, UserProfile
 
 
 class StorageError(SensaiError):
@@ -35,7 +35,7 @@ class ProfileNotFoundError(StorageError):
 class UserProfileRepository(Protocol):
     """Saves the persistent user profile."""
 
-    async def get_profile(self) -> Mapping[str, str]:
+    async def get_profile(self) -> UserProfile:
         """Return the user profile as key/value pairs (empty if none is set).
 
         Raises:
