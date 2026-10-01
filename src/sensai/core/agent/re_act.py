@@ -83,7 +83,7 @@ class ReActAgent(Agent):
 
         # Save thinking message
         assistant = Message.assistant("".join(text_parts))
-        run.add_message(assistant, final=False)
+        run.add_message(assistant, persist=False)
 
     async def _generate_action(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         text_parts: list[str] = []
@@ -102,14 +102,14 @@ class ReActAgent(Agent):
 
         # Save thinking message
         assistant = Message.assistant("".join(text_parts), tool_calls=tuple(calls))
-        run.add_message(assistant, final=False)
+        run.add_message(assistant, persist=False)
 
         if not calls:
             yield TurnCompleted(messages=[])
             return
 
         # Run tools
-        async for event in self._run_tool_calls(run, calls):
+        async for event in self._run_tool_calls(run, calls, persist=False):
             yield event
 
     async def _generate_observation(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
@@ -125,10 +125,10 @@ class ReActAgent(Agent):
 
         # Save thinking message
         assistant = Message.assistant("".join(text_parts))
-        run.add_message(assistant, final=False)
+        run.add_message(assistant, persist=False)
 
     async def _answer(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
-        run.add_message(Message.system(RESPONSE_SYSTEM_PROMPT), final=False)
+        run.add_message(Message.system(RESPONSE_SYSTEM_PROMPT), persist=False)
         text_parts: list[str] = []
 
         async for event in self._llm.chat(run.messages):
@@ -141,4 +141,4 @@ class ReActAgent(Agent):
                 case ToolCallRequest():
                     raise RuntimeError("tool calls not expected")
 
-        run.add_message(Message.assistant("".join(text_parts)), final=True)
+        run.add_message(Message.assistant("".join(text_parts)), persist=True)

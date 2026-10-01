@@ -46,15 +46,11 @@ class AgentRun:
         """Return the messages to persist once the turn completes."""
         return self._produced_messages
 
-    def add_message(self, message: Message, *, final: bool = True) -> None:
-        """Append a message, keeping it in the produced ones if final."""
+    def add_message(self, message: Message, *, persist: bool = True) -> None:
+        """Append a message, keeping it in the produced ones if persisted."""
         self._working_messages.append(message)
-        if final:
+        if persist:
             self._produced_messages.append(message)
-
-    def clone(self) -> AgentRun:
-        """Return a new run started from the current working messages."""
-        return AgentRun(self.messages)
 
 
 # Implementation of a Runner that streams one LLM response
@@ -80,13 +76,14 @@ class Agent:
             raise AgentError(str(error)) from error
 
     async def _run_tool_calls(
-        self, run: AgentRun, tool_calls: Sequence[ToolCall]
+        self, run: AgentRun, tool_calls: Sequence[ToolCall], *, persist: bool = True
     ) -> AsyncIterator[AgentEvent]:
         for call in tool_calls:
             yield ToolRunStarted(call=call)
             result = await self._tool_registry.call(call)
             yield ToolRunFinished(call=call, result=result)
-            run.add_message(Message.tool(result.content, result.name, result.call_id))
+            message = Message.tool(result.content, result.name, result.call_id)
+            run.add_message(message, persist=persist)
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         for _ in range(self._max_tool_calls):
