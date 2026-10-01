@@ -13,6 +13,7 @@ from sensai.adapters.tui.widgets import (
     AssistantMessage,
     ErrorMessage,
     HintMessage,
+    ThinkingMessage,
     ToolCallLine,
     UserMessage,
 )
@@ -21,6 +22,7 @@ from sensai.core.events import (
     ErrorEvent,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
     ToolRunFinished,
     ToolRunStarted,
@@ -63,6 +65,7 @@ class SensaiApp(App[None]):
         self._events: AsyncGenerator[Event] | None = None
         self._submission: str | None = None
         self._reply: AssistantMessage | None = None
+        self._thinking: ThinkingMessage | None = None
         self._streamed = False
         self._running_tools: list[tuple[ToolCall, ToolCallLine]] = []
         self._interrupted = False
@@ -116,13 +119,21 @@ class SensaiApp(App[None]):
         match event:
             case MessageStarted():
                 pass  # the answer is mounted lazily, below any tool call
+            case ThinkingGenerated(text=text):
+                await self._finish_reply()
+                if self._thinking is None:
+                    self._thinking = ThinkingMessage()
+                    await self._write(self._thinking)
+                self._thinking.add_fragment(text)
             case TokenGenerated(text=text):
                 self._streamed = True
+                self._thinking = None
                 if self._reply is None:
                     self._reply = AssistantMessage()
                     await self._write(self._reply)
                 await self._reply.add_fragment(text)
             case ToolRunStarted(call=call):
+                self._thinking = None
                 await self._finish_reply()
                 line = ToolCallLine(call.name)
                 self._running_tools.append((call, line))
@@ -136,9 +147,11 @@ class SensaiApp(App[None]):
                     await self._reply.add_fragment(message.content)
                 await self._finish_reply()
             case ErrorEvent(error=error):
+                self._thinking = None
                 await self._drop_empty_reply()
                 await self._write(ErrorMessage(str(error) or type(error).__name__))
             case Done():
+                self._thinking = None
                 await self._finish_reply()
                 for _, line in self._running_tools:
                     line.interrupt()

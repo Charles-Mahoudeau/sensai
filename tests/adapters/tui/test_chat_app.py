@@ -13,6 +13,7 @@ from sensai.adapters.tui.widgets import (
     AssistantMessage,
     ErrorMessage,
     HintMessage,
+    ThinkingMessage,
     ToolCallLine,
     UserMessage,
 )
@@ -21,6 +22,7 @@ from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnComple
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import ChatDone, Message, TextDelta, ToolCall, ToolResult
+from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from tests.fakes import FakeLLM
@@ -103,6 +105,25 @@ def test_streamed_answer_is_rendered() -> None:
 
         assert _texts(app, UserMessage) == ["Hello"]
         assert _texts(app, AssistantMessage) == ["Bonjour"]
+
+    _run(app, scenario)
+
+
+def test_thinking_is_streamed_before_the_answer() -> None:
+    """Reasoning fragments form one 'Thinking...' block above the answer."""
+    turns: list[Turn] = [
+        [ThinkingDelta("Let me "), ThinkingDelta("think"), TextDelta("42")]
+    ]
+    app = _app(FakeLLM(turns))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        assert [t.text for t in app.query(ThinkingMessage)] == ["Let me think"]
+        assert _texts(app, AssistantMessage) == ["42"]
+        thinking = app.query_one(ThinkingMessage)
+        assert str(thinking.render()).startswith("Thinking...\nLet me think")
 
     _run(app, scenario)
 

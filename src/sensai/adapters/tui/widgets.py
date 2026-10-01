@@ -60,6 +60,30 @@ class AssistantMessage(Markdown):
             self._stream = None
 
 
+class ThinkingMessage(Static):
+    """The model's reasoning: a "Thinking..." header, then the streamed text."""
+
+    DEFAULT_CSS = """
+    ThinkingMessage {
+        color: $text-muted;
+        margin: 1 0 0 0;
+        text-style: italic;
+    }
+    """
+
+    HEADER = "Thinking..."
+
+    def __init__(self) -> None:
+        """Start with the header and no reasoning yet."""
+        super().__init__(self.HEADER, markup=False)
+        self.text = ""
+
+    def add_fragment(self, fragment: str) -> None:
+        """Append a streamed fragment of reasoning."""
+        self.text += fragment
+        self.update(f"{self.HEADER}\n{self.text.lstrip()}")
+
+
 class ToolCallLine(Static):
     """One tool call: "Calling tool …" while it runs, then its trimmed result."""
 
