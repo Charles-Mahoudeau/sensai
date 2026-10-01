@@ -3,6 +3,7 @@
 import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from pathlib import Path
 
 from sensai.exceptions import ConfigError
 
@@ -18,14 +19,30 @@ class OllamaConfig:
 
 
 @dataclass(frozen=True)
+class StorageConfig:
+    """Configuration for storage."""
+
+    database: Path
+
+
+@dataclass(frozen=True)
+class ProfileConfig:
+    """Configuration for a user profile."""
+
+    profile: Path
+
+
+@dataclass(frozen=True)
 class Config:
     """Global application configuration."""
 
     model: str
     ollama: OllamaConfig
+    db: StorageConfig
+    user_profile: ProfileConfig
 
 
-def load_config(path: pathlib.Path, overrides: dict[str, Any] | None = None) -> Config:
+def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
     """Loads the configuration from the given path and overrides.
 
     Args:
@@ -54,6 +71,12 @@ def load_config(path: pathlib.Path, overrides: dict[str, Any] | None = None) -> 
     config = Config(
         model=data.get("model", ""),
         ollama=OllamaConfig(url=data.get("ollama", {}).get("url", "")),
+        db=StorageConfig(
+            database=Path(data.get("storage", {}).get("database", "database.db"))
+        ),
+        user_profile=ProfileConfig(
+            profile=Path(data.get("profile", {}).get("profile", "profile.toml"))
+        ),
     )
 
     return config

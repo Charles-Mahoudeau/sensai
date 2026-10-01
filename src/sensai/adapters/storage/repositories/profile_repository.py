@@ -107,7 +107,6 @@ class SqliteProfileRepository:
 if TYPE_CHECKING:
     from sensai.core.ports import UserProfileRepository
 
-
     # Static check: fails `ty` if this class stops matching the port.
     def _conforms(repo: SqliteProfileRepository) -> UserProfileRepository:
         return repo

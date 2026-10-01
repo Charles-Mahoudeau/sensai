@@ -1,2 +1,8 @@
 [ollama]
 url = "http://localhost:11434"
+
+[storage]
+database = "db/sensai.db"
+
+[profile]
+path = "config/profile.toml"
