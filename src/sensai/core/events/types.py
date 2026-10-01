@@ -28,10 +28,14 @@ class TokenGenerated:
 
 @dataclass(frozen=True, slots=True)
 class ThinkingGenerated:
-    """Event indicating that a fragment of the model's reasoning was generated."""
+    """Event indicating that a fragment of the model's reasoning was generated.
+
+    `ready` marks the end of a thought that concluded the answer can be written.
+    """
 
     submission_id: str
     text: str
+    ready: bool = False
 
 
 @dataclass(frozen=True, slots=True)

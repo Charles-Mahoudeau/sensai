@@ -105,7 +105,10 @@ class ReActAgent(Agent):
                     text_parts.append(text)
                     yield ThinkingDelta(text=text)
 
-        thoughts.append("".join(text_parts).strip())
+        thought = "".join(text_parts).strip()
+        thoughts.append(thought)
+        if _is_ready(thought):
+            yield ThinkingDelta(text="", ready=True)
 
     async def _act(
         self,

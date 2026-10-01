@@ -104,8 +104,10 @@ class Engine:
             match event:
                 case TextDelta(text):
                     await self._bus.publish(TokenGenerated(submission_id, text))
-                case ThinkingDelta(text):
-                    await self._bus.publish(ThinkingGenerated(submission_id, text))
+                case ThinkingDelta(text, ready):
+                    await self._bus.publish(
+                        ThinkingGenerated(submission_id, text, ready)
+                    )
                 case agent.events.ToolRunStarted(call):
                     await self._bus.publish(ToolRunStarted(submission_id, call))
                 case agent.events.ToolRunFinished(call, result):
