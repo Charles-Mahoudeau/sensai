@@ -13,7 +13,7 @@ from sensai.core.agent.events import (
 )
 from sensai.core.errors import SensaiError
 from sensai.core.models import Message, TextDelta, ToolCall
-from sensai.core.models.llm import ToolCallRequest
+from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.ports import LLMError
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
@@ -56,7 +56,9 @@ class Agent:
                     match event:
                         case TextDelta(text=text):
                             text_parts.append(text)
-                            yield event  # stream only tokens
+                            yield event
+                        case ThinkingDelta():
+                            yield event  # display only, not kept in the history
                         case ToolCallRequest(call=call):
                             calls.append(call)
 

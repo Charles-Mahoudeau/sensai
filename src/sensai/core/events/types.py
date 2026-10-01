@@ -27,6 +27,14 @@ class TokenGenerated:
 
 
 @dataclass(frozen=True, slots=True)
+class ThinkingGenerated:
+    """Event indicating that a fragment of the model's reasoning was generated."""
+
+    submission_id: str
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class MessageCompleted:
     """Event indicating that a message has been fully processed."""
 
@@ -69,6 +77,7 @@ class Done:
 type Event = (
     MessageStarted
     | TokenGenerated
+    | ThinkingGenerated
     | MessageCompleted
     | ErrorEvent
     | ToolRunStarted

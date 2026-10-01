@@ -12,9 +12,11 @@ from sensai.core.events import (
     EventBus,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
 )
 from sensai.core.models import Message, TextDelta
+from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 
 if TYPE_CHECKING:
@@ -74,6 +76,33 @@ def test_submit_streams_public_events() -> None:
             submission_id, Message.assistant("Bonjour")
         )
         assert await anext(events) == Done(submission_id)
+        await events.aclose()
+
+    asyncio.run(run())
+
+
+def test_thinking_is_published_as_its_own_event() -> None:
+    """Reasoning fragments are relayed apart from the answer tokens."""
+
+    async def run() -> None:
+        engine = Engine(
+            ScriptedRunner(
+                (
+                    ThinkingDelta("Hmm"),
+                    TextDelta("Hi"),
+                    TurnCompleted([Message.assistant("Hi")]),
+                )
+            ),
+            Pipeline(),
+            EventBus(),
+        )
+        events = engine.subscribe()
+
+        submission_id = engine.submit("Hello")
+
+        assert await anext(events) == MessageStarted(submission_id)
+        assert await anext(events) == ThinkingGenerated(submission_id, "Hmm")
+        assert await anext(events) == TokenGenerated(submission_id, "Hi")
         await events.aclose()
 
     asyncio.run(run())

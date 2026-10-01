@@ -17,10 +17,12 @@ from sensai.core.events import (
     EventBus,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
 )
 from sensai.core.events.types import ToolRunFinished, ToolRunStarted
 from sensai.core.models import Message, TextDelta
+from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
 if TYPE_CHECKING:
@@ -102,6 +104,8 @@ class Engine:
             match event:
                 case TextDelta(text):
                     await self._bus.publish(TokenGenerated(submission_id, text))
+                case ThinkingDelta(text):
+                    await self._bus.publish(ThinkingGenerated(submission_id, text))
                 case agent.events.ToolRunStarted(call):
                     await self._bus.publish(ToolRunStarted(submission_id, call))
                 case agent.events.ToolRunFinished(call, result):
