@@ -12,7 +12,7 @@ import httpx
 from sensai.adapters.ollama import OllamaChat
 from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
-from sensai.core.agent import Agent
+from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
@@ -28,8 +28,9 @@ if TYPE_CHECKING:
 def build_engine(config: Config, client: httpx.AsyncClient) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    agent = ReActAgent(llm)
     return Engine(
-        runner=Agent(llm),
+        runner=agent,
         pipeline=Pipeline(),
         bus=EventBus(),
     )
