@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from sensai.adapters.ollama import _wire
-from sensai.core.models.llm import ChatDone
+from sensai.core.models.llm import ChatDone, TextDelta, ToolCallRequest
 from sensai.core.ports import LLMResponseError, LLMUnavailableError, ModelNotFoundError
 
 if TYPE_CHECKING:
@@ -58,6 +58,8 @@ class OllamaChat:
         payload = _wire.chat_payload(self._model, messages, tools, options)
         try:
             logging.info("Chat payload: %s", payload)
+            text_parts: list[str] = []
+            tool_calls: list[ToolCallRequest] = []
             async with self._client.stream(
                 "POST", f"{self._url}/api/chat", json=payload
             ) as response:
@@ -74,6 +76,20 @@ class OllamaChat:
                         continue
                     chunk = _wire.decode_chunk(line)
                     for event in _wire.events_from_chunk(chunk, self._new_call_id):
+                        match event:
+                            case TextDelta(text=text):
+                                text_parts.append(text)
+                            case ToolCallRequest():
+                                tool_calls.append(event)
+                            case ChatDone(done_reason=reason):
+                                logging.info(
+                                    "Chat response: text=%r tool_calls=%s "
+                                    "done_reason=%s usage=%s",
+                                    "".join(text_parts),
+                                    [request.call for request in tool_calls],
+                                    reason,
+                                    event.usage,
+                                )
                         yield event
                         if isinstance(event, ChatDone):
                             return
