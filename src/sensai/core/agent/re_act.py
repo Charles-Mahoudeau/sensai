@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from sensai.core.agent import Agent
@@ -34,6 +35,25 @@ Answer the user's request now.
 Use what you learned above. Be clear and short.
 Do not mention your thoughts or tools.
 """
+
+_LEADING_ASSISTANT = re.compile(r"\A(?:\s*\bassistant\b)+\s*", re.IGNORECASE)
+_TRAILING_ASSISTANT = re.compile(r"\s*(?:\bassistant\b\s*)+\Z", re.IGNORECASE)
+
+
+def _cleanup_response(text: str) -> str:
+    """Strip leading and trailing "assistant" role markers from a response.
+
+    Markers are matched case-insensitively as whole words, and may be repeated
+    and separated by any amount of whitespace, including blank lines.
+
+    Args:
+        text: Raw model response.
+
+    Returns:
+        The response without the surrounding markers, stripped of whitespace.
+    """
+    text = _LEADING_ASSISTANT.sub("", text)
+    return _TRAILING_ASSISTANT.sub("", text).strip()
 
 
 class ReActAgent(Agent):
@@ -73,7 +93,7 @@ class ReActAgent(Agent):
                     yield ThinkingDelta(text=text)
 
         # Save thinking message
-        assistant = Message.assistant("".join(text_parts))
+        assistant = Message.assistant(_cleanup_response("".join(text_parts)))
         run.add_message(assistant, persist=False)
 
     async def _generate_action(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
@@ -92,7 +112,9 @@ class ReActAgent(Agent):
                     calls.append(call)
 
         # Save thinking message
-        assistant = Message.assistant("".join(text_parts), tool_calls=tuple(calls))
+        assistant = Message.assistant(
+            _cleanup_response("".join(text_parts)), tool_calls=tuple(calls)
+        )
         run.add_message(assistant, persist=False)
 
         if not calls:
@@ -117,4 +139,6 @@ class ReActAgent(Agent):
                 case ToolCallRequest():
                     raise RuntimeError("tool calls not expected")
 
-        run.add_message(Message.assistant("".join(text_parts)), persist=True)
+        run.add_message(
+            Message.assistant(_cleanup_response("".join(text_parts))), persist=True
+        )
