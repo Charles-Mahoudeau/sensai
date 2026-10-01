@@ -70,8 +70,6 @@ async def _serve(config: Config) -> None:
                 await profile_repo.set_profile_value(key, value, category=category)
 
         system_prompt = render_profile(await profile_repo.find())
-        print(system_prompt)
-        exit()
         engine = build_engine(config, client, system_prompt)
         await SensaiApp(engine, model=config.model).run_async()
 
