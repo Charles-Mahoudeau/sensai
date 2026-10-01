@@ -58,6 +58,22 @@ def main(model: str, config_path: pathlib.Path) -> None:
     asyncio.run(_serve(config))
 
 
+def _get_db() -> SqliteDatabase:
+    """Get the SQLite database."""
+    conn = create_connection()
+    sqlite_migrator.apply_migrations(conn)
+    return SqliteDatabase(conn)
+
+async def _get_profile_sys_prompt(config: Config, db: SqliteDatabase) -> str:
+    profile_repo = SqliteProfileRepository(db)
+    wanted = read_profile_file(config.user_profile.profile)
+    for category, entries in wanted.items():
+        for key, value in entries.items():
+            await profile_repo.set_profile_value(key, value, category=category)
+    system_prompt = render_profile(await profile_repo.find())
+    return system_prompt
+
+
 async def _serve(config: Config) -> None:
     async with httpx.AsyncClient(timeout=None) as client:
         conn = create_connection()  # see the note below
@@ -68,6 +84,9 @@ async def _serve(config: Config) -> None:
         for category, entries in wanted.items():
             for key, value in entries.items():
                 await profile_repo.set_profile_value(key, value, category=category)
+        db = _get_db()
+
+        system_prompt = await _get_profile_sys_prompt(config, db)
 
         system_prompt = render_profile(await profile_repo.find())
         engine = build_engine(config, client, system_prompt)
