@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from sensai.adapters.storage.repositories import SqliteProfileRepository
 from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
@@ -46,7 +45,9 @@ class UserProfileRepository(Protocol):
         """
         ...
 
-    async def set_profile_value(self, key: str, value: str, *, category: str | None = None) -> UserProfile:
+    async def set_profile_value(
+        self, key: str, value: str, *, category: str | None = None
+    ) -> UserProfile:
         """Create or replace one profile entry.
 
         Raises:
@@ -211,10 +212,3 @@ class MemoryRepository(Protocol):
             StorageError: The store failed to write.
         """
         ...
-
-if TYPE_CHECKING:
-    from sensai.core.ports import UserProfileRepository
-
-    # static type checkers cannot verify that SqliteProfileRepository implements UserProfileRepository, so we add a dummy function to make ty happy
-    def _conforms(repo: SqliteProfileRepository) -> UserProfileRepository:
-        return repo

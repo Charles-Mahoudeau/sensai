@@ -40,7 +40,7 @@ class SqliteProfileRepository:
             from_db_time(fields["updated_at"]),
         )
 
-    async def set(
+    async def set_profile_value(
         self, key: str, value: str, *, category: str | None = None
     ) -> UserProfile:
         """Create or replace an entry.
@@ -67,7 +67,7 @@ class SqliteProfileRepository:
 
         return await self._db.run(set_)
 
-    async def get(self, key: str) -> UserProfile:
+    async def get_profile(self, key: str) -> UserProfile:
         """Return an entry or raise `ProfileNotFoundError`."""
 
         def get() -> UserProfile:
@@ -94,7 +94,7 @@ class SqliteProfileRepository:
 
         return await self._db.run(find)
 
-    async def delete(self, key: str) -> None:
+    async def delete_profile_value(self, key: str) -> None:
         """Remove an entry; does nothing if the key is unknown."""
 
         def delete() -> None:
@@ -102,3 +102,12 @@ class SqliteProfileRepository:
                 conn.execute("DELETE FROM profiles WHERE key = ?", (key,))
 
         await self._db.run(delete)
+
+
+if TYPE_CHECKING:
+    from sensai.core.ports import UserProfileRepository
+
+
+    # Static check: fails `ty` if this class stops matching the port.
+    def _conforms(repo: SqliteProfileRepository) -> UserProfileRepository:
+        return repo
