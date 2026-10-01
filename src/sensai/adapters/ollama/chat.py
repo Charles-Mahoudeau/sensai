@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -56,6 +57,7 @@ class OllamaChat:
         """Stream the model's answer to a conversation."""
         payload = _wire.chat_payload(self._model, messages, tools, options)
         try:
+            logging.info("Chat payload: %s", payload)
             async with self._client.stream(
                 "POST", f"{self._url}/api/chat", json=payload
             ) as response:
