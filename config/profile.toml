@@ -1,0 +1,8 @@
+[identity]
+name = "Tristan"
+
+[preference]
+language = "Python"
+
+[instruction]
+style = "Answer concisely, in French"

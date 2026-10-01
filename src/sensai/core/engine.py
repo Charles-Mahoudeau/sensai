@@ -36,13 +36,21 @@ class Runner(Protocol):
 class Engine:
     """Coordinate the pipeline, runner and public event bus."""
 
-    def __init__(self, runner: Runner, pipeline: Pipeline, bus: EventBus) -> None:
+    def __init__(
+        self,
+        runner: Runner,
+        pipeline: Pipeline,
+        bus: EventBus,
+        *,
+        system_prompt: str = "",
+    ) -> None:
         """Initialize the engine with its processing dependencies."""
         self._runner = runner
         self._pipeline = pipeline
         self._bus = bus
         self._history: list[Message] = []
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._system_prompt = system_prompt
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
@@ -70,7 +78,10 @@ class Engine:
         try:
             await self._bus.publish(MessageStarted(submission_id))  # start
 
-            result = self._pipeline.run(tuple(self._history))  # pipeline
+            messages = tuple(self._history)
+            if self._system_prompt:
+                messages = (Message.system(self._system_prompt), *messages)
+            result = self._pipeline.run(messages)  # pipeline
 
             if isinstance(result, ShortCircuit):  # already has a reply
                 self._history.append(result.reply)

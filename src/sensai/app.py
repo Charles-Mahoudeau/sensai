@@ -9,12 +9,18 @@ from typing import TYPE_CHECKING
 import httpx
 
 from sensai.adapters.ollama import OllamaChat
+from sensai.adapters.profile import read_profile_file
+from sensai.adapters.storage import sqlite_migrator
+from sensai.adapters.storage.connection import create_connection
+from sensai.adapters.storage.repositories import SqliteProfileRepository
+from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
 from sensai.core.agent import Agent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.profile import render_profile
 
 if TYPE_CHECKING:
     import pathlib
@@ -24,13 +30,16 @@ if TYPE_CHECKING:
 
 # So this function will be call at start and the engine will be built
 # and returned for the TUI or CLI to use.
-def build_engine(config: Config, client: httpx.AsyncClient) -> Engine:
+def build_engine(
+    config: Config, client: httpx.AsyncClient, system_prompt: str
+) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
     return Engine(
         runner=Agent(llm),
         pipeline=Pipeline(),
         bus=EventBus(),
+        system_prompt=system_prompt,
     )
 
 
@@ -51,7 +60,19 @@ def main(model: str, config_path: pathlib.Path) -> None:
 
 async def _serve(config: Config) -> None:
     async with httpx.AsyncClient(timeout=None) as client:
-        engine = build_engine(config, client)
+        conn = create_connection()  # see the note below
+        sqlite_migrator.apply_migrations(conn)
+        db = SqliteDatabase(conn)
+        profile_repo = SqliteProfileRepository(db)
+        wanted = read_profile_file(config.user_profile.profile)
+        for category, entries in wanted.items():
+            for key, value in entries.items():
+                await profile_repo.set_profile_value(key, value, category=category)
+
+        system_prompt = render_profile(await profile_repo.find())
+        print(system_prompt)
+        exit()
+        engine = build_engine(config, client, system_prompt)
         await SensaiApp(engine, model=config.model).run_async()
 
 
