@@ -29,13 +29,6 @@ If a tool is needed, call it now.
 If no tool is needed, do not call any tool.
 """
 
-OBSERVATION_SYSTEM_PROMPT = """\
-Read the tool results above. This is private, not the answer.
-Write 1 or 2 short sentences: what did I learn?
-If I can answer now, write: "I am ready to answer."
-Otherwise, write what is still missing.
-"""
-
 RESPONSE_SYSTEM_PROMPT = """\
 Answer the user's request now.
 Use what you learned above. Be clear and short.
@@ -66,8 +59,6 @@ class ReActAgent(Agent):
                 match event:
                     case TurnCompleted():
                         return
-                yield event
-            async for event in self._generate_observation(run):
                 yield event
 
     async def _generate_thought(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
@@ -111,21 +102,6 @@ class ReActAgent(Agent):
         # Run tools
         async for event in self._run_tool_calls(run, calls, persist=False):
             yield event
-
-    async def _generate_observation(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
-        text_parts: list[str] = []
-
-        async for event in self._llm.chat(
-            [*run.messages, Message.system(OBSERVATION_SYSTEM_PROMPT)]
-        ):
-            match event:
-                case TextDelta(text=text):
-                    text_parts.append(text)
-                    yield ThinkingDelta(text=text)
-
-        # Save thinking message
-        assistant = Message.assistant("".join(text_parts))
-        run.add_message(assistant, persist=False)
 
     async def _answer(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         run.add_message(Message.system(RESPONSE_SYSTEM_PROMPT), persist=False)
