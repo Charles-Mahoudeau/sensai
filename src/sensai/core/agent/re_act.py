@@ -77,7 +77,7 @@ class ReActAgent(Agent):
     def __init__(self, llm: LLM) -> None:
         """Initialize the agent with its chat model port."""
         super().__init__(llm)
-        self._thinking_effort = 3
+        self._thinking_effort = 10
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         for _ in range(self._thinking_effort):
