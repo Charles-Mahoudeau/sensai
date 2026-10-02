@@ -13,14 +13,21 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from sensai.core.agent.base import AgentRun
+    from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
 
 THOUGHT_PROMPT = """\
 Before answering, think privately about the request above. This is not the answer.
+Tools you can call:
+{tools}
+
 Write 1 to 3 short sentences:
-- What do I already know?
-- Does the request need recent or external information? If so, which tool?
-If nothing is missing, write: "I am ready to answer."
+- What do I actually know for sure, from the conversation or tool results?
+- What is missing or could be outdated? Which tool would provide it?
+Prefer checking with a tool over relying on memory: facts, dates, news, files,
+numbers and anything specific to the user's context must come from a tool.
+Only if the conversation already contains everything needed (or the request is
+simple small talk), write: "I am ready to answer."
 """
 
 NOTES_TEMPLATE = """\
@@ -49,6 +56,13 @@ def _with_notes(messages: Sequence[Message], thought: str) -> list[Message]:
     if last.role == "user":
         return [*messages[:-1], Message.user(last.content + notes)]
     return [*messages, Message.user(notes.lstrip())]
+
+
+def _describe_tools(tools: Sequence[ToolSpec]) -> str:
+    """Render the tool names and descriptions for the thought prompt."""
+    if not tools:
+        return "(none)"
+    return "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
 
 
 def _is_ready(thought: str) -> bool:
@@ -97,9 +111,10 @@ class ReActAgent(Agent):
         """Stream a private thought, then append it to `thoughts`."""
         text_parts: list[str] = []
 
-        async for event in self._llm.chat(
-            [*run.messages, Message.user(THOUGHT_PROMPT)]
-        ):
+        prompt = THOUGHT_PROMPT.format(
+            tools=_describe_tools(self._tool_registry.spec())
+        )
+        async for event in self._llm.chat([*run.messages, Message.user(prompt)]):
             match event:
                 case TextDelta(text=text):
                     text_parts.append(text)
