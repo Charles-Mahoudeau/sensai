@@ -35,9 +35,11 @@ NOTES_TEMPLATE = """\
 [Private notes, the user cannot see them: {thought}
 Now call a tool if your notes say you need one, otherwise answer the user.]"""
 
-ANSWER_PROMPT = (
-    "Answer the user's request now, using what you learned. Be clear and short."
-)
+ANSWER_PROMPT = """\
+Answer the user's request now, using what you learned. Match the format and \
+level of detail the user asked for: a full report or detailed request \
+deserves a long, structured answer, a simple question a short one.\
+"""
 
 # Llama-style chat templates only render the tool definitions in the last
 # message when it is a user one, and only open the assistant turn after a user or
