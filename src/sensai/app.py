@@ -30,15 +30,7 @@ from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
-from sensai.core.prompts import (
-    REACT_ANSWER,
-    REACT_NOTES,
-    REACT_THOUGHT,
-    SYSTEM,
-    PromptComparison,
-    PromptLibrary,
-    load_defaults,
-)
+from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 
 if TYPE_CHECKING:
     import pathlib
@@ -113,14 +105,9 @@ async def _serve(config: Config) -> None:
         db = _get_db()
 
         prompts = await _get_prompt_library(db)
-        base_prompt = (await prompts.active(SYSTEM)).content
-        profile_prompt = await _get_profile_sys_prompt(config, db)
-        system_prompt = "\n\n".join(p for p in (base_prompt, profile_prompt) if p)
-        agent_prompts = AgentPrompts(
-            thought=(await prompts.active(REACT_THOUGHT)).content,
-            notes=(await prompts.active(REACT_NOTES)).content,
-            answer=(await prompts.active(REACT_ANSWER)).content,
-        )
+        profile = await _get_profile_sys_prompt(config, db)
+        system_prompt = await prompts.system_prompt(profile)
+        agent_prompts = await AgentPrompts.active(prompts)
 
         session_repo = SqliteSessionRepository(db)
         last = await session_repo.list_sessions(limit=1)

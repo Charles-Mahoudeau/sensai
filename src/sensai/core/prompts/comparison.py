@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from statistics import fmean
 from typing import TYPE_CHECKING, Literal
 
+from sensai.core.errors import SensaiError
 from sensai.core.models import ChatDone, Message, TextDelta
 from sensai.core.models.llm import ChatOptions
 
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
 
     from sensai.core.models.prompts import PromptVersion
     from sensai.core.ports import LLM
+4. sync_defaults activates a changed default even over a deliberate local choice. If you rolled back to v1 locally and a teammate ships a new default, your next start activates it. It's documented and arguably what "shipping" means, but an alternative is to only store new defaults and activate them only when the current active version is itself a code default. Its two steps (create, then activate) also run as two separate transactions, which is harmless but not atomic.
+
 
 type Winner = Literal["A", "B", "tie"]
 
@@ -28,6 +31,10 @@ _JUDGE_SCHEMA = {
 }
 _JUDGE_OPTIONS = ChatOptions(temperature=0.0, response_schema=_JUDGE_SCHEMA)
 _SWAPPED: dict[str, Winner] = {"A": "B", "B": "A", "tie": "tie"}
+
+
+class ComparisonError(SensaiError, ValueError):
+    """A comparison can't run with the given prompt or inputs."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,11 +106,11 @@ class PromptComparison:
         """Answer every input with both versions and summarize the results.
 
         Raises:
-            ValueError: `inputs` is empty.
+            ComparisonError: `inputs` is empty.
             LLMError: The model failed.
         """
         if not inputs:
-            raise ValueError("a comparison needs at least one input")
+            raise ComparisonError("a comparison needs at least one input")
         results: list[InputResult] = []
         for text in inputs:
             answer_a = await self._answer(a.content, text)

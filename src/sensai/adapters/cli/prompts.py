@@ -10,8 +10,6 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
-from sensai.core.prompts import JUDGE
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -100,16 +98,19 @@ class PromptCommands:
         judge: bool,
         output: Path | None,
     ) -> None:
-        """Run a comparison and print its summary; save it as JSON if asked."""
-        a = await self._library.get(name, versions[0])
-        b = await self._library.get(name, versions[1])
+        """Run a comparison and print its summary; save it as JSON if asked.
+
+        `inputs` holds one input per line; blank lines are skipped.
+        """
         lines = inputs.read_text(encoding="utf-8").splitlines()
         texts = [line.strip() for line in lines if line.strip()]
-        judge_prompt = (await self._library.active(JUDGE)).content if judge else None
         with self._console.status(
-            f"Comparing {name} v{a.version} and v{b.version} on {len(texts)} inputs…"
+            f"Comparing {name} v{versions[0]} and v{versions[1]}"
+            f" on {len(texts)} inputs…"
         ):
-            report = await comparison.compare(a, b, texts, judge_prompt=judge_prompt)
+            report = await self._library.compare(
+                comparison, name, versions, texts, judge=judge
+            )
         self._print_report(report)
         if output is not None:
             output.write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")

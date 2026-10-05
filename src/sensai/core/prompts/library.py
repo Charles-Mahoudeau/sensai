@@ -6,6 +6,8 @@ import difflib
 from typing import TYPE_CHECKING
 
 from sensai.core.ports import PromptNotFoundError
+from sensai.core.prompts.comparison import ComparisonError
+from sensai.core.prompts.defaults import JUDGE, SYSTEM
 from sensai.core.prompts.rules import validate
 
 if TYPE_CHECKING:
@@ -13,8 +15,13 @@ if TYPE_CHECKING:
 
     from sensai.core.models.prompts import PromptVersion
     from sensai.core.ports import PromptRepository
+    from sensai.core.prompts.comparison import ComparisonReport, PromptComparison
 
 DEFAULT_NOTE = "default from code"
+
+# A comparison sends each version as the system message: only prompts used that
+# way in the chat give meaningful results.
+COMPARABLE = frozenset({SYSTEM})
 
 
 class PromptLibrary:
@@ -57,6 +64,22 @@ class PromptLibrary:
             PromptNotFoundError: The prompt has no active version.
         """
         return await self._repo.get_active(name)
+
+    async def system_prompt(self, profile: str = "") -> str:
+        """Return the chat's system message: active `system` prompt + profile.
+
+        The parts are joined with a blank line and not stripped. That is how
+        Ollama joins consecutive system messages, so the model reads exactly
+        what it read when the agent sent its own system message.
+
+        Args:
+            profile: The rendered user profile; omitted when empty.
+
+        Raises:
+            PromptNotFoundError: No version of `system` is active.
+        """
+        base = (await self._repo.get_active(SYSTEM)).content
+        return "\n\n".join(part for part in (base, profile) if part)
 
     async def active_all(self) -> Sequence[PromptVersion]:
         """Return the active version of every prompt, ordered by name."""
@@ -126,3 +149,36 @@ class PromptLibrary:
                 tofile=f"{name} v{new}",
             )
         )
+
+    async def compare(
+        self,
+        comparison: PromptComparison,
+        name: str,
+        versions: tuple[int, int],
+        inputs: Sequence[str],
+        *,
+        judge: bool,
+    ) -> ComparisonReport:
+        """Compare two versions of a prompt on the same inputs.
+
+        Args:
+            comparison: Runs the versions against the model.
+            name: The prompt to compare; only prompts in `COMPARABLE`.
+            versions: The two version numbers.
+            inputs: The user messages both versions answer.
+            judge: Whether the active `judge` prompt also rates the answers.
+
+        Raises:
+            ComparisonError: The prompt can't be compared, or `inputs` is empty.
+            PromptVersionNotFoundError: The prompt has no such version.
+        """
+        if name not in COMPARABLE:
+            allowed = ", ".join(sorted(COMPARABLE))
+            raise ComparisonError(
+                f"prompt {name!r} can't be compared: a comparison sends each "
+                f"version as the system message, which only fits {allowed}"
+            )
+        a = await self._repo.get_version(name, versions[0])
+        b = await self._repo.get_version(name, versions[1])
+        judge_prompt = (await self._repo.get_active(JUDGE)).content if judge else None
+        return await comparison.compare(a, b, inputs, judge_prompt=judge_prompt)

@@ -6,10 +6,11 @@ import re
 from dataclasses import dataclass
 from string import Formatter
 
+from sensai.core.errors import SensaiError
 from sensai.core.prompts.defaults import REACT_NOTES, REACT_THOUGHT
 
 
-class InvalidPromptError(ValueError):
+class InvalidPromptError(SensaiError, ValueError):
     """A prompt version would break the code that uses it."""
 
 

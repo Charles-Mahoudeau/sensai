@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from sensai.core.models import ChatDone, TextDelta
 from sensai.core.ports import PromptNotFoundError, PromptVersionNotFoundError
-from sensai.core.prompts import InvalidPromptError, PromptLibrary
+from sensai.core.prompts import InvalidPromptError, PromptComparison, PromptLibrary
+from sensai.core.prompts.comparison import ComparisonError
 from sensai.core.prompts.library import DEFAULT_NOTE
-from tests.fakes import InMemoryPromptRepository
+from tests.fakes import FakeLLM, InMemoryPromptRepository
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -173,5 +175,82 @@ def test_invalid_default_fails_the_sync() -> None:
     async def scenario(library: PromptLibrary) -> None:
         with pytest.raises(InvalidPromptError):
             await library.sync_defaults({"react_notes": "no placeholder"})
+
+    _run(scenario)
+
+
+def test_system_prompt_appends_the_profile_without_stripping() -> None:
+    """Joined like Ollama joins two system messages: a blank line, no strip."""
+
+    async def scenario(library: PromptLibrary) -> None:
+        await library.new_version("system", "Be helpful.\n")
+
+        assert await library.system_prompt("About the user") == (
+            "Be helpful.\n\n\nAbout the user"
+        )
+        assert await library.system_prompt("") == "Be helpful.\n"
+
+    _run(scenario)
+
+
+def _comparison(llm: FakeLLM) -> PromptComparison:
+    ticks = iter(float(n) for n in range(100))
+    return PromptComparison(llm, lambda: next(ticks))
+
+
+def test_compare_uses_the_versions_and_the_active_judge() -> None:
+    """Both versions are compared, and the active `judge` prompt rates them."""
+    answer = [TextDelta("ok"), ChatDone()]
+    verdict = [TextDelta('{"winner": "A", "reason": "r"}')]
+    llm = FakeLLM([answer, answer, verdict, verdict])
+
+    async def scenario(library: PromptLibrary) -> None:
+        await library.new_version("system", "One.")
+        await library.new_version("system", "Two.")
+        await library.new_version("judge", "Judge v1.")
+        await library.new_version("judge", "Judge v2.")
+        await library.rollback("judge", 1)
+
+        report = await library.compare(
+            _comparison(llm), "system", (1, 2), ["q"], judge=True
+        )
+
+        assert (report.a.version, report.b.version) == (1, 2)
+        assert llm.messages[0][0].content == "One."
+        assert llm.messages[1][0].content == "Two."
+        assert llm.messages[2][0].content == "Judge v1."
+
+    _run(scenario)
+
+
+def test_compare_without_judge_skips_it() -> None:
+    """`judge=False` makes no judge call, even if a judge prompt exists."""
+    answer = [TextDelta("ok"), ChatDone()]
+    llm = FakeLLM([answer, answer])
+
+    async def scenario(library: PromptLibrary) -> None:
+        await library.new_version("system", "One.")
+        await library.new_version("judge", "Judge.")
+
+        report = await library.compare(
+            _comparison(llm), "system", (1, 1), ["q"], judge=False
+        )
+
+        assert not report.judged
+        assert len(llm.messages) == 2
+
+    _run(scenario)
+
+
+def test_compare_refuses_prompts_not_used_as_system_message() -> None:
+    """A ReAct prompt sent as the system message would give misleading results."""
+
+    async def scenario(library: PromptLibrary) -> None:
+        await library.new_version("react_thought", "{tools} ready to answer")
+
+        with pytest.raises(ComparisonError, match="can't be compared"):
+            await library.compare(
+                _comparison(FakeLLM([])), "react_thought", (1, 1), ["q"], judge=False
+            )
 
     _run(scenario)

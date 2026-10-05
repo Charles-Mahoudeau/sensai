@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from sensai.core.prompts.defaults import (
     REACT_ANSWER,
@@ -11,6 +11,9 @@ from sensai.core.prompts.defaults import (
     REACT_THOUGHT,
     load_defaults,
 )
+
+if TYPE_CHECKING:
+    from sensai.core.prompts import PromptLibrary
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,4 +38,17 @@ class AgentPrompts:
             thought=texts[REACT_THOUGHT],
             notes=texts[REACT_NOTES],
             answer=texts[REACT_ANSWER],
+        )
+
+    @classmethod
+    async def active(cls, library: PromptLibrary) -> Self:
+        """Return the active version of each ReAct prompt.
+
+        Raises:
+            PromptNotFoundError: A ReAct prompt has no active version.
+        """
+        return cls(
+            thought=(await library.active(REACT_THOUGHT)).content,
+            notes=(await library.active(REACT_NOTES)).content,
+            answer=(await library.active(REACT_ANSWER)).content,
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from sensai.core.errors import SensaiError
 from sensai.core.prompts import (
     JUDGE,
     REACT_NOTES,
@@ -57,3 +58,8 @@ def test_untemplated_prompts_accept_any_text() -> None:
     validate(JUDGE, 'Reply with {"winner": "A"}')
     validate(SYSTEM, "Anything { goes }")
     validate("unknown_prompt", "{whatever}")
+
+
+def test_invalid_prompt_error_is_a_sensai_error() -> None:
+    """Callers that handle `SensaiError` also handle invalid prompts."""
+    assert issubclass(InvalidPromptError, SensaiError)

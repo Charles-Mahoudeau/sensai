@@ -13,6 +13,7 @@ from sensai.core.models import ChatDone, TextDelta
 from sensai.core.models.llm import Usage
 from sensai.core.models.prompts import PromptVersion
 from sensai.core.prompts import PromptComparison
+from sensai.core.prompts.comparison import ComparisonError
 from tests.fakes import FakeLLM
 
 V1 = PromptVersion("system", 1, "Be detailed.", datetime(2026, 1, 1, tzinfo=UTC))
@@ -135,5 +136,5 @@ def test_no_inputs_is_an_error() -> None:
     """A comparison without inputs is refused."""
     comparison = PromptComparison(FakeLLM([]), _clock())
 
-    with pytest.raises(ValueError, match="at least one input"):
+    with pytest.raises(ComparisonError, match="at least one input"):
         asyncio.run(comparison.compare(V1, V2, []))
