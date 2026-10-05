@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import sys
+import time
 from typing import TYPE_CHECKING
 
 import httpx
 
+from sensai.adapters.cli import PromptCommands
 from sensai.adapters.ollama import OllamaChat
 from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
 from sensai.adapters.storage.connection import create_connection
 from sensai.adapters.storage.repositories import (
     SqliteProfileRepository,
+    SqlitePromptRepository,
     SqliteSessionRepository,
 )
 from sensai.adapters.storage.sqlite import SqliteDatabase
@@ -21,12 +25,19 @@ from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
 from sensai.core.agent import Agent
 from sensai.core.engine import Engine
+from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
+from sensai.core.prompts import (
+    SYSTEM,
+    PromptComparison,
+    PromptLibrary,
+    load_defaults,
+)
 
 if TYPE_CHECKING:
-    import pathlib
+    import argparse
     from collections.abc import Sequence
 
     from sensai.core.models import Message
@@ -84,11 +95,21 @@ async def _get_profile_sys_prompt(config: Config, db: SqliteDatabase) -> str:
     return system_prompt
 
 
+async def _get_prompt_library(db: SqliteDatabase) -> PromptLibrary:
+    library = PromptLibrary(SqlitePromptRepository(db))
+    await library.sync_defaults(load_defaults())
+    return library
+
+
 async def _serve(config: Config) -> None:
     async with httpx.AsyncClient(timeout=None) as client:
         db = _get_db()
 
-        system_prompt = await _get_profile_sys_prompt(config, db)
+        prompts = await _get_prompt_library(db)
+        base_prompt = (await prompts.active(SYSTEM)).content
+        profile_prompt = await _get_profile_sys_prompt(config, db)
+        parts = (base_prompt.strip(), profile_prompt.strip())
+        system_prompt = "\n\n".join(part for part in parts if part)
 
         session_repo = SqliteSessionRepository(db)
         last = await session_repo.list_sessions(limit=1)
@@ -102,6 +123,51 @@ async def _serve(config: Config) -> None:
 
         for message in engine.history[len(history) :]:
             await session_repo.append_message(session.id, message)
+
+
+def run_prompts(args: argparse.Namespace) -> None:
+    """Run one `sensai prompts` command.
+
+    Args:
+        args: The parsed command line, with `action` and its arguments.
+
+    Returns:
+        None
+    """
+    try:
+        asyncio.run(_run_prompts(args))
+    except (SensaiError, OSError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
+
+
+async def _run_prompts(args: argparse.Namespace) -> None:
+    commands = PromptCommands(await _get_prompt_library(_get_db()))
+    match args.action:
+        case "list":
+            await commands.list()
+        case "history":
+            await commands.history(args.name)
+        case "show":
+            await commands.show(args.name, args.version)
+        case "new":
+            await commands.new(args.name, args.file, args.note)
+        case "diff":
+            await commands.diff(args.name, args.old, args.new)
+        case "rollback":
+            await commands.rollback(args.name, args.version)
+        case "compare":
+            config = _parse_config(args.model, pathlib.Path(args.config))
+            async with httpx.AsyncClient(timeout=None) as client:
+                llm = OllamaChat(client, config.ollama.url, config.model)
+                await commands.compare(
+                    PromptComparison(llm, time.perf_counter),
+                    args.name,
+                    (args.a, args.b),
+                    args.inputs,
+                    judge=not args.no_judge,
+                    output=args.output,
+                )
 
 
 def _parse_config(model: str, config_path: pathlib.Path) -> Config:
