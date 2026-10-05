@@ -137,9 +137,14 @@ class TextDelta:
 
 @dataclass(frozen=True, slots=True)
 class ThinkingDelta:
-    """Represent a delta containing the model's internal reasoning or thoughts."""
+    """Represent a delta containing the model's internal reasoning or thoughts.
+
+    `ready` is set on the last delta of a thought that concluded no more
+    information is needed, so a front-end can tell that the answer comes next.
+    """
 
     text: str
+    ready: bool = False
 
 
 @dataclass(frozen=True, slots=True)

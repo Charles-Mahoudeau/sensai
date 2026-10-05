@@ -28,6 +28,8 @@ imports the agent, the pipeline, a port or an adapter. See
 | Empty input | Shows a hint, nothing is sent |
 | `/exit`, `/quit`, `ctrl+q` | Quit |
 | `esc` | Stop the answer being generated, keeping the partial text |
+| `ctrl+t` | Expand every reasoning group, or collapse them if all are expanded |
+| Click a reasoning header | Expand or collapse that group |
 
 The prompt is disabled while an answer is generating, because the engine
 accepts one submission at a time. The status line shows the model, the current
@@ -59,6 +61,8 @@ app's lifetime. Events from other submissions are ignored.
 | `MessageStarted` | Mount an empty `AssistantMessage` |
 | `TokenGenerated` | Append the text to it |
 | `MessageCompleted` | Finalize the answer (show the message content if nothing was streamed) |
+| `ThinkingGenerated` | Stream into a `ThoughtStep` inside the turn's `ReasoningGroup`; `ready` tags the step |
+| `ToolRunStarted` / `ToolRunFinished` | Add a `ToolCallLine` to the same group, then fill in its result |
 | `ErrorEvent` | Remove the empty answer and show an `ErrorMessage` |
 | `Done` | Re-enable the prompt; add "(interrupted)" if `esc` was pressed |
 
@@ -72,6 +76,9 @@ usual.
 | --- | --- |
 | `UserMessage` | The user's message |
 | `AssistantMessage` | The answer, rendered as Markdown while it streams |
+| `ReasoningGroup` | One turn's thoughts and tool calls, collapsible |
+| `ThoughtStep` | One think/act cycle inside a group |
+| `ToolCallLine` | One tool call, inside a group |
 | `ErrorMessage` | An error reported by the engine |
 | `HintMessage` | Hints and the "(interrupted)" marker |
 
@@ -82,6 +89,25 @@ calls internally, and overriding it makes the text loop endlessly.
 
 Each widget stores its plain text in `.text`, which the tests use for
 assertions.
+
+## Reasoning display
+
+A ReAct turn can think several times. Instead of one long wall of italic text,
+the turn gets one `ReasoningGroup`:
+
+- **While the agent works**, the header shows a spinner, the current step and a
+  clock. The step being generated shows only its last 3 lines; finished steps
+  shrink to a one-line summary. A thought that concluded the answer can be
+  written is tagged "ready to answer" (the `ready` flag of `ThinkingGenerated`).
+- **When the answer starts**, the group collapses to a line such as
+  `▸ Reasoned · 2 steps · 1 tool · 8s`.
+- **Expanded** (click or `ctrl+t`), every step shows its whole thought rendered
+  as Markdown, with the tool calls between them.
+
+What is visible is decided by CSS classes on the group (`-live`, `-full`,
+`-collapsed`) and on each step (`-streaming`, `-done`); see `sensai.tcss`.
+A text fragment arriving before a later tool call closes the group, so that
+tool call opens a new one.
 
 ## Styling
 

@@ -13,12 +13,17 @@ from sensai.adapters.tui.widgets import (
     AssistantMessage,
     ErrorMessage,
     HintMessage,
+    ReasoningGroup,
+    ThoughtStep,
+    ToolCallLine,
     UserMessage,
 )
 from sensai.core.agent import Agent
+from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
-from sensai.core.models import ChatDone, TextDelta
+from sensai.core.models import ChatDone, Message, TextDelta, ToolCall, ToolResult
+from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from tests.fakes import FakeLLM
@@ -28,7 +33,8 @@ if TYPE_CHECKING:
 
     from textual.pilot import Pilot
 
-    from sensai.core.models import ChatEvent, Message, ToolSpec
+    from sensai.core.agent.events import AgentEvent
+    from sensai.core.models import ChatEvent, ToolSpec
     from sensai.core.models.llm import ChatOptions
     from sensai.core.ports import LLM
     from tests.fakes.llm import Turn
@@ -102,6 +108,76 @@ def test_streamed_answer_is_rendered() -> None:
         assert _texts(app, AssistantMessage) == ["Bonjour"]
 
     _run(app, scenario)
+
+
+def test_thinking_is_grouped_and_collapsed_when_the_answer_starts() -> None:
+    """Reasoning fragments form one step in a group that folds under the answer."""
+    turns: list[Turn] = [
+        [ThinkingDelta("Let me "), ThinkingDelta("think"), TextDelta("42")]
+    ]
+    app = _app(FakeLLM(turns))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        assert [step.text for step in app.query(ThoughtStep)] == ["Let me think"]
+        assert _texts(app, AssistantMessage) == ["42"]
+        group = app.query_one(ReasoningGroup)
+        assert not group.live
+        assert group.has_class("-collapsed")
+        assert group.header_text.startswith("▸ Reasoned · 1 step")
+
+    _run(app, scenario)
+
+
+def test_reasoning_group_expands_with_click_and_ctrl_t() -> None:
+    """The header toggles one group; ctrl+t toggles all of them."""
+    turns: list[Turn] = [[ThinkingDelta("Hmm"), TextDelta("42")]]
+    app = _app(FakeLLM(turns))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+        group = app.query_one(ReasoningGroup)
+
+        await pilot.click(".reasoning-header")
+        assert group.expanded
+        assert group.has_class("-full")
+        assert not group.has_class("-collapsed")
+        assert group.header_text.startswith("▾ Reasoned")
+
+        await pilot.press("ctrl+t")
+        assert not group.expanded
+        await pilot.press("ctrl+t")
+        assert group.expanded
+
+    _run(app, scenario)
+
+
+def test_ready_thought_is_marked_in_its_title() -> None:
+    """A closing `ready` delta tags the step as ready to answer."""
+    app = _tool_app([ThinkingDelta("All known."), ThinkingDelta("", ready=True)])
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        step = app.query_one(ThoughtStep)
+        assert step.ready
+        assert step.title.endswith("ready to answer")
+
+    _run(app, scenario)
+
+
+def test_long_thought_shows_only_its_last_lines_while_streaming() -> None:
+    """The live window is capped, then the step keeps the whole text."""
+    step = ThoughtStep(1)
+    step.add_fragment("word " * 400)
+
+    assert step._tail().count("\n") + 1 == ThoughtStep.LIVE_LINES
+    assert step._tail().startswith("…")
+    assert len(step.text) == 2000
 
 
 def test_empty_input_shows_a_hint_and_sends_nothing() -> None:
@@ -184,5 +260,116 @@ def test_escape_interrupts_the_answer() -> None:
 
         assert _texts(app, AssistantMessage) == ["Thinking"]
         assert _texts(app, HintMessage) == ["(interrupted)"]
+
+    _run(app, scenario)
+
+
+class ScriptedRunner:
+    """Replay fixed agent events, as a real agent run would emit them."""
+
+    def __init__(self, events: list[AgentEvent]) -> None:
+        """Keep the events to replay."""
+        self._events = events
+
+    async def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
+        """Yield the scripted events."""
+        del messages
+        for event in self._events:
+            yield event
+        yield TurnCompleted([Message.assistant("done")])
+
+
+def _tool_app(events: list[AgentEvent]) -> SensaiApp:
+    engine = Engine(ScriptedRunner(events), Pipeline(), EventBus())
+    return SensaiApp(engine, model="test-model")
+
+
+def test_tool_calls_stack_above_the_answer() -> None:
+    """Tool lines replace "Calling" by the trimmed result, answer comes last."""
+    search = ToolCall("web_search", {"query": "x"}, id="1")
+    fetch = ToolCall("fetch", {}, id="2")
+    long_result = "line one\nline two " + "y" * 200
+    app = _tool_app(
+        [
+            ToolRunStarted(search),
+            ToolRunStarted(fetch),
+            ToolRunFinished(search, ToolResult("web_search", long_result, "1")),
+            ToolRunFinished(fetch, ToolResult.error("fetch", "boom", "2")),
+            TextDelta("Answer"),
+        ]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        lines = list(app.query(ToolCallLine))
+        assert [(line.tool_name, line.state) for line in lines] == [
+            ("web_search", "done"),
+            ("fetch", "failed"),
+        ]
+        first = lines[0].text
+        assert first.startswith("● Called tool web_search: line one line two y")
+        assert first.endswith("…")
+        assert "\n" not in first
+        assert lines[1].text == "● Failed to call tool fetch: boom"
+
+        order = [type(w) for w in app.query("#transcript > *")]
+        assert order == [UserMessage, ReasoningGroup, AssistantMessage]
+
+    _run(app, scenario)
+
+
+def test_text_between_tool_calls_keeps_its_place() -> None:
+    """A preamble before a tool call stays above that tool line."""
+    call = ToolCall("web_search", id="1")
+    app = _tool_app(
+        [
+            TextDelta("Let me search"),
+            ToolRunStarted(call),
+            ToolRunFinished(call, ToolResult("web_search", "ok", "1")),
+            TextDelta("Found it"),
+        ]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        order = [type(w) for w in app.query("#transcript > *")]
+        assert order == [
+            UserMessage,
+            AssistantMessage,
+            ReasoningGroup,
+            AssistantMessage,
+        ]
+        assert _texts(app, AssistantMessage) == ["Let me search", "Found it"]
+
+    _run(app, scenario)
+
+
+def test_thoughts_and_tool_calls_share_one_group_per_turn() -> None:
+    """Steps and tool lines nest in a single group, with a counted summary."""
+    search = ToolCall("web_search", {"query": "x"}, id="1")
+    app = _tool_app(
+        [
+            ThinkingDelta("Need the web."),
+            ToolRunStarted(search),
+            ToolRunFinished(search, ToolResult("web_search", "found", "1")),
+            ThinkingDelta("Got it."),
+            ThinkingDelta("", ready=True),
+            TextDelta("Answer"),
+        ]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        group = app.query_one(ReasoningGroup)
+        assert [step.number for step in group.query(ThoughtStep)] == [1, 2]
+        assert len(group.query(ToolCallLine)) == 1
+        assert group.header_text.startswith("▸ Reasoned · 2 steps · 1 tool")
+        assert len(app.query(ReasoningGroup)) == 1
 
     _run(app, scenario)

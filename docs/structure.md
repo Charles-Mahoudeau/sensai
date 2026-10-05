@@ -341,7 +341,7 @@ class LLM(Protocol):
 library's.
 
 ```python
-# core/agent/loop.py
+# core/agent/base.py
 from sensai.core.models import TextDelta, ToolCallRequest
 from sensai.core.ports import LLM, LLMUnavailable
 

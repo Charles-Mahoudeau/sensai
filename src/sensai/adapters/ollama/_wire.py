@@ -89,6 +89,7 @@ def chat_payload(
         "model": model,
         "messages": [message_to_wire(message) for message in messages],
         "stream": True,
+        "think": False,
     }
     if tools:
         payload["tools"] = [tool_to_wire(spec) for spec in tools]

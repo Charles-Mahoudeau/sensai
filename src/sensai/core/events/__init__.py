@@ -7,7 +7,10 @@ from sensai.core.events.types import (
     Event,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
+    ToolRunFinished,
+    ToolRunStarted,
 )
 
 __all__ = [
@@ -17,5 +20,8 @@ __all__ = [
     "EventBus",
     "MessageCompleted",
     "MessageStarted",
+    "ThinkingGenerated",
     "TokenGenerated",
+    "ToolRunFinished",
+    "ToolRunStarted",
 ]

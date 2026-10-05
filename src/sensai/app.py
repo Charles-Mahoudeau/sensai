@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import pathlib
 import sys
 import time
@@ -23,7 +24,7 @@ from sensai.adapters.storage.repositories import (
 from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
-from sensai.core.agent import Agent
+from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
@@ -54,8 +55,9 @@ def build_engine(
 ) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    agent = ReActAgent(llm)
     return Engine(
-        runner=Agent(llm),
+        runner=agent,
         pipeline=Pipeline(),
         bus=EventBus(),
         system_prompt=system_prompt,
@@ -73,6 +75,7 @@ def main(model: str, config_path: pathlib.Path) -> None:
     Returns:
         None
     """
+    logging.basicConfig(level=logging.INFO, filename="sensai.log")
     config = _parse_config(model, config_path)
 
     asyncio.run(_serve(config))
