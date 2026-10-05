@@ -166,9 +166,20 @@ HintMessage {
     }
 }
 
+#statusbar {
+    height: 1;
+    background: $background;
+}
+
 #status {
+    width: 1fr;
     height: 1;
     padding: 0 3;
     color: $text-muted;
+    background: $background;
+}
+
+#effort {
+    height: 1;
     background: $background;
 }

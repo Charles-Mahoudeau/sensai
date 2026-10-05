@@ -11,6 +11,7 @@ from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    EffortLabel,
     ErrorMessage,
     HintMessage,
     ReasoningGroup,
@@ -20,9 +21,17 @@ from sensai.adapters.tui.widgets import (
 )
 from sensai.core.agent import Agent
 from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
+from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
-from sensai.core.models import ChatDone, Message, TextDelta, ToolCall, ToolResult
+from sensai.core.models import (
+    ChatDone,
+    Message,
+    TextDelta,
+    ThinkingEffort,
+    ToolCall,
+    ToolResult,
+)
 from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
@@ -371,5 +380,28 @@ def test_thoughts_and_tool_calls_share_one_group_per_turn() -> None:
         assert len(group.query(ToolCallLine)) == 1
         assert group.header_text.startswith("▸ Reasoned · 2 steps · 1 tool")
         assert len(app.query(ReasoningGroup)) == 1
+
+    _run(app, scenario)
+
+
+def test_ctrl_r_cycles_the_thinking_effort_shown_in_the_status_bar() -> None:
+    """Ctrl+R advances the effort, wraps after Ultra and updates the label."""
+    engine = Engine(ReActAgent(FakeLLM([])), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        label = app.query_one(EffortLabel)
+        assert label.effort is ThinkingEffort.MEDIUM
+
+        await pilot.press("ctrl+r")
+        assert label.effort is ThinkingEffort.HIGH
+        await pilot.press("ctrl+r")
+        assert label.effort is ThinkingEffort.ULTRA
+        assert label._rainbow_timer is not None
+        await pilot.press("ctrl+r")
+        assert label.effort is ThinkingEffort.NONE
+        assert label._rainbow_timer is None
+        assert str(label.render()) == "No thinking"
+        assert app._engine.thinking_effort is ThinkingEffort.NONE
 
     _run(app, scenario)

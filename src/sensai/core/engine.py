@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from sensai.core import agent
 from sensai.core.agent.events import TurnCompleted
@@ -20,7 +20,7 @@ from sensai.core.events import (
     TokenGenerated,
 )
 from sensai.core.events.types import ToolRunFinished, ToolRunStarted
-from sensai.core.models import Message, TextDelta
+from sensai.core.models import Message, TextDelta, ThinkingEffort
 from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
@@ -36,6 +36,13 @@ class Runner(Protocol):
     def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
         """Run the message processing pipeline for the given message."""
         ...
+
+
+@runtime_checkable
+class ThinkingRunner(Protocol):
+    """A runner whose reasoning effort can be changed between turns."""
+
+    thinking_effort: ThinkingEffort
 
 
 class Engine:
@@ -57,6 +64,26 @@ class Engine:
         self._system_prompt = system_prompt
         self._history: list[Message] = list(history)
         self._tasks: dict[str, asyncio.Task[None]] = {}
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort:
+        """How much the runner reasons, or NONE if it does not support reasoning.
+
+        The runner owns the value; changes apply from the next submission.
+        """
+        if isinstance(self._runner, ThinkingRunner):
+            return self._runner.thinking_effort
+        return ThinkingEffort.NONE
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: ThinkingEffort) -> None:
+        if isinstance(self._runner, ThinkingRunner):
+            self._runner.thinking_effort = value
+
+    def cycle_thinking_effort(self) -> ThinkingEffort:
+        """Switch the runner to the next thinking effort, wrapping after the highest."""
+        self.thinking_effort = self.thinking_effort.next()
+        return self.thinking_effort
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
