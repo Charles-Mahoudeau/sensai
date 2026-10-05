@@ -13,16 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-def _to_record(row: Sequence[Any]) -> MemoryRecord:
-    id_, name, type_, created_at, updated_at, description = row
-    return MemoryRecord(
-        id_,
-        name,
-        type_,
-        from_db_time(created_at),
-        from_db_time(updated_at),
-        description,
-    )
+_TABLE = "memories"
 
 
 def _lower(text: str | None) -> str | None:
@@ -45,15 +36,26 @@ class SqliteMemoryRepository:
 
         Args:
             db: The database instance.
+
+        Raises:
+            StorageError: The table does not exist (migrations not applied).
         """
         self._db = db
-        cur = db.conn.cursor()
-        cur.execute("PRAGMA table_info(ma_table)")
-        column = [row[1] for row in cur.fetchall()]
-
-        self._columns = ", ".join(column)
+        self._column_names = db.columns(_TABLE)
+        self._columns = ", ".join(self._column_names)
 
         db.conn.create_function("sensai_lower", 1, _lower, deterministic=True)
+
+    def _to_record(self, row: Sequence[Any]) -> MemoryRecord:
+        fields = dict(zip(self._column_names, row, strict=True))
+        return MemoryRecord(
+            fields["id"],
+            fields["name"],
+            fields["type"],
+            from_db_time(fields["created_at"]),
+            from_db_time(fields["updated_at"]),
+            fields["description"],
+        )
 
     async def create(
         self, *, name: str, type: str, description: str | None = None
@@ -70,7 +72,7 @@ class SqliteMemoryRepository:
                         f" VALUES (?, ?, ?, ?, ?) RETURNING {self._columns}",
                         (name, type, description, now, now),
                     ).fetchone()
-                    return _to_record(row)
+                    return self._to_record(row)
             except sqlite3.IntegrityError as error:
                 if _is_duplicate(error):
                     raise DuplicateMemoryError(f"{type}/{name}") from error
@@ -87,7 +89,7 @@ class SqliteMemoryRepository:
             ).fetchone()
             if row is None:
                 raise MemoryNotFoundError(memory_id)
-            return _to_record(row)
+            return self._to_record(row)
 
         return await self._db.run(get)
 
@@ -107,7 +109,7 @@ class SqliteMemoryRepository:
                 " ORDER BY updated_at DESC, id DESC",
                 {"type": type, "query": query},
             ).fetchall()
-            return [_to_record(row) for row in rows]
+            return [self._to_record(row) for row in rows]
 
         return await self._db.run(find)
 
@@ -133,7 +135,7 @@ class SqliteMemoryRepository:
                     ).fetchone()
                     if row is None:
                         raise MemoryNotFoundError(memory_id)
-                    return _to_record(row)
+                    return self._to_record(row)
             except sqlite3.IntegrityError as error:
                 if _is_duplicate(error):
                     raise DuplicateMemoryError(

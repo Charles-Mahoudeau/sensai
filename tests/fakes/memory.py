@@ -7,18 +7,24 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sensai.core.models.memory import MemoryRecord, Session
+from sensai.core.models.memory import MemoryRecord, Session, UserProfile
 from sensai.core.ports import (
     DuplicateMemoryError,
     MemoryNotFoundError,
+    ProfileNotFoundError,
     SessionNotFoundError,
+    StorageError,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Sequence
 
     from sensai.core.models.llm import Message
-    from sensai.core.ports import MemoryStore, SessionStore
+    from sensai.core.ports import (
+        MemoryRepository,
+        SessionRepository,
+        UserProfileRepository,
+    )
 
 
 def _ticking_clock() -> Callable[[], datetime]:
@@ -37,7 +43,6 @@ class InMemorySessionStore:
         self._ids = itertools.count(1)
         self._sessions: dict[int, Session] = {}
         self._messages: dict[int, list[Message]] = {}
-        self._profile: dict[str, str] = {}
 
     async def create_session(self, *, model: str, title: str | None = None) -> Session:
         """Create an empty session."""
@@ -77,18 +82,6 @@ class InMemorySessionStore:
         await self.get_session(session_id)
         del self._sessions[session_id]
         del self._messages[session_id]
-
-    async def get_profile(self) -> Mapping[str, str]:
-        """Return a copy of the profile."""
-        return dict(self._profile)
-
-    async def set_profile_value(self, key: str, value: str) -> None:
-        """Create or replace a profile entry."""
-        self._profile[key] = value
-
-    async def delete_profile_value(self, key: str) -> None:
-        """Remove a profile entry if it exists."""
-        self._profile.pop(key, None)
 
 
 class InMemoryMemoryStore:
@@ -168,10 +161,70 @@ class InMemoryMemoryStore:
         del self._records[memory_id]
 
 
+_PROFILE_CATEGORIES = frozenset({"identity", "preference", "instruction", "other"})
+
+
+class InMemoryProfileRepository:
+    """Keeps the user profile entries in a dict keyed by entry key."""
+
+    def __init__(self, clock: Callable[[], datetime] | None = None) -> None:
+        """Start empty; `clock` supplies timestamps (deterministic by default)."""
+        self._clock = clock or _ticking_clock()
+        self._entries: dict[str, UserProfile] = {}
+
+    async def get_profile(self, key: str) -> UserProfile:
+        """Return an entry or raise `ProfileNotFoundError`."""
+        try:
+            return self._entries[key]
+        except KeyError:
+            raise ProfileNotFoundError(key) from None
+
+    async def find(self, *, category: str | None = None) -> Sequence[UserProfile]:
+        """Return the entries, optionally of one category, ordered like SQLite."""
+        matches = [
+            entry
+            for entry in self._entries.values()
+            if category is None or entry.category == category
+        ]
+        return sorted(matches, key=lambda e: (e.category, e.key))
+
+    async def set_profile_value(
+        self, key: str, value: str, *, category: str | None = None
+    ) -> UserProfile:
+        """Create or replace an entry.
+
+        A new entry gets the `preference` category when `category` is `None`;
+        an existing entry keeps its category.
+        """
+        if category is not None and category not in _PROFILE_CATEGORIES:
+            # Mirrors the CHECK constraint on the SQLite table.
+            raise StorageError(f"invalid profile category {category!r}")
+        now = self._clock()
+        current = self._entries.get(key)
+        if current is None:
+            entry = UserProfile(key, value, category or "preference", now, now)
+        else:
+            entry = replace(
+                current,
+                value=value,
+                category=category or current.category,
+                updated_at=now,
+            )
+        self._entries[key] = entry
+        return entry
+
+    async def delete_profile_value(self, key: str) -> None:
+        """Remove an entry; does nothing if the key is unknown."""
+        self._entries.pop(key, None)
+
+
 if TYPE_CHECKING:
 
-    def _session_conforms(fake: InMemorySessionStore) -> SessionStore:
+    def _session_conforms(fake: InMemorySessionStore) -> SessionRepository:
         return fake
 
-    def _memory_conforms(fake: InMemoryMemoryStore) -> MemoryStore:
+    def _memory_conforms(fake: InMemoryMemoryStore) -> MemoryRepository:
+        return fake
+
+    def _profile_conforms(fake: InMemoryProfileRepository) -> UserProfileRepository:
         return fake

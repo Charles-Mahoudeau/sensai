@@ -36,11 +36,3 @@ CREATE TABLE messages (
 
 CREATE INDEX messages_session_id_id ON messages (session_id, id);
 CREATE INDEX messages_parent_id ON messages (parent_id);
-
-CREATE TABLE user_profile (
-    key        TEXT PRIMARY KEY,
-    value      TEXT NOT NULL,
-    category   TEXT NOT NULL DEFAULT 'preference'
-        CHECK (category IN ('identity', 'preference', 'instruction', 'other')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-) STRICT;

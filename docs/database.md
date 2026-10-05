@@ -211,8 +211,8 @@ Each feature ships its own numbered migration with the tables it needs. There is
 
 ```
 adapters/storage/migrations/
-├── 001_sessions.sql   # sessions, messages, profiles
-├── 002_memory.sql     # memory tables
+├── 000_sessions.sql   # sessions, messages, profiles
+├── 001_memory.sql     # memory tables
 └── 003_rag.sql        # rag_documents, rag_chunks, vec_rag_chunks*, rag_chunks_fts (+ triggers)
 ```
 

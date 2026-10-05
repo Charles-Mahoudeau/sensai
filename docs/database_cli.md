@@ -41,10 +41,10 @@ Creates the next numbered SQL file in `src/sensai/adapters/storage/migrations/` 
 
 ```sh
 db migrations new sessions
-# Migration created at .../migrations/0_sessions.sql
+# Migration created at .../migrations/000_sessions.sql
 ```
 
-- Numbering starts at `0` (`MIGRATIONS_START_ID`) and increments from the highest existing id: `0_sessions.sql`, `1_memory.sql`, ...
+- Numbering starts at `1` (`MIGRATIONS_START_ID`) and increments from the highest existing id: `000_sessions.sql`, `1_memory.sql`, ...
 - The file contains only a comment header. Write your SQLite statements below it.
 - The directory is created if it does not exist.
 
