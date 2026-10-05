@@ -24,18 +24,6 @@ if TYPE_CHECKING:
     from sensai.core.ports import LLM
 
 
-SYSTEM_PROMPT = """\
-You are Sensai, an AI assistant with access to a `web_search` tool.
-Use `web_search` when the request needs recent or external information: news, \
-"latest" versions, current events, or anything after your training cutoff. \
-Otherwise, answer directly.
-Only claim you searched if you actually called `web_search`. Never write a tool \
-call or its result as text, and never invent search results.
-Honor the format and depth the user asks for: a report, list or detailed \
-summary deserves a long, structured answer.
-"""
-
-
 class AgentError(SensaiError):
     """Raised when the agent cannot get a response from its LLM."""
 
@@ -78,8 +66,11 @@ class Agent:
         self._logger = logging.getLogger("Agent")
 
     async def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
-        """Relay LLM events and translate LLM failures to a core error."""
-        run = AgentRun([Message.system(SYSTEM_PROMPT), *messages])
+        """Relay LLM events and translate LLM failures to a core error.
+
+        The system message, if any, is part of `messages`: the engine adds it.
+        """
+        run = AgentRun(list(messages))
 
         try:
             async for event in self._loop(run):

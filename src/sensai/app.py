@@ -24,6 +24,7 @@ from sensai.adapters.storage.repositories import (
 from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
+from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
@@ -31,6 +32,9 @@ from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import (
+    REACT_ANSWER,
+    REACT_NOTES,
+    REACT_THOUGHT,
     SYSTEM,
     PromptComparison,
     PromptLibrary,
@@ -52,10 +56,11 @@ def build_engine(
     client: httpx.AsyncClient,
     system_prompt: str,
     history: Sequence[Message] = (),
+    agent_prompts: AgentPrompts | None = None,
 ) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    agent = ReActAgent(llm)
+    agent = ReActAgent(llm, agent_prompts)
     return Engine(
         runner=agent,
         pipeline=Pipeline(),
@@ -111,8 +116,12 @@ async def _serve(config: Config) -> None:
         prompts = await _get_prompt_library(db)
         base_prompt = (await prompts.active(SYSTEM)).content
         profile_prompt = await _get_profile_sys_prompt(config, db)
-        parts = (base_prompt.strip(), profile_prompt.strip())
-        system_prompt = "\n\n".join(part for part in parts if part)
+        system_prompt = "\n\n".join(p for p in (base_prompt, profile_prompt) if p)
+        agent_prompts = AgentPrompts(
+            thought=(await prompts.active(REACT_THOUGHT)).content,
+            notes=(await prompts.active(REACT_NOTES)).content,
+            answer=(await prompts.active(REACT_ANSWER)).content,
+        )
 
         session_repo = SqliteSessionRepository(db)
         last = await session_repo.list_sessions(limit=1)
@@ -121,7 +130,7 @@ async def _serve(config: Config) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        engine = build_engine(config, client, system_prompt, history)
+        engine = build_engine(config, client, system_prompt, history, agent_prompts)
         await SensaiApp(engine, model=config.model).run_async()
 
         for message in engine.history[len(history) :]:
