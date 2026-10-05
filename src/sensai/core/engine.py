@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import uuid
 from typing import TYPE_CHECKING, Protocol
 
@@ -26,7 +25,7 @@ from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 
     from sensai.core.agent.events import AgentEvent
 
@@ -42,14 +41,22 @@ class Runner(Protocol):
 class Engine:
     """Coordinate the pipeline, runner and public event bus."""
 
-    def __init__(self, runner: Runner, pipeline: Pipeline, bus: EventBus) -> None:
+    def __init__(
+        self,
+        runner: Runner,
+        pipeline: Pipeline,
+        bus: EventBus,
+        *,
+        system_prompt: str = "",
+        history: Sequence[Message] = (),
+    ) -> None:
         """Initialize the engine with its processing dependencies."""
         self._runner = runner
         self._pipeline = pipeline
         self._bus = bus
-        self._history: list[Message] = []
+        self._system_prompt = system_prompt
+        self._history: list[Message] = list(history)
         self._tasks: dict[str, asyncio.Task[None]] = {}
-        self._logger = logging.getLogger("Engine")
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
@@ -77,7 +84,10 @@ class Engine:
         try:
             await self._bus.publish(MessageStarted(submission_id))  # start
 
-            result = self._pipeline.run(tuple(self._history))  # pipeline
+            messages = tuple(self._history)
+            if self._system_prompt:
+                messages = (Message.system(self._system_prompt), *messages)
+            result = self._pipeline.run(messages)  # pipeline
 
             if isinstance(result, ShortCircuit):  # already has a reply
                 self._history.append(result.reply)
@@ -117,3 +127,8 @@ class Engine:
                 case TurnCompleted(messages=produced):
                     return produced
         raise RuntimeError("TurnCompleted event not received")
+
+    @property
+    def history(self) -> tuple[Message, ...]:
+        """The conversation so far, oldest first."""
+        return tuple(self._history)

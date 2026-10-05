@@ -42,3 +42,21 @@ class MemoryRecord:
             raise ValueError("MemoryRecord.name must be a non-empty string")
         if not self.type:
             raise ValueError("MemoryRecord.type must be a non-empty string")
+
+
+@dataclass(frozen=True, slots=True)
+class UserProfile:
+    """A key-value pair representing a user profile entry."""
+
+    key: str
+    value: str
+    category: str
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        """Validate the fields that identify the record."""
+        if not self.key:
+            raise ValueError("UserProfile.key must be a non-empty string")
+        if not self.value:
+            raise ValueError("UserProfile.value must be a non-empty string")

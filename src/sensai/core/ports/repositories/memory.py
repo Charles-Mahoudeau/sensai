@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Protocol
 from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from sensai.core.models.llm import Message
-    from sensai.core.models.memory import MemoryRecord, Session
+    from sensai.core.models.memory import MemoryRecord, Session, UserProfile
 
 
 class StorageError(SensaiError):
@@ -29,8 +29,54 @@ class DuplicateMemoryError(StorageError):
     """A memory record with the same name and type already exists."""
 
 
-class SessionStore(Protocol):
-    """Saves conversations and the persistent user profile."""
+class ProfileNotFoundError(StorageError):
+    """The requested profile entry does not exist."""
+
+
+class UserProfileRepository(Protocol):
+    """Saves the persistent user profile."""
+
+    async def get_profile(self, key: str) -> UserProfile:
+        """Return the user profile as key/value pairs (empty if none is set).
+
+        Raises:
+            StorageError: The store failed to read.
+            ProfileNotFoundError: No profile entry has this key.
+        """
+        ...
+
+    async def set_profile_value(
+        self, key: str, value: str, *, category: str | None = None
+    ) -> UserProfile:
+        """Create or replace one profile entry.
+
+        Raises:
+            StorageError: The store failed to write.
+        """
+        ...
+
+    async def delete_profile_value(self, key: str) -> None:
+        """Remove one profile entry; does nothing if the key is unknown.
+
+        Raises:
+            StorageError: The store failed to write.
+        """
+        ...
+
+    async def find(self, *, category: str | None = None) -> Sequence[UserProfile]:
+        """Return matching profile entries.
+
+        Args:
+            category: The category of the profile entries to return.
+
+        Raises:
+            StorageError: The store failed to read.
+        """
+        ...
+
+
+class SessionRepository(Protocol):
+    """Saves conversations."""
 
     async def create_session(self, *, model: str, title: str | None = None) -> Session:
         """Start a new, empty session.
@@ -91,32 +137,8 @@ class SessionStore(Protocol):
         """
         ...
 
-    async def get_profile(self) -> Mapping[str, str]:
-        """Return the user profile as key/value pairs (empty if none is set).
 
-        Raises:
-            StorageError: The store failed to read.
-        """
-        ...
-
-    async def set_profile_value(self, key: str, value: str) -> None:
-        """Create or replace one profile entry.
-
-        Raises:
-            StorageError: The store failed to write.
-        """
-        ...
-
-    async def delete_profile_value(self, key: str) -> None:
-        """Remove one profile entry; does nothing if the key is unknown.
-
-        Raises:
-            StorageError: The store failed to write.
-        """
-        ...
-
-
-class MemoryStore(Protocol):
+class MemoryRepository(Protocol):
     """Long-term structured memory the agent drives through CRUD tool calls."""
 
     async def create(
