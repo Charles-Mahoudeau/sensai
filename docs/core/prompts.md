@@ -20,7 +20,13 @@ Prompts in use today:
 | Prompt | Used by |
 | --- | --- |
 | `system` | The chat: sent as the system message, followed by the rendered user profile |
+| `react_thought` | ReAct agent: asks for a private thought before acting (`{tools}` is filled in) |
+| `react_notes` | ReAct agent: wraps that thought for the acting call (`{thought}` is filled in) |
+| `react_answer` | ReAct agent: asks for the final answer after tool results |
 | `judge` | `sensai prompts compare`: judges which of two answers is better |
+
+`system` and the `react_*` defaults are the prompts written in the ReAct agent
+PR (#106), moved to files unchanged.
 
 ## Where prompts live
 
@@ -59,6 +65,25 @@ to an existing version, that version is re-activated instead of duplicated.
 The chat reads the active version when it starts: after `new` or `rollback`,
 restart `sensai` to use it.
 
+## Validation
+
+Two prompts are templates the code fills in with `str.format`. A version that
+breaks them is refused by `new` (and a broken default fails at startup), with a
+message saying what is wrong:
+
+| Prompt | Placeholders (exactly these) | Must contain |
+| --- | --- | --- |
+| `react_thought` | `{tools}` | `ready to answer` (the phrase `_is_ready()` looks for) |
+| `react_notes` | `{thought}` | |
+
+Write literal braces in these two as `{{` and `}}`. The other prompts are sent
+as they are, so any text is valid. The rules live in `core/prompts/rules.py`
+(`PROMPT_RULES`).
+
+Default files are sent **byte for byte**: `react_notes.md` starts with a newline
+and, like `react_answer.md`, has no final newline. The pre-commit whitespace
+hooks are disabled for `core/prompts/defaults/` so they don't change them.
+
 ## Comparison runs
 
 ```bash
@@ -92,6 +117,8 @@ harness that runs them in their stage.
 | Core | `core/ports/repositories/prompts.py` | `PromptRepository` port and its errors |
 | Core | `core/prompts/defaults.py`, `defaults/*.md` | Default texts, loaded with `importlib.resources` |
 | Core | `core/prompts/library.py` | `PromptLibrary`: sync, activate, roll back, diff |
+| Core | `core/prompts/rules.py` | `PROMPT_RULES`, `validate`, `InvalidPromptError` |
+| Core | `core/agent/prompts.py` | `AgentPrompts`: the ReAct prompts injected into the agent |
 | Core | `core/prompts/comparison.py` | `PromptComparison` and its report |
 | Adapter | `adapters/storage/repositories/prompt_repository.py` | `SqlitePromptRepository` |
 | Adapter | `adapters/cli/prompts.py` | Terminal output of the commands |
@@ -99,8 +126,11 @@ harness that runs them in their stage.
 
 ## Adding a prompt
 
-1. Add `core/prompts/defaults/<name>.md` with the default text.
-2. Read it where it is used through the library, e.g.
-   `(await library.active("<name>")).content`, built in `app.py` and passed to
-   the component that needs it, instead of a string constant.
-3. On the next start, `sync_defaults()` stores it as `<name>` v1.
+1. Add `core/prompts/defaults/<name>.md` with the default text, and a name
+   constant next to `SYSTEM` in `core/prompts/defaults.py`.
+2. Pass the text to the component that uses it instead of a string constant:
+   `app.py` reads `(await library.active(<NAME>)).content` and injects it, as it
+   does for `AgentPrompts`. Core components don't read the database themselves.
+3. If the code fills it in with `str.format`, add a `PromptRule` to
+   `PROMPT_RULES` with its placeholders and any phrase the code relies on.
+4. On the next start, `sync_defaults()` stores it as `<name>` v1.
