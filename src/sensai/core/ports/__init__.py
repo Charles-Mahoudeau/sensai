@@ -17,6 +17,11 @@ from sensai.core.ports.repositories.memory import (
     StorageError,
     UserProfileRepository,
 )
+from sensai.core.ports.repositories.prompts import (
+    PromptNotFoundError,
+    PromptRepository,
+    PromptVersionNotFoundError,
+)
 from sensai.core.ports.retrieval import (
     Embedder,
     EmbedderUnavailableError,
@@ -40,6 +45,9 @@ __all__ = [
     "MemoryRepository",
     "ModelNotFoundError",
     "ProfileNotFoundError",
+    "PromptNotFoundError",
+    "PromptRepository",
+    "PromptVersionNotFoundError",
     "RetrievalError",
     "SessionNotFoundError",
     "SessionRepository",
