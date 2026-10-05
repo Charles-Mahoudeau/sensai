@@ -12,6 +12,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1",
+    "rich>=15.0.0",
     "textual>=8.2.8",
 ]
 
@@ -81,6 +82,7 @@ forbidden_modules = [
     "fastapi",
     "uvicorn",
     "mcp",
+    "rich",
     "textual",
 ]
 
