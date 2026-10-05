@@ -6,6 +6,7 @@ import difflib
 from typing import TYPE_CHECKING
 
 from sensai.core.ports import PromptNotFoundError
+from sensai.core.prompts.rules import validate
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -35,9 +36,13 @@ class PromptLibrary:
 
         Returns:
             The versions created by this call.
+
+        Raises:
+            InvalidPromptError: A default breaks its prompt's rule.
         """
         created: list[PromptVersion] = []
         for name, content in defaults.items():
+            validate(name, content)
             if await self._repo.find_by_content(name, content) is not None:
                 continue
             prompt = await self._repo.create_version(name, content, note=DEFAULT_NOTE)
@@ -86,7 +91,12 @@ class PromptLibrary:
 
         Content identical to a stored version re-activates that version instead
         of creating a duplicate.
+
+        Raises:
+            InvalidPromptError: `content` breaks the prompt's rule, e.g. a
+                placeholder the code fills in is missing.
         """
+        validate(name, content)
         prompt = await self._repo.find_by_content(name, content)
         if prompt is None:
             prompt = await self._repo.create_version(name, content, note=note)
