@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import pathlib
 import sys
 import time
 from typing import TYPE_CHECKING
@@ -42,8 +41,8 @@ from sensai.core.prompts import (
 )
 
 if TYPE_CHECKING:
-    import argparse
-    from collections.abc import Sequence
+    import pathlib
+    from collections.abc import Awaitable, Callable, Sequence
 
     from sensai.core.models import Message
     from sensai.core.ports import LLM
@@ -137,49 +136,113 @@ async def _serve(config: Config) -> None:
             await session_repo.append_message(session.id, message)
 
 
-def run_prompts(args: argparse.Namespace) -> None:
-    """Run one `sensai prompts` command.
+def prompts_list() -> None:
+    """Print every prompt with its active version."""
+    _run_prompt_command(lambda commands: commands.list())
+
+
+def prompts_history(name: str) -> None:
+    """Print every version of a prompt.
 
     Args:
-        args: The parsed command line, with `action` and its arguments.
-
-    Returns:
-        None
+        name: The prompt name.
     """
+    _run_prompt_command(lambda commands: commands.history(name))
+
+
+def prompts_show(name: str, version: int | None) -> None:
+    """Print one version of a prompt.
+
+    Args:
+        name: The prompt name.
+        version: The version to print; the active one when `None`.
+    """
+    _run_prompt_command(lambda commands: commands.show(name, version))
+
+
+def prompts_new(name: str, file: pathlib.Path, note: str | None) -> None:
+    """Save a file as the new active version of a prompt.
+
+    Args:
+        name: The prompt name.
+        file: The file holding the new text.
+        note: What changed in this version.
+    """
+    _run_prompt_command(lambda commands: commands.new(name, file, note))
+
+
+def prompts_diff(name: str, old: int, new: int) -> None:
+    """Print the changes between two versions of a prompt.
+
+    Args:
+        name: The prompt name.
+        old: The version to diff from.
+        new: The version to diff to.
+    """
+    _run_prompt_command(lambda commands: commands.diff(name, old, new))
+
+
+def prompts_rollback(name: str, version: int) -> None:
+    """Make an older version of a prompt active again.
+
+    Args:
+        name: The prompt name.
+        version: The version to activate.
+    """
+    _run_prompt_command(lambda commands: commands.rollback(name, version))
+
+
+def prompts_compare(
+    name: str,
+    versions: tuple[int, int],
+    inputs: pathlib.Path,
+    *,
+    model: str,
+    config_path: pathlib.Path,
+    judge: bool,
+    output: pathlib.Path | None,
+) -> None:
+    """Run two versions of a prompt on the same inputs and print the comparison.
+
+    Args:
+        name: The prompt name.
+        versions: The two versions to compare.
+        inputs: A text file with one input per line.
+        model: The model that answers (and judges).
+        config_path: The path to the configuration file.
+        judge: Whether the model also judges which answer is better.
+        output: Where to save the full report as JSON, if anywhere.
+    """
+    config = _parse_config(model, config_path)
+
+    async def compare(commands: PromptCommands) -> None:
+        async with httpx.AsyncClient(timeout=None) as client:
+            llm = OllamaChat(client, config.ollama.url, config.model)
+            await commands.compare(
+                PromptComparison(llm, time.perf_counter),
+                name,
+                versions,
+                inputs,
+                judge=judge,
+                output=output,
+            )
+
+    _run_prompt_command(compare)
+
+
+def _run_prompt_command(
+    command: Callable[[PromptCommands], Awaitable[None]],
+) -> None:
+    """Run one prompt command; report expected failures as `error: …`, exit 1."""
+
+    async def run() -> None:
+        await command(PromptCommands(await _get_prompt_library(_get_db())))
+
     try:
-        asyncio.run(_run_prompts(args))
+        asyncio.run(run())
     except (SensaiError, OSError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         raise SystemExit(1) from None
-
-
-async def _run_prompts(args: argparse.Namespace) -> None:
-    commands = PromptCommands(await _get_prompt_library(_get_db()))
-    match args.action:
-        case "list":
-            await commands.list()
-        case "history":
-            await commands.history(args.name)
-        case "show":
-            await commands.show(args.name, args.version)
-        case "new":
-            await commands.new(args.name, args.file, args.note)
-        case "diff":
-            await commands.diff(args.name, args.old, args.new)
-        case "rollback":
-            await commands.rollback(args.name, args.version)
-        case "compare":
-            config = _parse_config(args.model, pathlib.Path(args.config))
-            async with httpx.AsyncClient(timeout=None) as client:
-                llm = OllamaChat(client, config.ollama.url, config.model)
-                await commands.compare(
-                    PromptComparison(llm, time.perf_counter),
-                    args.name,
-                    (args.a, args.b),
-                    args.inputs,
-                    judge=not args.no_judge,
-                    output=args.output,
-                )
 
 
 def _parse_config(model: str, config_path: pathlib.Path) -> Config:
