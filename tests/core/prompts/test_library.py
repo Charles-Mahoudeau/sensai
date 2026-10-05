@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from sensai.core.ports import PromptNotFoundError, PromptVersionNotFoundError
-from sensai.core.prompts import PromptLibrary
+from sensai.core.prompts import InvalidPromptError, PromptLibrary
 from sensai.core.prompts.library import DEFAULT_NOTE
 from tests.fakes import InMemoryPromptRepository
 
@@ -148,5 +148,30 @@ def test_unknown_prompt_and_version_raise() -> None:
             await library.active("missing")
         with pytest.raises(PromptVersionNotFoundError):
             await library.rollback("system", 9)
+
+    _run(scenario)
+
+
+def test_new_version_that_breaks_its_rule_is_rejected() -> None:
+    """A thought prompt without `{tools}` is refused and nothing is stored."""
+
+    async def scenario(library: PromptLibrary) -> None:
+        await library.new_version("react_thought", "{tools} ready to answer")
+
+        with pytest.raises(InvalidPromptError):
+            await library.new_version("react_thought", "Just think.")
+
+        assert len(await library.history("react_thought")) == 1
+        assert (await library.active("react_thought")).version == 1
+
+    _run(scenario)
+
+
+def test_invalid_default_fails_the_sync() -> None:
+    """A broken shipped default fails at startup, not in the middle of a chat."""
+
+    async def scenario(library: PromptLibrary) -> None:
+        with pytest.raises(InvalidPromptError):
+            await library.sync_defaults({"react_notes": "no placeholder"})
 
     _run(scenario)
