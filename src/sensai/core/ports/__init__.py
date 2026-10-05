@@ -7,13 +7,15 @@ from sensai.core.ports.llm import (
     LLMUnavailableError,
     ModelNotFoundError,
 )
-from sensai.core.ports.memory import (
+from sensai.core.ports.repositories.memory import (
     DuplicateMemoryError,
     MemoryNotFoundError,
-    MemoryStore,
+    MemoryRepository,
+    ProfileNotFoundError,
     SessionNotFoundError,
-    SessionStore,
+    SessionRepository,
     StorageError,
+    UserProfileRepository,
 )
 from sensai.core.ports.retrieval import (
     Embedder,
@@ -35,12 +37,14 @@ __all__ = [
     "LLMResponseError",
     "LLMUnavailableError",
     "MemoryNotFoundError",
-    "MemoryStore",
+    "MemoryRepository",
     "ModelNotFoundError",
+    "ProfileNotFoundError",
     "RetrievalError",
     "SessionNotFoundError",
-    "SessionStore",
+    "SessionRepository",
     "StorageError",
+    "UserProfileRepository",
     "Vector",
     "VectorStore",
     "VectorStoreError",

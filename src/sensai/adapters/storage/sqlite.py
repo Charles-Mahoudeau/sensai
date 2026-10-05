@@ -49,6 +49,18 @@ class SqliteDatabase:
         """Return the current timestamp in the format used by the schema."""
         return to_db_time(self._clock())
 
+    def columns(self, table: str) -> tuple[str, ...]:
+        """Return the column names of `table`, in schema order.
+
+        Raises:
+            StorageError: The table does not exist (migrations not applied).
+        """
+        rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        # An unknown table yields no rows instead of an error, so check it.
+        if not rows:
+            raise StorageError(f"table {table!r} not found; apply migrations first")
+        return tuple(row[1] for row in rows)
+
     async def run[T](self, operation: Callable[[], T]) -> T:
         """Run `operation` off the event loop, turning SQLite errors into ours."""
 

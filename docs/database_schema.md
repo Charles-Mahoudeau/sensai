@@ -88,6 +88,7 @@ Persistent profile, auto-injected at session init.
 | `value` | TEXT | NOT NULL | |
 | `category` | TEXT | NOT NULL, DEFAULT `'preference'` | `identity` \| `preference` \| `instruction` \| `other` |
 | `updated_at` | TEXT | NOT NULL, DEFAULT now | |
+| `created_at` | TEXT | NOT NULL, DEFAULT now | |
 
 ### `personas` (A5)
 

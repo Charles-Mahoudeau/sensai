@@ -12,17 +12,10 @@ from sensai.core.models.tools import ToolCall
 from sensai.core.ports import SessionNotFoundError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
-_SESSION_COLUMNS = "id, model, created_at, updated_at, title"
-_MESSAGE_COLUMNS = "role, content, thinking, tool_calls_json, tool_name"
-
-
-def _to_session(row: Sequence[Any]) -> Session:
-    id_, model, created_at, updated_at, title = row
-    return Session(
-        id_, model, from_db_time(created_at), from_db_time(updated_at), title
-    )
+_SESSIONS_TABLE = "sessions"
+_MESSAGES_TABLE = "messages"
 
 
 def _tool_call_to_json(call: ToolCall) -> dict[str, Any]:
@@ -50,27 +43,47 @@ def _to_message_row(message: Message) -> tuple[Any, ...]:
     )
 
 
-def _to_message(row: Sequence[Any]) -> Message:
-    role, content, thinking, tool_calls_json, tool_name = row
-    tool_calls = tuple(
-        ToolCall(c["function"]["name"], c["function"]["arguments"], c.get("id"))
-        for c in json.loads(tool_calls_json or "[]")
-    )
-    return Message(
-        role,
-        content=content,
-        tool_calls=tool_calls,
-        tool_name=tool_name,
-        reasoning_summary=thinking or "",
-    )
-
-
 class SqliteSessionRepository:
     """Stores sessions, their messages and the user profile in SQLite."""
 
     def __init__(self, db: SqliteDatabase) -> None:
-        """Initialize the repository with a database instance."""
+        """Read the tables' columns from the migrated schema.
+
+        Args:
+            db: The database instance.
+
+        Raises:
+            StorageError: A table does not exist (migrations not applied).
+        """
         self._db = db
+        self._session_column_names = db.columns(_SESSIONS_TABLE)
+        self._session_columns = ", ".join(self._session_column_names)
+        self._message_column_names = db.columns(_MESSAGES_TABLE)
+        self._message_columns = ", ".join(self._message_column_names)
+
+    def _to_session(self, row: Sequence[Any]) -> Session:
+        fields = dict(zip(self._session_column_names, row, strict=True))
+        return Session(
+            fields["id"],
+            fields["model"],
+            from_db_time(fields["created_at"]),
+            from_db_time(fields["updated_at"]),
+            fields["title"],
+        )
+
+    def _to_message(self, row: Sequence[Any]) -> Message:
+        fields = dict(zip(self._message_column_names, row, strict=True))
+        tool_calls = tuple(
+            ToolCall(c["function"]["name"], c["function"]["arguments"], c.get("id"))
+            for c in json.loads(fields["tool_calls_json"] or "[]")
+        )
+        return Message(
+            fields["role"],
+            content=fields["content"],
+            tool_calls=tool_calls,
+            tool_name=fields["tool_name"],
+            reasoning_summary=fields["thinking"] or "",
+        )
 
     async def create_session(self, *, model: str, title: str | None = None) -> Session:
         """Insert an empty session."""
@@ -80,10 +93,10 @@ class SqliteSessionRepository:
             with self._db.write() as conn:
                 row = conn.execute(
                     "INSERT INTO sessions (model, title, created_at, updated_at)"
-                    f" VALUES (?, ?, ?, ?) RETURNING {_SESSION_COLUMNS}",
+                    f" VALUES (?, ?, ?, ?) RETURNING {self._session_columns}",
                     (model, title, now, now),
                 ).fetchone()
-                return _to_session(row)
+                return self._to_session(row)
 
         return await self._db.run(create)
 
@@ -93,22 +106,22 @@ class SqliteSessionRepository:
 
     def _get_session(self, session_id: int) -> Session:
         row = self._db.conn.execute(
-            f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE id = ?", (session_id,)
+            f"SELECT {self._session_columns} FROM sessions WHERE id = ?", (session_id,)
         ).fetchone()
         if row is None:
             raise SessionNotFoundError(session_id)
-        return _to_session(row)
+        return self._to_session(row)
 
     async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
         """Return the most recently updated sessions first."""
 
         def list_() -> list[Session]:
             rows = self._db.conn.execute(
-                f"SELECT {_SESSION_COLUMNS} FROM sessions"
+                f"SELECT {self._session_columns} FROM sessions"
                 " ORDER BY updated_at DESC, id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-            return [_to_session(row) for row in rows]
+            return [self._to_session(row) for row in rows]
 
         return await self._db.run(list_)
 
@@ -125,8 +138,8 @@ class SqliteSessionRepository:
                 if not touched:
                     raise SessionNotFoundError(session_id)
                 conn.execute(
-                    f"INSERT INTO messages (session_id, parent_id, {_MESSAGE_COLUMNS},"
-                    " created_at) VALUES"
+                    "INSERT INTO messages (session_id, parent_id, role, content,"
+                    " thinking, tool_calls_json, tool_name, created_at) VALUES"
                     " (?, (SELECT max(id) FROM messages WHERE session_id = ?),"
                     " ?, ?, ?, ?, ?, ?)",
                     (session_id, session_id, *_to_message_row(message), now),
@@ -140,11 +153,11 @@ class SqliteSessionRepository:
         def get() -> list[Message]:
             self._get_session(session_id)
             rows = self._db.conn.execute(
-                f"SELECT {_MESSAGE_COLUMNS} FROM messages"
+                f"SELECT {self._message_columns} FROM messages"
                 " WHERE session_id = ? ORDER BY id",
                 (session_id,),
             ).fetchall()
-            return [_to_message(row) for row in rows]
+            return [self._to_message(row) for row in rows]
 
         return await self._db.run(get)
 
@@ -158,37 +171,5 @@ class SqliteSessionRepository:
                 ).rowcount
                 if not deleted:
                     raise SessionNotFoundError(session_id)
-
-        await self._db.run(delete)
-
-    async def get_profile(self) -> Mapping[str, str]:
-        """Return the whole profile."""
-
-        def get() -> dict[str, str]:
-            rows = self._db.conn.execute("SELECT key, value FROM user_profile")
-            return dict(rows.fetchall())
-
-        return await self._db.run(get)
-
-    async def set_profile_value(self, key: str, value: str) -> None:
-        """Create or replace a profile entry."""
-
-        def set_() -> None:
-            with self._db.write() as conn:
-                conn.execute(
-                    "INSERT INTO user_profile (key, value, updated_at) VALUES (?, ?, ?)"
-                    " ON CONFLICT (key) DO UPDATE"
-                    " SET value = excluded.value, updated_at = excluded.updated_at",
-                    (key, value, self._db.now()),
-                )
-
-        await self._db.run(set_)
-
-    async def delete_profile_value(self, key: str) -> None:
-        """Remove a profile entry if it exists."""
-
-        def delete() -> None:
-            with self._db.write() as conn:
-                conn.execute("DELETE FROM user_profile WHERE key = ?", (key,))
 
         await self._db.run(delete)
