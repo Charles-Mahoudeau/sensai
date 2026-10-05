@@ -5,8 +5,6 @@ model behaves. They are versioned: every version is kept with a timestamp, one
 version of each prompt is **active**, and versions can be diffed, rolled back
 and compared.
 
-This is not about user messages: conversations are stored by sessions.
-
 ## Concepts
 
 | Term | Meaning |
@@ -28,6 +26,120 @@ Prompts in use today:
 `system` and the `react_*` defaults are the prompts written in the ReAct agent
 PR (#106), moved to files unchanged.
 
+## Tutorial
+
+Run every command **from the repository root**: the database is `sensai.db` in
+the current directory. Every command first syncs the code defaults into it (see
+[Where prompts live](#where-prompts-live)). Help for any command:
+`uv run sensai prompts --help`, `uv run sensai prompts compare --help`.
+
+### 1. See what exists
+
+```bash
+uv run sensai prompts list
+```
+
+```
+┃ Prompt        ┃ Active ┃ Versions ┃ Created          ┃ Note              ┃
+│ judge         │ v1     │ 1        │ 2026-10-05 21:12 │ default from code │
+│ react_answer  │ v1     │ 1        │ …                │ default from code │
+│ react_notes   │ v1     │ 1        │ …                │ default from code │
+│ react_thought │ v1     │ 1        │ …                │ default from code │
+│ system        │ v1     │ 1        │ …                │ default from code │
+```
+
+**Active** is the version the chat uses.
+
+### 2. Read a prompt
+
+```bash
+uv run sensai prompts show system        # the active version
+uv run sensai prompts show system 1      # a specific version
+```
+
+### 3. Create a new version
+
+Write the full new text in a file. Start from the current version:
+
+```bash
+uv run sensai prompts show system > /tmp/system.md   # then remove the header line and edit
+uv run sensai prompts new system /tmp/system.md --note "answer in French by default"
+```
+
+```
+system v2 is now active
+```
+
+The new version becomes active right away. If the text is identical to an
+existing version, that version is re-activated instead of duplicated.
+
+`react_thought` and `react_notes` are checked before being saved, and a version
+that would break the agent is refused (see [Validation](#validation)):
+
+```
+error: prompt 'react_thought' must contain {tools}
+```
+
+### 4. Use it in the chat
+
+The chat reads the active versions when it starts:
+
+```bash
+uv run sensai --model llama3.2:3b --config config/sensai.toml
+```
+
+Restart a chat that was already open to pick up a new version.
+
+### 5. Follow the history and compare texts
+
+```bash
+uv run sensai prompts history system     # every version, ● = active
+uv run sensai prompts diff system 1 2    # what changed from v1 to v2
+```
+
+### 6. Measure which version is better
+
+```bash
+uv run sensai prompts compare system 1 2 \
+    --inputs config/prompt_inputs.txt \
+    --model llama3.2:3b --config config/sensai.toml \
+    --output report.json
+```
+
+Both versions answer every line of the inputs file (`config/prompt_inputs.txt`
+has 5 sample questions). The table shows mean latency, tokens and answer length,
+and **judge wins**: which version's answers the model judged better.
+
+- `--no-judge`: metrics only, faster.
+- `--output`: saves every answer and the judge's reasons as JSON.
+
+It takes a few minutes: every input runs on both versions, plus the judge. Use
+it on `system` for now (see [How a comparison works](#how-a-comparison-works)).
+
+### 7. Go back
+
+```bash
+uv run sensai prompts rollback system 1
+```
+
+```
+system v1 is now active (was v2)
+```
+
+The rollback survives restarts. Nothing is deleted, so `rollback system 2`
+brings the newer version back.
+
+### Typical workflow
+
+```
+show → edit a copy → new (--note why) → chat to try it
+     → compare old vs new → keep it, or rollback
+```
+
+Versions created with `new` are local experiments: they stay in your
+`sensai.db`, aren't shared, and are lost with `scripts/db.py nuke`. To ship a
+better prompt to the team, edit its default file instead (next section).
+
 ## Where prompts live
 
 Each prompt has a **default in the code**, `core/prompts/defaults/<name>.md`,
@@ -42,28 +154,8 @@ each default with the stored versions:
   `default from code`, and is **activated**;
 - a default that is **already stored** changes nothing.
 
-So editing a default in the code ships it as the next version, while a rollback
-to an older version is not undone by the next restart.
-
-## Commands
-
-Run from the repository root (the database is `sensai.db` in the current
-directory).
-
-```bash
-uv run sensai prompts list                      # every prompt and its active version
-uv run sensai prompts history system            # every version, ● marks the active one
-uv run sensai prompts show system [VERSION]     # a version's text (active by default)
-uv run sensai prompts new system my_prompt.md --note "shorter answers"
-uv run sensai prompts diff system 1 2           # unified diff from v1 to v2
-uv run sensai prompts rollback system 1         # v1 becomes active again
-```
-
-`new` saves the file as a new version and activates it. If the text is identical
-to an existing version, that version is re-activated instead of duplicated.
-
-The chat reads the active version when it starts: after `new` or `rollback`,
-restart `sensai` to use it.
+So editing a default in the code ships it as the next version on every machine,
+while a rollback to an older version is not undone by the next restart.
 
 ## Validation
 
@@ -84,28 +176,18 @@ Default files are sent **byte for byte**: `react_notes.md` starts with a newline
 and, like `react_answer.md`, has no final newline. The pre-commit whitespace
 hooks are disabled for `core/prompts/defaults/` so they don't change them.
 
-## Comparison runs
+## How a comparison works
 
-```bash
-uv run sensai prompts compare system 1 2 \
-    --inputs config/prompt_inputs.txt \
-    --model llama3.2:3b --config config/sensai.toml \
-    --output report.json
-```
+Each version is sent as the **system message**, followed by one input as the
+user message. Latency is measured around each answer, and tokens come from the
+model's usage report.
 
-Both versions answer every input of the file (one input per line), each used as
-the system message. For each version, the report shows:
+The judge is the active `judge` prompt, asked at temperature 0 to reply in JSON
+(`winner`, `reason`). It is asked twice per input with the answers swapped; if
+the two verdicts disagree, the input counts as a tie, so the position of an
+answer doesn't decide the result. An unreadable verdict also counts as a tie.
 
-- mean latency, mean completion tokens and mean answer length;
-- **judge wins**: the active `judge` prompt asks the same model which answer is
-  better, as JSON (`winner`, `reason`), at temperature 0.
-
-The judge is asked twice per input with the answers swapped. If the two verdicts
-disagree, the input counts as a tie, so the position of an answer doesn't decide
-the result. `--no-judge` skips this and reports metrics only. `--output` saves
-the full report as JSON, including every answer and the judge's reasons.
-
-**Limitation:** a comparison uses the prompt as the system message. That fits
+**Limitation:** because versions are tested as the system message, this fits
 `system` and persona-like prompts. Stage prompts (e.g. the ReAct prompts) need a
 harness that runs them in their stage.
 
