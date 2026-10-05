@@ -6,6 +6,8 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING, Protocol
 
+from sensai.core import agent
+from sensai.core.agent.events import TurnCompleted
 from sensai.core.errors import EngineError, SensaiError, SubmissionInProgressError
 from sensai.core.events import (
     Done,
@@ -14,21 +16,24 @@ from sensai.core.events import (
     EventBus,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import ChatDone, Message, TextDelta
+from sensai.core.events.types import ToolRunFinished, ToolRunStarted
+from sensai.core.models import Message, TextDelta
+from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 
-    from sensai.core.models import ChatEvent
+    from sensai.core.agent.events import AgentEvent
 
 
 class Runner(Protocol):
     """Protocol for a message processing runner."""
 
-    def run(self, messages: tuple[Message, ...]) -> AsyncIterator[ChatEvent]:
+    def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
         """Run the message processing pipeline for the given message."""
         ...
 
@@ -49,10 +54,9 @@ class Engine:
         self._runner = runner
         self._pipeline = pipeline
         self._bus = bus
-        self._history: list[Message] = list(history)
-        self._tasks: dict[str, asyncio.Task[None]] = {}
         self._system_prompt = system_prompt
         self._history: list[Message] = list(history)
+        self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
@@ -90,9 +94,11 @@ class Engine:
                 await self._bus.publish(MessageCompleted(submission_id, result.reply))
 
             else:  # requires asking the model
-                reply = await self._stream_reply(submission_id, result.messages)
-                self._history.append(reply)
-                await self._bus.publish(MessageCompleted(submission_id, reply))
+                replies = await self._stream_reply(submission_id, result.messages)
+                if not replies:
+                    raise SensaiError("no replies received from the model")
+                self._history.extend(replies)
+                await self._bus.publish(MessageCompleted(submission_id, replies[-1]))
         except SensaiError as error:
             await self._bus.publish(ErrorEvent(submission_id, error))
         except Exception as error:
@@ -103,16 +109,24 @@ class Engine:
 
     async def _stream_reply(
         self, submission_id: str, messages: tuple[Message, ...]
-    ) -> Message:
-        parts: list[str] = []
+    ) -> list[Message]:
         async for event in self._runner.run(messages):
             match event:
                 case TextDelta(text):
-                    parts.append(text)
                     await self._bus.publish(TokenGenerated(submission_id, text))
-                case ChatDone():
-                    pass
-        return Message.assistant("".join(parts))
+                case ThinkingDelta(text, ready):
+                    await self._bus.publish(
+                        ThinkingGenerated(submission_id, text, ready)
+                    )
+                case agent.events.ToolRunStarted(call):
+                    await self._bus.publish(ToolRunStarted(submission_id, call))
+                case agent.events.ToolRunFinished(call, result):
+                    await self._bus.publish(
+                        ToolRunFinished(submission_id, call, result)
+                    )
+                case TurnCompleted(messages=produced):
+                    return produced
+        raise RuntimeError("TurnCompleted event not received")
 
     @property
     def history(self) -> tuple[Message, ...]:

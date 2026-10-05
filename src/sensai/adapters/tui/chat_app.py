@@ -13,6 +13,9 @@ from sensai.adapters.tui.widgets import (
     AssistantMessage,
     ErrorMessage,
     HintMessage,
+    ReasoningGroup,
+    ThoughtStep,
+    ToolCallLine,
     UserMessage,
 )
 from sensai.core.events import (
@@ -20,7 +23,10 @@ from sensai.core.events import (
     ErrorEvent,
     MessageCompleted,
     MessageStarted,
+    ThinkingGenerated,
     TokenGenerated,
+    ToolRunFinished,
+    ToolRunStarted,
 )
 
 if TYPE_CHECKING:
@@ -28,9 +34,11 @@ if TYPE_CHECKING:
 
     from textual.app import ComposeResult
     from textual.binding import BindingType
+    from textual.widget import Widget
 
     from sensai.core.engine import Engine
     from sensai.core.events import Event
+    from sensai.core.models import ToolCall
 
 EXIT_COMMANDS = frozenset({"/exit", "/quit"})
 EMPTY_INPUT_HINT = "Type a message and press Enter. /exit to quit."
@@ -44,6 +52,7 @@ class SensaiApp(App[None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "interrupt", "Stop generating", show=False),
+        Binding("ctrl+t", "toggle_thoughts", "Toggle thoughts", show=False),
     ]
 
     def __init__(self, engine: Engine, model: str) -> None:
@@ -59,6 +68,10 @@ class SensaiApp(App[None]):
         self._events: AsyncGenerator[Event] | None = None
         self._submission: str | None = None
         self._reply: AssistantMessage | None = None
+        self._group: ReasoningGroup | None = None
+        self._step: ThoughtStep | None = None
+        self._streamed = False
+        self._running_tools: list[tuple[ToolCall, ToolCallLine]] = []
         self._interrupted = False
 
     def compose(self) -> ComposeResult:
@@ -88,6 +101,7 @@ class SensaiApp(App[None]):
         await self._write(UserMessage(text))
         self._submission = self._engine.submit(text)
         self._interrupted = False
+        self._streamed = False
         event.input.disabled = True
         self._set_status("generating…")
 
@@ -96,6 +110,13 @@ class SensaiApp(App[None]):
         if self._submission is not None and not self._interrupted:
             self._interrupted = True
             self._engine.interrupt(self._submission)
+
+    def action_toggle_thoughts(self) -> None:
+        """Expand every reasoning group, or collapse them if all are expanded."""
+        groups = list(self.query(ReasoningGroup))
+        expand = not all(group.expanded for group in groups)
+        for group in groups:
+            group.set_expanded(expanded=expand)
 
     async def _consume_events(self, events: AsyncGenerator[Event]) -> None:
         try:
@@ -108,20 +129,46 @@ class SensaiApp(App[None]):
     async def _render(self, event: Event) -> None:
         match event:
             case MessageStarted():
-                self._reply = AssistantMessage()
-                await self._write(self._reply)
+                pass  # the answer is mounted lazily, below any tool call
+            case ThinkingGenerated(text=text, ready=ready):
+                await self._finish_reply()
+                if self._step is None:
+                    group = await self._open_group()
+                    self._step = await group.add_step()
+                self._step.add_fragment(text)
+                if ready:
+                    self._step.mark_ready()
             case TokenGenerated(text=text):
-                if self._reply is not None:
-                    await self._reply.add_fragment(text)
+                self._streamed = True
+                await self._close_reasoning()
+                if self._reply is None:
+                    self._reply = AssistantMessage()
+                    await self._write(self._reply)
+                await self._reply.add_fragment(text)
+            case ToolRunStarted(call=call):
+                await self._end_step()
+                await self._finish_reply()
+                line = ToolCallLine(call.name)
+                self._running_tools.append((call, line))
+                await (await self._open_group()).add_tool(line)
+            case ToolRunFinished(call=call, result=result):
+                self._finish_tool(call, result.content, is_error=result.is_error)
             case MessageCompleted(message=message):
-                if self._reply is not None and not self._reply.text:
+                if not self._streamed and message.content:
+                    self._reply = AssistantMessage()
+                    await self._write(self._reply)
                     await self._reply.add_fragment(message.content)
                 await self._finish_reply()
             case ErrorEvent(error=error):
+                await self._close_reasoning()
                 await self._drop_empty_reply()
                 await self._write(ErrorMessage(str(error) or type(error).__name__))
             case Done():
                 await self._finish_reply()
+                for _, line in self._running_tools:
+                    line.interrupt()
+                self._running_tools.clear()
+                await self._close_reasoning()
                 if self._interrupted:
                     await self._write(HintMessage("(interrupted)"))
                 self._submission = None
@@ -129,6 +176,31 @@ class SensaiApp(App[None]):
                 prompt.disabled = False
                 prompt.focus()
                 self._set_status("ready")
+
+    def _finish_tool(self, call: ToolCall, content: str, *, is_error: bool) -> None:
+        for index, (started, line) in enumerate(self._running_tools):
+            if started is call or started == call:
+                line.finish(content, is_error=is_error)
+                del self._running_tools[index]
+                return
+
+    async def _open_group(self) -> ReasoningGroup:
+        if self._group is None:
+            self._group = ReasoningGroup()
+            await self._write(self._group)
+        return self._group
+
+    async def _end_step(self) -> None:
+        if self._step is not None:
+            await self._step.finish()
+            self._step = None
+
+    async def _close_reasoning(self) -> None:
+        """Collapse the reasoning group, once the answer or the turn is over."""
+        await self._end_step()
+        if self._group is not None:
+            await self._group.finish()
+            self._group = None
 
     async def _finish_reply(self) -> None:
         if self._reply is not None:
@@ -142,9 +214,9 @@ class SensaiApp(App[None]):
             await self._reply.remove()
             self._reply = None
 
-    async def _write(self, widget: Static | AssistantMessage) -> None:
+    async def _write(self, widget: Widget) -> None:
         await self.query_one("#transcript", VerticalScroll).mount(widget)
 
     def _set_status(self, state: str) -> None:
-        hints = "esc stop · ctrl+q quit"
+        hints = "esc stop · ctrl+t thoughts · ctrl+q quit"
         self.query_one("#status", Static).update(f"{self._model} · {state}   {hints}")

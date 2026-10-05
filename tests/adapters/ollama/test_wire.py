@@ -81,13 +81,14 @@ def test_tool_spec_hides_requires_confirmation() -> None:
 
 
 def test_payload_without_tools_or_options_is_minimal() -> None:
-    """Only model, messages and `stream` are sent by default."""
+    """Only model, messages, `stream` and `think=False` are sent by default."""
     payload = _wire.chat_payload("llama3", [Message.user("Hi")], (), None)
 
     assert payload == {
         "model": "llama3",
         "messages": [{"role": "user", "content": "Hi"}],
         "stream": True,
+        "think": False,
     }
 
 
@@ -122,7 +123,7 @@ def test_payload_omits_unset_options() -> None:
 
     assert payload["options"] == {"seed": 1}
     assert "format" not in payload
-    assert "think" not in payload
+    assert payload["think"] is False
 
 
 def test_payload_is_json_serializable() -> None:

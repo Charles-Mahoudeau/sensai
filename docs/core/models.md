@@ -41,7 +41,7 @@ An `assistant` message may contain multiple `ToolCall` objects and a reasoning s
 ### Streaming Events
 
 - `TextDelta` carries a fragment of generated text;
-- `ThinkingDelta` carries a fragment of model reasoning exposed by the model;
+- `ThinkingDelta` carries a fragment of model reasoning exposed by the model; its `ready` flag, set by the ReAct agent on an empty closing delta, tells that the thought concluded the answer can be written;
 - `ToolCallRequest` carries a tool call requested during generation;
 - `ChatDone` signals the end of generation and contains usage information and an optional reason;
 - `ChatEvent` is the union of these events.
