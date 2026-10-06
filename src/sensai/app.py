@@ -21,6 +21,7 @@ from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
@@ -44,7 +45,13 @@ def build_engine(
 ) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    agent = ReActAgent(llm)
+    structured_output = (
+        StructuredOutputCatalog(config.structured_output.schemas)
+        if config.structured_output.enabled
+        else None
+    )
+    agent = ReActAgent(llm, structured_output=structured_output)
+
     return Engine(
         runner=agent,
         pipeline=Pipeline(),
