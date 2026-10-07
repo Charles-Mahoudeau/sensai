@@ -118,6 +118,22 @@ def test_request_goes_to_api_chat_with_the_translated_payload() -> None:
     assert body["options"] == {"temperature": 0.0, "num_predict": 64}
 
 
+def test_response_schema_is_translated_to_ollama_format() -> None:
+    """A technology-neutral response schema is sent as Ollama's format field."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=_ndjson(DONE))
+
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    _collect(handler, options=ChatOptions(response_schema=schema))
+
+    (request,) = seen
+    body = json.loads(request.content)
+    assert body["format"] == schema
+
+
 def test_base_url_trailing_slash_is_ignored() -> None:
     """`http://host/` and `http://host` reach the same endpoint."""
     seen: list[str] = []
