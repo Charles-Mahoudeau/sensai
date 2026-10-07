@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sensai.core.agent.events import TurnCompleted
+from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import (
     Done,
@@ -15,12 +16,17 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import Message, TextDelta
-from sensai.core.models.llm import ThinkingDelta
+from sensai.core.models import Message, TextDelta, ToolCall
+from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.tools.builtin import web_search
+from sensai.core.tools.registry import ToolRegistry
+from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Mapping
+
+    import pytest
 
     from sensai.core.agent.events import AgentEvent
 
@@ -125,3 +131,43 @@ def test_interrupt_ends_a_running_submission() -> None:
         await events.aclose()
 
     asyncio.run(run())
+
+
+def test_model_receives_exactly_one_system_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The engine adds the system message; the agent doesn't add another one."""
+
+    async def search(args: Mapping[str, Any]) -> str:
+        del args
+        return "result"
+
+    monkeypatch.setattr(web_search, "_web_search", search)
+    llm = FakeLLM(
+        [
+            [TextDelta("I need data.")],
+            [ToolCallRequest(ToolCall("web_search", {"query": "q"}, id="c1"))],
+            [TextDelta("I am ready to answer.")],
+            [TextDelta("Done.")],
+        ]
+    )
+
+    async def run() -> None:
+        registry = ToolRegistry()
+        web_search.register_self(registry)
+        engine = Engine(
+            ReActAgent(llm, registry), Pipeline(), EventBus(), system_prompt="SYSTEM"
+        )
+        events = engine.subscribe()
+        engine.submit("Hello")
+        async for event in events:
+            if isinstance(event, Done):
+                break
+        await events.aclose()
+
+    asyncio.run(run())
+
+    assert len(llm.messages) == 4
+    for request in llm.messages:
+        assert [m.content for m in request if m.role == "system"] == ["SYSTEM"]
+        assert request[0].role == "system"

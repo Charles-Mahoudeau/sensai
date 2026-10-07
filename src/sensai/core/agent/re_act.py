@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from sensai.core.agent import Agent
 from sensai.core.agent.events import AgentEvent, TurnCompleted
+from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.models import TextDelta, ToolCall
 from sensai.core.models.llm import Message, ThinkingDelta, ToolCallRequest
 
@@ -17,44 +18,21 @@ if TYPE_CHECKING:
     from sensai.core.ports import LLM
     from sensai.core.tools.registry import ToolRegistry
 
-THOUGHT_PROMPT = """\
-Before answering, think privately about the request above. This is not the answer.
-Tools you can call:
-{tools}
-
-Write 1 to 3 short sentences:
-- What do I actually know for sure, from the conversation or tool results?
-- What is missing or could be outdated? Which tool would provide it?
-Prefer checking with a tool over relying on memory: facts, dates, news, files,
-numbers and anything specific to the user's context must come from a tool.
-Only if the conversation already contains everything needed (or the request is
-simple small talk), write: "I am ready to answer."
-"""
-
-NOTES_TEMPLATE = """\
-
-[Private notes, the user cannot see them: {thought}
-Now call a tool if your notes say you need one, otherwise answer the user.]"""
-
-ANSWER_PROMPT = """\
-Answer the user's request now, using what you learned. Match the format and \
-level of detail the user asked for: a full report or detailed request \
-deserves a long, structured answer, a simple question a short one.\
-"""
-
 # Llama-style chat templates only render the tool definitions in the last
 # message when it is a user one, and only open the assistant turn after a user or
 # tool message. Every call below therefore ends with a user or tool message.
 
 
-def _with_notes(messages: Sequence[Message], thought: str) -> list[Message]:
+def _with_notes(
+    messages: Sequence[Message], thought: str, template: str
+) -> list[Message]:
     """Attach the private thought to the end of the conversation.
 
     The notes are folded into the last message when it is the user's, so it keeps
     carrying the request; after a tool result they become a user message of
     their own. The history itself is left untouched.
     """
-    notes = NOTES_TEMPLATE.format(thought=thought)
+    notes = template.format(thought=thought)
     last = messages[-1]
     if last.role == "user":
         return [*messages[:-1], Message.user(last.content + notes)]
@@ -77,9 +55,22 @@ def _is_ready(thought: str) -> bool:
 class ReActAgent(Agent):
     """Agent that reasons privately, then acts or answers, in think/act cycles."""
 
-    def __init__(self, llm: LLM, tool_registry: ToolRegistry) -> None:
-        """Initialize the agent with its chat model port and shared tools."""
+    def __init__(
+        self,
+        llm: LLM,
+        tool_registry: ToolRegistry,
+        *,
+        prompts: AgentPrompts | None = None,
+    ) -> None:
+        """Initialize the agent with its chat model port, tools and prompts.
+
+        Args:
+            llm: The chat model.
+            tool_registry: The shared registry that dispatches model tool calls.
+            prompts: The ReAct prompts; the code defaults when `None`.
+        """
         super().__init__(llm, tool_registry)
+        self._prompts = prompts or AgentPrompts.defaults()
         self._thinking_effort = 10
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
@@ -114,7 +105,7 @@ class ReActAgent(Agent):
         """Stream a private thought, then append it to `thoughts`."""
         text_parts: list[str] = []
 
-        prompt = THOUGHT_PROMPT.format(
+        prompt = self._prompts.thought.format(
             tools=_describe_tools(self._tool_registry.spec())
         )
         async for event in self._llm.chat([*run.messages, Message.user(prompt)]):
@@ -145,11 +136,11 @@ class ReActAgent(Agent):
         tools = self._tool_registry.spec() if use_tools else ()
 
         if use_tools:
-            messages = _with_notes(run.messages, thought)
+            messages = _with_notes(run.messages, thought, self._prompts.notes)
         elif run.messages[-1].role == "user":
             messages = list(run.messages)
         else:
-            messages = [*run.messages, Message.user(ANSWER_PROMPT)]
+            messages = [*run.messages, Message.user(self._prompts.answer)]
 
         async for event in self._llm.chat(messages, tools=tools):
             match event:

@@ -6,6 +6,9 @@ from sensai.adapters.storage.repositories.memory_repository import (
 from sensai.adapters.storage.repositories.profile_repository import (
     SqliteProfileRepository,
 )
+from sensai.adapters.storage.repositories.prompt_repository import (
+    SqlitePromptRepository,
+)
 from sensai.adapters.storage.repositories.session_repository import (
     SqliteSessionRepository,
 )
@@ -13,5 +16,6 @@ from sensai.adapters.storage.repositories.session_repository import (
 __all__ = [
     "SqliteMemoryRepository",
     "SqliteProfileRepository",
+    "SqlitePromptRepository",
     "SqliteSessionRepository",
 ]
