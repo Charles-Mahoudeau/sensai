@@ -26,6 +26,7 @@ from sensai.core.models import ChatDone, Message, TextDelta, ToolCall, ToolResul
 from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -62,7 +63,7 @@ class BlockingLLM:
 
 
 def _app(llm: LLM) -> SensaiApp:
-    engine = Engine(Agent(llm), Pipeline(), EventBus())
+    engine = Engine(Agent(llm, ToolRegistry()), Pipeline(), EventBus())
     return SensaiApp(engine, model="test-model")
 
 

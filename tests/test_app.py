@@ -10,6 +10,7 @@ import httpx
 from sensai.app import build_engine
 from sensai.config import Config, OllamaConfig, ProfileConfig
 from sensai.core.engine import Engine
+from tests.fakes.memory import InMemoryMemoryStore
 
 
 def test_build_engine_wires_the_configured_ollama_client() -> None:
@@ -22,7 +23,9 @@ def test_build_engine_wires_the_configured_ollama_client() -> None:
             user_profile=ProfileConfig(profile=Path()),
         )
         async with httpx.AsyncClient() as client:
-            engine = build_engine(config, client, "")
+            engine = build_engine(
+                config, client, "", memory_repository=InMemoryMemoryStore()
+            )
 
             assert isinstance(engine, Engine)
 
