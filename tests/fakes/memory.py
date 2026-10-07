@@ -7,7 +7,12 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sensai.core.models.memory import MemoryRecord, Session, UserProfile
+from sensai.core.models.memory import (
+    MemoryRecord,
+    Session,
+    UserProfile,
+    memory_search_terms,
+)
 from sensai.core.ports import (
     DuplicateMemoryError,
     MemoryNotFoundError,
@@ -119,15 +124,20 @@ class InMemoryMemoryStore:
         self, *, type: str | None = None, query: str | None = None
     ) -> Sequence[MemoryRecord]:
         """Return matching records, most recently updated first."""
-        needle = query.lower() if query else None
+        terms = memory_search_terms(query) if query is not None else ()
+        if query is not None and not terms:
+            return []
         matches = [
             record
             for record in self._records.values()
             if (type is None or record.type == type)
             and (
-                needle is None
-                or needle in record.name.lower()
-                or needle in (record.description or "").lower()
+                query is None
+                or any(
+                    term in record.name.lower()
+                    or term in (record.description or "").lower()
+                    for term in terms
+                )
             )
         ]
         return sorted(matches, key=lambda r: r.updated_at, reverse=True)

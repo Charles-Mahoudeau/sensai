@@ -76,3 +76,25 @@ def test_memory_tools_respect_the_registry_permission_policy() -> None:
         assert await store.find() == []
 
     asyncio.run(run())
+
+
+def test_memory_read_requires_a_filter_and_limits_results() -> None:
+    """Memory search cannot expose every record and returns a bounded result set."""
+
+    async def run() -> None:
+        store = InMemoryMemoryStore()
+        registry = ToolRegistry()
+        memory.register_self(registry, store)
+        for index in range(3):
+            await store.create(name=f"language-{index}", type="preference")
+
+        unfiltered = await registry.call(ToolCall("memory_read", {}))
+        limited = await registry.call(
+            ToolCall("memory_read", {"query": "language", "limit": 2})
+        )
+
+        assert unfiltered.is_error
+        assert "requires memory_id, type, or query" in unfiltered.content
+        assert len(json.loads(limited.content)["records"]) == 2
+
+    asyncio.run(run())

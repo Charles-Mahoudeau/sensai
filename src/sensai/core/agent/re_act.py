@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 # message when it is a user one, and only open the assistant turn after a user or
 # tool message. Every call below therefore ends with a user or tool message.
 
+_MEMORY_READ_TOOL = "memory_read"
+_MEMORY_READ_LIMIT = 5
+
 
 def _with_notes(
     messages: Sequence[Message], thought: str, template: str
@@ -52,6 +55,15 @@ def _is_ready(thought: str) -> bool:
     return "ready to answer" in lowered and "not ready" not in lowered
 
 
+def _memory_query(messages: Sequence[Message]) -> str | None:
+    """Return the latest non-empty user request for memory retrieval."""
+    for message in reversed(messages):
+        if message.role != "user":
+            continue
+        return message.content.strip() or None
+    return None
+
+
 class ReActAgent(Agent):
     """Agent that reasons privately, then acts or answers, in think/act cycles."""
 
@@ -74,6 +86,9 @@ class ReActAgent(Agent):
         self._thinking_effort = 10
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
+        async for event in self._retrieve_relevant_memory(run):
+            yield event
+
         for _ in range(self._thinking_effort):
             thoughts: list[str] = []
             async for event in self._generate_thought(run, thoughts):
@@ -98,6 +113,24 @@ class ReActAgent(Agent):
         ):
             yield event
         yield TurnCompleted(run.produced_messages)
+
+    async def _retrieve_relevant_memory(
+        self, run: AgentRun
+    ) -> AsyncIterator[AgentEvent]:
+        """Retrieve focused memory before the first ReAct reasoning step."""
+        if _MEMORY_READ_TOOL not in {spec.name for spec in self._tool_registry.spec()}:
+            return
+        if (query := _memory_query(run.messages)) is None:
+            return
+
+        call = ToolCall(
+            _MEMORY_READ_TOOL,
+            {"query": query, "limit": _MEMORY_READ_LIMIT},
+            "initial-memory-retrieval",
+        )
+        run.add_message(Message.assistant(tool_calls=(call,)), persist=False)
+        async for event in self._run_tool_calls(run, (call,), persist=False):
+            yield event
 
     async def _generate_thought(
         self, run: AgentRun, thoughts: list[str]

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+
+def memory_search_terms(query: str) -> tuple[str, ...]:
+    """Return distinct searchable words from a natural-language memory query."""
+    return tuple(dict.fromkeys(re.findall(r"[^\W\d_]{3,}", query.lower())))
 
 
 @dataclass(frozen=True, slots=True)

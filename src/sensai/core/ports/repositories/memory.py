@@ -173,8 +173,9 @@ class MemoryRepository(Protocol):
 
         Args:
             type: Only return records of this type; `None` matches every type.
-            query: Only return records whose name or description contains this
-                text, ignoring case; `None` matches every record.
+            query: Only return records whose name or description contains at
+                least one text term from this query, ignoring case; `None`
+                matches every record.
 
         Raises:
             StorageError: The store failed to read.

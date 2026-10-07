@@ -39,14 +39,6 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
         store = InMemoryMemoryStore()
         create_llm = FakeLLM(
             [
-                [TextDelta("I should look up the existing preference.")],
-                [
-                    ToolCallRequest(
-                        ToolCall(
-                            "memory_read", {"query": "preferred language"}, "read-1"
-                        )
-                    )
-                ],
                 [TextDelta("I should store this durable preference.")],
                 [
                     ToolCallRequest(
@@ -71,17 +63,13 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
 
         created = (await store.find(query="preferred language"))[0]
         assert created.description == "The user prefers Python."
+        assert any(
+            message.role == "tool" and '"records": []' in message.content
+            for message in create_llm.messages[0]
+        )
 
         update_llm = FakeLLM(
             [
-                [TextDelta("I should check the existing preference.")],
-                [
-                    ToolCallRequest(
-                        ToolCall(
-                            "memory_read", {"query": "preferred language"}, "read-2"
-                        )
-                    )
-                ],
                 [
                     TextDelta(
                         "The existing preference is contradicted, "
@@ -107,17 +95,13 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
         await _collect(
             _agent(update_llm, store).run((Message.user("I now prefer Rust."),))
         )
+        assert any(
+            message.role == "tool" and "The user prefers Python." in message.content
+            for message in update_llm.messages[0]
+        )
 
         recall_llm = FakeLLM(
             [
-                [TextDelta("I should retrieve the relevant preference.")],
-                [
-                    ToolCallRequest(
-                        ToolCall(
-                            "memory_read", {"query": "preferred language"}, "read-3"
-                        )
-                    )
-                ],
                 [TextDelta("I am ready to answer.")],
                 [TextDelta("Your preferred language is Rust.")],
             ]
@@ -137,6 +121,13 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
             for request in recall_llm.messages
             for message in request
         )
+        initial_call = next(
+            call
+            for message in recall_llm.messages[0]
+            for call in message.tool_calls
+            if call.name == "memory_read"
+        )
+        assert initial_call.arguments["query"] == "Which language do I prefer?"
         assert events[-1] == TurnCompleted(
             [Message.assistant("Your preferred language is Rust.")]
         )
