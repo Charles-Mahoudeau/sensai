@@ -15,13 +15,12 @@ from sensai.core.errors import SensaiError
 from sensai.core.models import Message, TextDelta, ToolCall
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.ports import LLMError
-from sensai.core.tools.builtin import web_search
-from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from sensai.core.ports import LLM
+    from sensai.core.tools.registry import ToolRegistry
 
 
 SYSTEM_PROMPT = """\
@@ -69,11 +68,12 @@ class AgentRun:
 class Agent:
     """Stream one LLM response for the prepared conversation history."""
 
-    def __init__(self, llm: LLM) -> None:
-        """Initialize the agent with its chat model port."""
+    def __init__(self, llm: LLM, tool_registry: ToolRegistry) -> None:
+        """Initialize the agent with its chat model port and shared tools."""
         self._llm = llm
-        self._tool_registry = ToolRegistry()
-        web_search.register_self(self._tool_registry)
+        self._tool_registry = tool_registry
+        # web_search.register_self(self._tool_registry)
+
         self._max_tool_calls = 10
         self._logger = logging.getLogger("Agent")
 

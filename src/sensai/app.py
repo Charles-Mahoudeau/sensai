@@ -14,6 +14,7 @@ from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
 from sensai.adapters.storage.connection import create_connection
 from sensai.adapters.storage.repositories import (
+    SqliteMemoryRepository,
     SqliteProfileRepository,
     SqliteSessionRepository,
 )
@@ -25,13 +26,22 @@ from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
+from sensai.core.tools.builtin import memory, web_search
+from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     import pathlib
     from collections.abc import Sequence
 
     from sensai.core.models import Message
-    from sensai.core.ports import LLM
+    from sensai.core.ports import LLM, MemoryRepository
+
+
+# tools are register at app level instead of agent level
+def register_tools(tool_registry: ToolRegistry, memory_repository: MemoryRepository) -> None:
+    """Register built-in tools with the given tool registry and memory repository."""
+    web_search.register_self(tool_registry)
+    memory.register_self(tool_registry, memory_repository)
 
 
 # So this function will be call at start and the engine will be built
@@ -41,10 +51,14 @@ def build_engine(
     client: httpx.AsyncClient,
     system_prompt: str,
     history: Sequence[Message] = (),
+    *,
+    memory_repository: MemoryRepository,
 ) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    agent = ReActAgent(llm)
+    tool_registry = ToolRegistry()
+    register_tools(tool_registry, memory_repository)
+    agent = ReActAgent(llm, tool_registry)
     return Engine(
         runner=agent,
         pipeline=Pipeline(),
@@ -94,13 +108,20 @@ async def _serve(config: Config) -> None:
         system_prompt = await _get_profile_sys_prompt(config, db)
 
         session_repo = SqliteSessionRepository(db)
+        memory_repo = SqliteMemoryRepository(db)
         last = await session_repo.list_sessions(limit=1)
         session = (
             last[0] if last else await session_repo.create_session(model=config.model)
         )
         history = await session_repo.get_messages(session.id)
 
-        engine = build_engine(config, client, system_prompt, history)
+        engine = build_engine(
+            config,
+            client,
+            system_prompt,
+            history,
+            memory_repository=memory_repo,
+        )
         await SensaiApp(engine, model=config.model).run_async()
 
         for message in engine.history[len(history) :]:

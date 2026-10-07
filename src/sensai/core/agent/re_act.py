@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from sensai.core.agent.base import AgentRun
     from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
+    from sensai.core.tools.registry import ToolRegistry
 
 THOUGHT_PROMPT = """\
 Before answering, think privately about the request above. This is not the answer.
@@ -76,9 +77,9 @@ def _is_ready(thought: str) -> bool:
 class ReActAgent(Agent):
     """Agent that reasons privately, then acts or answers, in think/act cycles."""
 
-    def __init__(self, llm: LLM) -> None:
-        """Initialize the agent with its chat model port."""
-        super().__init__(llm)
+    def __init__(self, llm: LLM, tool_registry: ToolRegistry) -> None:
+        """Initialize the agent with its chat model port and shared tools."""
+        super().__init__(llm, tool_registry)
         self._thinking_effort = 10
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
