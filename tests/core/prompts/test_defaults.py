@@ -56,3 +56,13 @@ def test_defaults_keep_their_exact_boundaries(name: str, start: str, end: str) -
 def test_judge_default_asks_for_the_json_verdict() -> None:
     """The judge prompt describes the verdict format the comparison parses."""
     assert '"winner"' in load_defaults()[JUDGE]
+
+
+def test_memory_maintenance_rules_are_in_the_agent_prompts() -> None:
+    """The default prompts tell ReAct how to retrieve and maintain memories."""
+    defaults = load_defaults()
+
+    assert "memory_read" in defaults[REACT_THOUGHT]
+    assert "read before writing" in defaults[REACT_THOUGHT]
+    assert "update a matching record" in defaults[REACT_THOUGHT]
+    assert "memory tools" in defaults[SYSTEM]

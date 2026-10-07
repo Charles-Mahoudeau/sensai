@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING
 
-from sensai.core.agent.events import ToolRunFinished, TurnCompleted
+from sensai.core.agent.events import TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.models import Message, TextDelta, ToolCall
 from sensai.core.models.llm import ToolCallRequest
@@ -26,26 +25,39 @@ async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
     return [event async for event in events]
 
 
-def test_react_agent_creates_memory_through_the_shared_registry() -> None:
-    """A scripted model call reaches the injected memory store."""
+def _agent(llm: FakeLLM, store: InMemoryMemoryStore) -> ReActAgent:
+    """Build a ReAct agent using the shared persistent-memory store."""
+    registry = ToolRegistry()
+    memory.register_self(registry, store)
+    return ReActAgent(llm, registry)
+
+
+def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
+    """A fact is created, corrected, then supplied to a new agent session."""
 
     async def run() -> None:
         store = InMemoryMemoryStore()
-        registry = ToolRegistry()
-        memory.register_self(registry, store)
-        llm = FakeLLM(
+        create_llm = FakeLLM(
             [
-                [TextDelta("I should store this preference.")],
+                [TextDelta("I should look up the existing preference.")],
+                [
+                    ToolCallRequest(
+                        ToolCall(
+                            "memory_read", {"query": "preferred language"}, "read-1"
+                        )
+                    )
+                ],
+                [TextDelta("I should store this durable preference.")],
                 [
                     ToolCallRequest(
                         ToolCall(
                             "memory_create",
                             {
-                                "name": "language",
+                                "name": "preferred language",
                                 "type": "preference",
                                 "description": "The user prefers Python.",
                             },
-                            "call-memory-create",
+                            "create-1",
                         )
                     )
                 ],
@@ -53,21 +65,80 @@ def test_react_agent_creates_memory_through_the_shared_registry() -> None:
                 [TextDelta("I will use Python in future examples.")],
             ]
         )
-        agent = ReActAgent(llm, registry)
+        await _collect(
+            _agent(create_llm, store).run((Message.user("I prefer Python."),))
+        )
 
-        events = await _collect(agent.run((Message.user("I prefer Python."),)))
+        created = (await store.find(query="preferred language"))[0]
+        assert created.description == "The user prefers Python."
+
+        update_llm = FakeLLM(
+            [
+                [TextDelta("I should check the existing preference.")],
+                [
+                    ToolCallRequest(
+                        ToolCall(
+                            "memory_read", {"query": "preferred language"}, "read-2"
+                        )
+                    )
+                ],
+                [
+                    TextDelta(
+                        "The existing preference is contradicted, "
+                        "so I should update it."
+                    )
+                ],
+                [
+                    ToolCallRequest(
+                        ToolCall(
+                            "memory_update",
+                            {
+                                "memory_id": created.id,
+                                "description": "The user now prefers Rust.",
+                            },
+                            "update-1",
+                        )
+                    )
+                ],
+                [TextDelta("I am ready to answer.")],
+                [TextDelta("I will use Rust in future examples.")],
+            ]
+        )
+        await _collect(
+            _agent(update_llm, store).run((Message.user("I now prefer Rust."),))
+        )
+
+        recall_llm = FakeLLM(
+            [
+                [TextDelta("I should retrieve the relevant preference.")],
+                [
+                    ToolCallRequest(
+                        ToolCall(
+                            "memory_read", {"query": "preferred language"}, "read-3"
+                        )
+                    )
+                ],
+                [TextDelta("I am ready to answer.")],
+                [TextDelta("Your preferred language is Rust.")],
+            ]
+        )
+        events = await _collect(
+            _agent(recall_llm, store).run(
+                (Message.user("Which language do I prefer?"),)
+            )
+        )
 
         memories = await store.find()
         assert [(record.name, record.description) for record in memories] == [
-            ("language", "The user prefers Python.")
+            ("preferred language", "The user now prefers Rust.")
         ]
         assert any(
-            isinstance(event, ToolRunFinished)
-            and json.loads(event.result.content)["name"] == "language"
-            for event in events
+            message.role == "tool" and "The user now prefers Rust." in message.content
+            for request in recall_llm.messages
+            for message in request
         )
         assert events[-1] == TurnCompleted(
-            [Message.assistant("I will use Python in future examples.")]
+            [Message.assistant("Your preferred language is Rust.")]
         )
 
     asyncio.run(run())
