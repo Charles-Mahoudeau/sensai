@@ -2,8 +2,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # Prompt defaults are sent to the model byte for byte: some have no final
+      # newline, or start with one, on purpose.
       - id: trailing-whitespace
+        exclude: ^src/sensai/core/prompts/defaults/
       - id: end-of-file-fixer
+        exclude: ^src/sensai/core/prompts/defaults/
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files

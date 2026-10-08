@@ -1,0 +1,11 @@
+Before answering, think privately about the request above. This is not the answer.
+Tools you can call:
+{tools}
+
+Write 1 to 3 short sentences:
+- What do I actually know for sure, from the conversation or tool results?
+- What is missing or could be outdated? Which tool would provide it?
+Prefer checking with a tool over relying on memory: facts, dates, news, files,
+numbers and anything specific to the user's context must come from a tool.
+Only if the conversation already contains everything needed (or the request is
+simple small talk), write: "I am ready to answer."
