@@ -203,7 +203,9 @@ def prompts_compare(
     config = _parse_config(model, config_path)
 
     async def compare(commands: PromptCommands) -> None:
-        async with httpx.AsyncClient(timeout=None) as client:
+        # Fail fast if Ollama can't be reached; a slow answer may take minutes.
+        timeout = httpx.Timeout(None, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             llm = OllamaChat(client, config.ollama.url, config.model)
             await commands.compare(
                 PromptComparison(llm, time.perf_counter),
