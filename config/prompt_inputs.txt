@@ -1,0 +1,5 @@
+What is the difference between a list and a tuple in Python?
+Explain what an event bus is in two sentences.
+Give me three tips to write better commit messages.
+What is the capital of Australia?
+Summarize the idea of retrieval-augmented generation for a beginner.

@@ -32,5 +32,22 @@ or a missing model, and raises `AgentError` instead. `AgentError` is a core
 `SensaiError`, so the Engine can publish it as an `ErrorEvent` without exposing
 adapter-specific failures to front-ends.
 
-The current Agent deliberately has no tool calls, permissions, ReAct loop, or
-planning logic. Those behaviors belong to later orchestration features.
+## Prompts
+
+The agent adds no system message: the Engine prepends it (the active `system`
+prompt followed by the user profile), so the model receives exactly one.
+
+`ReActAgent` takes its three prompts as an `AgentPrompts` value
+(`core/agent/prompts.py`):
+
+| Field | Prompt name | Used for |
+| --- | --- | --- |
+| `thought` | `react_thought` | Private thought before acting; `{tools}` is filled in |
+| `notes` | `react_notes` | Wraps the thought for the acting call; `{thought}` is filled in |
+| `answer` | `react_answer` | Final "answer now" request after tool results |
+
+`app.py` builds it from the active versions in the prompt library;
+`AgentPrompts.defaults()` uses the texts shipped with the code (tests, or any
+caller without a database). See [Prompt Versioning](prompts.md).
+
+Plan mode and permission prompts belong to later orchestration features.
