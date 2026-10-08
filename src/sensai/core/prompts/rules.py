@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from string import Formatter
 
@@ -33,8 +32,6 @@ PROMPT_RULES: dict[str, PromptRule] = {
     REACT_NOTES: PromptRule(frozenset({"thought"})),
 }
 
-_FIELD_ROOT = re.compile(r"[.\[]")
-
 
 def validate(name: str, content: str) -> None:
     """Check `content` against the rule of prompt `name`, if it has one.
@@ -47,10 +44,10 @@ def validate(name: str, content: str) -> None:
     if rule is None:
         return
     try:
+        # Whole field names: `{thought[0]}` or `{thought.x}` would pass a check
+        # on the root name, then crash `str.format` in the agent.
         fields = {
-            _FIELD_ROOT.split(field, maxsplit=1)[0]
-            for _, field, _, _ in Formatter().parse(content)
-            if field is not None
+            field for _, field, _, _ in Formatter().parse(content) if field is not None
         }
     except ValueError as error:
         raise InvalidPromptError(

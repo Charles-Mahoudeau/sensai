@@ -35,6 +35,13 @@ def test_unknown_placeholder_is_rejected() -> None:
         validate(REACT_NOTES, "{thought} for {user}")
 
 
+@pytest.mark.parametrize("field", ["thought[999]", "thought.upper", "thought[0].x"])
+def test_indexed_or_attribute_fields_are_rejected(field: str) -> None:
+    """Only the exact placeholder is allowed: `str.format` would crash on these."""
+    with pytest.raises(InvalidPromptError, match="unknown"):
+        validate(REACT_NOTES, f"\n[{{thought}} {{{field}}}]")
+
+
 def test_malformed_braces_are_rejected() -> None:
     """A lone brace would crash `str.format`; the error says how to escape it."""
     with pytest.raises(InvalidPromptError, match=r"malformed braces.*\{\{"):

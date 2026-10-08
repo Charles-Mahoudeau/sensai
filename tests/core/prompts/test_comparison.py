@@ -138,3 +138,25 @@ def test_no_inputs_is_an_error() -> None:
 
     with pytest.raises(ComparisonError, match="at least one input"):
         asyncio.run(comparison.compare(V1, V2, []))
+
+
+@pytest.mark.parametrize("winner", ['["A"]', '{"x": 1}', "1", "null"])
+def test_non_string_winner_is_a_tie(winner: str) -> None:
+    """A winner that isn't one of the expected strings doesn't crash the run."""
+    llm = FakeLLM(
+        [
+            _answer("x", 1),
+            _answer("y", 1),
+            [TextDelta(f'{{"winner": {winner}, "reason": "r"}}')],
+            _verdict("B"),
+        ]
+    )
+
+    report = asyncio.run(
+        PromptComparison(llm, _clock(1, 1)).compare(
+            V1, V2, ["q"], judge_prompt="Judge."
+        )
+    )
+
+    assert report.ties == 1
+    assert report.results[0].reasons[0].startswith("unknown winner")
