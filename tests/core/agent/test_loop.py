@@ -11,6 +11,7 @@ from sensai.core.agent import Agent, AgentError
 from sensai.core.agent.events import TurnCompleted
 from sensai.core.models import ChatDone, Message, TextDelta
 from sensai.core.ports import LLMUnavailableError, ModelNotFoundError
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
 def test_agent_relays_events_and_history() -> None:
     """The agent forwards the complete history and preserves event order."""
     llm = FakeLLM([[TextDelta("Hel"), TextDelta("lo"), ChatDone()]])
-    agent = Agent(llm)
+    agent = Agent(llm, ToolRegistry())
 
     events = asyncio.run(_collect(agent.run(HISTORY)))
 
@@ -49,7 +50,7 @@ def test_agent_relays_events_and_history() -> None:
 )
 def test_agent_translates_llm_failures(error: Exception) -> None:
     """Known LLM failures become core errors that the Engine can publish."""
-    agent = Agent(FakeLLM([[error]]))
+    agent = Agent(FakeLLM([[error]]), ToolRegistry())
 
     with pytest.raises(AgentError, match=str(error)) as raised:
         asyncio.run(_collect(agent.run(HISTORY)))

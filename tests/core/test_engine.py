@@ -20,6 +20,7 @@ from sensai.core.models import Message, TextDelta, ToolCall
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.tools.builtin import web_search
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -152,7 +153,11 @@ def test_model_receives_exactly_one_system_message(
     )
 
     async def run() -> None:
-        engine = Engine(ReActAgent(llm), Pipeline(), EventBus(), system_prompt="SYSTEM")
+        registry = ToolRegistry()
+        web_search.register_self(registry)
+        engine = Engine(
+            ReActAgent(llm, registry), Pipeline(), EventBus(), system_prompt="SYSTEM"
+        )
         events = engine.subscribe()
         engine.submit("Hello")
         async for event in events:

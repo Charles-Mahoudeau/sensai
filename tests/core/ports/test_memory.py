@@ -97,23 +97,25 @@ def test_memory_create_get_and_duplicate() -> None:
 
 
 def test_memory_find_by_type_and_query() -> None:
-    """`find` filters by type and by case-insensitive text in name or description."""
+    """`find` filters by type and terms from a case-insensitive text query."""
     store = InMemoryMemoryStore()
 
-    async def run() -> tuple[list[str], list[str], list[str]]:
+    async def run() -> tuple[list[str], list[str], list[str], list[str]]:
         await store.create(name="Ada", type="person", description="Loves Python")
         await store.create(name="Sensai", type="project", description="Epitech")
         await store.create(name="Python", type="concept")
         by_type = [r.name for r in await store.find(type="person")]
         by_query = [r.name for r in await store.find(query="python")]
         both = [r.name for r in await store.find(type="concept", query="python")]
-        return by_type, sorted(by_query), both
+        natural_query = [r.name for r in await store.find(query="Who loves Python?")]
+        return by_type, sorted(by_query), both, natural_query
 
-    by_type, by_query, both = asyncio.run(run())
+    by_type, by_query, both, natural_query = asyncio.run(run())
 
     assert by_type == ["Ada"]
     assert by_query == ["Ada", "Python"]
     assert both == ["Python"]
+    assert natural_query == ["Python", "Ada"]
 
 
 def test_memory_update_changes_only_given_fields() -> None:

@@ -6,7 +6,7 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
-from sensai.core.models.memory import MemoryRecord
+from sensai.core.models.memory import MemoryRecord, memory_search_terms
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
 if TYPE_CHECKING:
@@ -99,15 +99,29 @@ class SqliteMemoryRepository:
         """Return matching records, most recently updated first."""
 
         def find() -> list[MemoryRecord]:
+            terms = memory_search_terms(query) if query is not None else ()
+            if query is not None and not terms:
+                return []
+
+            parameters: dict[str, str | None] = {"type": type}
+            conditions = ["(:type IS NULL OR type = :type)"]
+            if terms:
+                term_conditions: list[str] = []
+                for index, term in enumerate(terms):
+                    parameter = f"term_{index}"
+                    parameters[parameter] = term
+                    term_conditions.append(
+                        f"instr(sensai_lower(name), :{parameter}) > 0"
+                        f" OR instr(sensai_lower(coalesce(description, '')), "
+                        f":{parameter}) > 0"
+                    )
+                conditions.append("(" + " OR ".join(term_conditions) + ")")
+
             rows = self._db.conn.execute(
                 f"SELECT {self._columns} FROM memories"
-                " WHERE (:type IS NULL OR type = :type)"
-                " AND (:query IS NULL"
-                "      OR instr(sensai_lower(name), sensai_lower(:query)) > 0"
-                "      OR instr(sensai_lower(coalesce(description, '')),"
-                "               sensai_lower(:query)) > 0)"
+                f" WHERE {' AND '.join(conditions)}"
                 " ORDER BY updated_at DESC, id DESC",
-                {"type": type, "query": query},
+                parameters,
             ).fetchall()
             return [self._to_record(row) for row in rows]
 

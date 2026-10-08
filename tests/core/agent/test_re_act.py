@@ -12,6 +12,7 @@ from sensai.core.agent.re_act import ReActAgent
 from sensai.core.models import Message, TextDelta, ToolCall
 from sensai.core.models.llm import ToolCallRequest
 from sensai.core.tools.builtin import web_search
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -54,11 +55,18 @@ def _run(agent: ReActAgent) -> list[AgentEvent]:
     return asyncio.run(collect())
 
 
+def _agent(llm: FakeLLM, prompts: AgentPrompts | None = None) -> ReActAgent:
+    """Build a ReAct agent with the web tool used by these prompt tests."""
+    registry = ToolRegistry()
+    web_search.register_self(registry)
+    return ReActAgent(llm, registry, prompts=prompts)
+
+
 def test_injected_prompts_build_every_request() -> None:
     """Thought, notes and answer requests use the injected texts."""
     llm = FakeLLM(TOOL_TURN)
 
-    _run(ReActAgent(llm, PROMPTS))
+    _run(_agent(llm, PROMPTS))
 
     thought, act, ready_thought, answer = llm.messages
     assert thought[-1].content.startswith("THINK with - web_search: ")
@@ -71,7 +79,7 @@ def test_agent_adds_no_system_message() -> None:
     """Every request starts with the caller's system message, and only that."""
     llm = FakeLLM(TOOL_TURN)
 
-    _run(ReActAgent(llm, PROMPTS))
+    _run(_agent(llm, PROMPTS))
 
     for request in llm.messages:
         assert [m for m in request if m.role == "system"] == [HISTORY[0]]
@@ -82,7 +90,7 @@ def test_defaults_are_used_without_prompts() -> None:
     llm = FakeLLM(TOOL_TURN)
     defaults = AgentPrompts.defaults()
 
-    _run(ReActAgent(llm))
+    _run(_agent(llm))
 
     assert llm.messages[0][-1].content.startswith(defaults.thought[:40])
     assert llm.messages[3][-1] == Message.user(defaults.answer)
