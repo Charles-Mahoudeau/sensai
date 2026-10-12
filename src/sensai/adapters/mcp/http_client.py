@@ -246,8 +246,9 @@ class HttpMcpClient:
             The HTTP response and its decoded JSON-RPC message.
 
         Raises:
-            McpUnavailableError: The server returned an HTTP error, an unexpected
-                content type, or a stream that ended without a response.
+            McpUnavailableError: The request failed at the transport level or
+                timed out, the server returned an HTTP error, an unexpected content
+                type, malformed JSON, or a stream that ended without a response.
         """
         payload = self._build_payload(method, params)
         headers = {**self._headers(), "Mcp-Method": method}
@@ -256,27 +257,30 @@ class HttpMcpClient:
                 headers["Mcp-Name"] = str(params["name"])
             elif method == "resources/read":
                 headers["Mcp-Name"] = str(params["uri"])
-        async with self._require_client().stream(
-            "POST", "", json=payload, headers=headers
-        ) as resp:
-            self._logger.info(f"request to MCP {self._name}: {payload}")
-            if resp.is_error:
-                body = (await resp.aread()).decode(errors="replace")
-                raise McpUnavailableError(
-                    f"{self._name}: HTTP {resp.status_code} for {method}: {body}"
-                )
-            ctype = resp.headers.get("content-type", "")
-            if ctype.startswith("application/json"):
-                return resp, json.loads(await resp.aread())
-            if ctype.startswith("text/event-stream"):
-                data: list[str] = []
-                async for line in resp.aiter_lines():
-                    if line.startswith("data:"):
-                        data.append(line[5:].lstrip())
-                    elif line == "" and data:  # end of one SSE event
-                        msg = json.loads("\n".join(data))
-                        data.clear()
-                        if msg.get("id") == payload["id"]:
-                            return resp, msg  # our response; skip notifications
-                raise McpUnavailableError("stream ended without a response")
-            raise McpUnavailableError(f"unexpected content-type {ctype!r}")
+        try:
+            async with self._require_client().stream(
+                "POST", "", json=payload, headers=headers
+            ) as resp:
+                self._logger.info(f"request to MCP {self._name}: {payload}")
+                if resp.is_error:
+                    body = (await resp.aread()).decode(errors="replace")
+                    raise McpUnavailableError(
+                        f"{self._name}: HTTP {resp.status_code} for {method}: {body}"
+                    )
+                ctype = resp.headers.get("content-type", "")
+                if ctype.startswith("application/json"):
+                    return resp, json.loads(await resp.aread())
+                if ctype.startswith("text/event-stream"):
+                    data: list[str] = []
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data:"):
+                            data.append(line[5:].lstrip())
+                        elif line == "" and data:  # end of one SSE event
+                            msg = json.loads("\n".join(data))
+                            data.clear()
+                            if msg.get("id") == payload["id"]:
+                                return resp, msg  # our response; skip notifications
+                    raise McpUnavailableError("stream ended without a response")
+                raise McpUnavailableError(f"unexpected content-type {ctype!r}")
+        except (httpx.HTTPError, json.JSONDecodeError) as e:
+            raise McpUnavailableError(f"{self._name}: {method} failed: {e}") from e
