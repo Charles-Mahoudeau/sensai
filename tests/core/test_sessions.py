@@ -79,19 +79,43 @@ def test_start_new_saves_then_records_into_a_new_session() -> None:
     asyncio.run(run())
 
 
-def test_no_session_is_created_when_there_is_nothing_to_save() -> None:
-    """Clearing then quitting does not leave an empty session behind."""
+def test_clearing_then_quitting_leaves_an_empty_latest_session() -> None:
+    """A restart after a clear resumes an empty session, not the cleared one."""
 
     async def run() -> None:
         repo = InMemorySessionStore()
+        session = await repo.create_session(model="m")
+        engine = _engine((Message.user("first"),))
         recorder = SessionRecorder(
-            repo, _engine(()), model="m", session_id=None, saved=0
+            repo, engine, model="m", session_id=session.id, saved=0
         )
 
         await recorder.start_new()
+        engine.clear()
         await recorder.save()
 
-        assert await repo.list_sessions() == []
+        latest = await repo.list_sessions(limit=1)
+        assert latest[0].id != session.id
+        assert await repo.get_messages(latest[0].id) == []
+        assert await repo.get_messages(session.id) == [Message.user("first")]
+
+    asyncio.run(run())
+
+
+def test_start_new_keeps_an_empty_current_session() -> None:
+    """Clearing an empty conversation does not create another empty session."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        session = await repo.create_session(model="m")
+        recorder = SessionRecorder(
+            repo, _engine(()), model="m", session_id=session.id, saved=0
+        )
+
+        await recorder.start_new()
+        await recorder.start_new()
+
+        assert [s.id for s in await repo.list_sessions()] == [session.id]
 
     asyncio.run(run())
 
