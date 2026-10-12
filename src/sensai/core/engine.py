@@ -101,6 +101,16 @@ class Engine:
         self._tasks[submission_id] = task
         return submission_id
 
+    def clear(self) -> None:
+        """Forget the conversation; the next submission starts from scratch.
+
+        Raises:
+            SubmissionInProgressError: A submission is still running.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        self._history.clear()
+
     def interrupt(self, submission_id: str) -> None:
         """Interrupt a running submission."""
         task = self._tasks.get(submission_id)

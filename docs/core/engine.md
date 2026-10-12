@@ -27,6 +27,10 @@ The current engine accepts only one active submission. Calling `submit()` while
 a task is active raises `SubmissionInProgressError`. This avoids concurrent
 tasks reading or appending to the same conversation history.
 
+`engine.clear()` forgets the conversation, so the next submission starts from
+an empty history (the system prompt is still prepended). It raises
+`SubmissionInProgressError` too while a submission is running.
+
 ### Pipeline
 
 The pipeline is a synchronous sequence of stages. Each stage receives the

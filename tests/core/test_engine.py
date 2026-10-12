@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from sensai.core.agent.events import TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
+from sensai.core.errors import SubmissionInProgressError
 from sensai.core.events import (
     Done,
     EventBus,
@@ -25,8 +28,6 @@ from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
-
-    import pytest
 
     from sensai.core.agent.events import AgentEvent
 
@@ -180,6 +181,33 @@ class EffortRunner(ScriptedRunner):
         """Start with no events and the default effort."""
         super().__init__(())
         self.thinking_effort = ThinkingEffort.NONE
+
+
+def test_clear_forgets_the_history() -> None:
+    """Clearing empties the history the next submission starts from."""
+    engine = Engine(
+        ScriptedRunner(()), Pipeline(), EventBus(), history=[Message.user("Hi")]
+    )
+
+    engine.clear()
+
+    assert engine.history == ()
+
+
+def test_clear_is_refused_while_a_submission_runs() -> None:
+    """The history can't be cleared under a running turn."""
+
+    async def run() -> None:
+        engine = Engine(WaitingRunner(), Pipeline(), EventBus())
+        submission_id = engine.submit("Hello")
+
+        with pytest.raises(SubmissionInProgressError):
+            engine.clear()
+
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
 
 
 def test_thinking_effort_cycles_and_reaches_the_runner() -> None:
