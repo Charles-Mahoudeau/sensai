@@ -10,6 +10,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, OptionList, Static
 
 from sensai.adapters.tui.commands.builtin import default_registry
+from sensai.adapters.tui.panels import Panel
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
     CommandMenu,
@@ -148,6 +149,22 @@ class SensaiApp(App[None]):
     def refresh_status(self) -> None:
         """Show the engine's current thinking effort in the status bar."""
         self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
+
+    async def open_panel(self, panel: Panel) -> None:
+        """Show a panel in place of the prompt, closing any other one first."""
+        await self.query(Panel).remove()
+        self.query_one(CommandMenu).show([])
+        self.query_one("#prompt", PromptInput).display = False
+        await self.mount(panel, before="#statusbar")
+        panel.focus_first()
+
+    async def on_panel_closed(self, event: Panel.Closed) -> None:
+        """Remove the closed panel and give the prompt back."""
+        event.stop()
+        await event.panel.remove()
+        prompt = self.query_one("#prompt", PromptInput)
+        prompt.display = True
+        prompt.focus()
 
     def action_interrupt(self) -> None:
         """Stop the answer being generated, if any."""

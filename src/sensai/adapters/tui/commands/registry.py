@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
     from rich.text import Text
 
+    from sensai.adapters.tui.panels import Panel
     from sensai.core.engine import Engine
 
 
@@ -80,6 +81,10 @@ class CommandContext(Protocol):
 
     def refresh_status(self) -> None:
         """Show the engine's current state (such as its effort) again."""
+        ...
+
+    async def open_panel(self, panel: Panel) -> None:
+        """Show a panel in place of the prompt until it is closed."""
         ...
 
     def exit(self) -> None:

@@ -8,7 +8,8 @@ uv run sensai --model llama3.2:3b --config config/sensai.toml
 ```
 
 Like every front-end, it only talks to the core through the `Engine` facade
-(`submit()`, `interrupt()`) and its event stream (`subscribe()`). It never
+(`submit()`, `interrupt()`, `tools()`, `mcp_servers()`…) and its event stream
+(`subscribe()`). It never
 imports the agent, the pipeline, a port or an adapter. See
 [Engine and Event Bus](../core/engine.md).
 
@@ -19,6 +20,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `chat_app.py` | `SensaiApp`: layout, input handling, event rendering; the `CommandContext` of commands |
 | `commands/registry.py` | `CommandSpec`, `CommandRegistry` (completion, dispatch), `CommandContext`, `CommandHighlighter` |
 | `commands/builtin/` | One module per built-in command, and `default_registry()` |
+| `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
 | `widgets.py` | One widget per kind of transcript line, the prompt and its command menu |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
@@ -31,6 +33,8 @@ imports the agent, the pipeline, a port or an adapter. See
 | `/exit`, `/quit`, `ctrl+q` | Quit |
 | `/clear` | Clear the conversation and start a new session |
 | `/effort <level>` | Set the thinking effort (`/effort` alone shows it) |
+| `/mcp` | List the MCP servers and whether they connected |
+| `/tools` | List the tools, enable or disable them |
 | `esc` | Stop the answer being generated, keeping the partial text |
 | `ctrl+t` | Expand every reasoning group, or collapse them if all are expanded |
 | Click a reasoning header | Expand or collapse that group |
@@ -53,9 +57,45 @@ The built-in commands:
 | --- | --- |
 | `/clear` | Awaits the `on_clear` hook (which saves the session and starts a new one), calls `engine.clear()` and empties the transcript |
 | `/effort <level>` | Sets `engine.thinking_effort` to `none`, `low`, `medium`, `high` or `ultra`; a bare `/effort` shows the current one |
+| `/mcp` | Opens `McpPanel` with `engine.mcp_servers()` |
+| `/tools` | Opens `ToolsPanel`, which lists `engine.tools()` and toggles them |
 | `/exit` | Quits; `/quit` is a hidden alias |
 
 An unknown command shows an "Unknown command" hint.
+
+### Panels
+
+A command that needs more than a hint opens a `Panel` with
+`context.open_panel(panel)`. The app hides the prompt and its menu, mounts the
+panel in their place (the transcript stays visible) and calls
+`panel.focus_first()`. `esc` posts `Panel.Closed`; the app removes the panel and
+gives the focus back to the prompt. Opening a panel closes any other one.
+
+`McpPanel` shows one row per configured server: `● github  connected  42 tools`,
+or `✗ notion  failed: <reason>`, each with its URL.
+
+Panels keep their title (with the counts) in the top border and their key
+hints in the bottom one, so the content keeps the room in a small window.
+
+`ToolsPanel` shows `Tools · n/m enabled`, a filter with Enable/Disable all
+buttons on the same line, then the tools grouped by source (`builtin`, then one group per MCP server, each
+header counting its enabled tools). The list takes the height the panel has
+left (`height: 1fr`, at most 20 rows) and scrolls to keep the highlight in
+view. Each tool takes one line: its description is cut with `…` at the
+panel's edge (`text-wrap: nowrap; text-overflow: ellipsis`), so it uses the
+whole width of the terminal. MCP tools are shown without their
+`<server>__` prefix. The filter keeps the focus:
+
+| Key | Effect |
+| --- | --- |
+| Typing | Narrow the list to the tools whose name or description contains the text |
+| `↑` / `↓` | Move the highlight, skipping the group headers |
+| `space`, `Enter`, click | Enable or disable the highlighted tool |
+| `ctrl+a` / `ctrl+d` | Enable / disable every tool shown (all of them when not filtered; the buttons read "Enable shown" / "Disable shown" while filtering) |
+| `esc` | Close the panel |
+
+Changes apply from the next message, and only for this run: every tool is
+enabled again at the next start.
 
 While typing, a known command name is colored with the theme accent
 (`CommandHighlighter`), and `CommandMenu` lists the completions above the
@@ -89,7 +129,8 @@ When the menu is hidden, these keys work as usual.
 
 The handler receives the argument string (stripped, empty if none) and a
 `CommandContext`, the small surface of the front-end a command may use:
-`engine`, `show_hint()`, `clear_transcript()`, `refresh_status()` and `exit()`.
+`engine`, `show_hint()`, `clear_transcript()`, `refresh_status()`,
+`open_panel()` and `exit()`.
 `SensaiApp` implements it. A command that needs something from outside the TUI
 gets it as a `register_self()` argument, wired in `app.py`, the way `/clear`
 gets its `on_clear` hook. If a command needs a new UI action, add it to

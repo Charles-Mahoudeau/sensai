@@ -197,3 +197,75 @@ HintMessage {
     height: 1;
     background: $background;
 }
+
+.panel {
+    height: auto;
+    max-height: 60%;
+    margin: 0 2;
+    padding: 0 1;
+    border: round $primary-muted;
+    border-title-color: $foreground;
+    border-title-style: bold;
+    border-subtitle-align: left;
+    border-subtitle-color: $text-disabled;
+    border-subtitle-style: italic;
+    background: $background;
+
+    .panel-empty {
+        color: $text-disabled;
+        text-style: italic;
+    }
+}
+
+#mcp-panel {
+    .mcp-url {
+        padding: 0 0 0 2;
+        color: $text-muted;
+    }
+}
+
+#tools-panel {
+    #tools-header {
+        height: 1;
+
+        #tools-filter {
+            width: 1fr;
+            background: $boost;
+        }
+
+        Button {
+            width: auto;
+            min-width: 0;
+            margin: 0 0 0 1;
+            padding: 0 1;
+        }
+    }
+
+    /* fills what the panel has left, so it scrolls to the highlight;
+       one line per tool, its description cut at the panel's edge */
+    #tools-list {
+        height: 1fr;
+        max-height: 20;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        padding: 0;
+        border: none;
+        background: $background;
+        scrollbar-size-vertical: 1;
+
+        & > .option-list--option-highlighted {
+            color: $accent;
+            background: $boost;
+        }
+
+        & > .option-list--option-disabled {
+            color: $text-muted;
+        }
+
+        /* inside the scrollbar, unlike the list's own padding:
+           keeps the text off it */
+        & > .option-list--option {
+            padding: 0 1 0 0;
+        }
+    }
+}

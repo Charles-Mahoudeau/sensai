@@ -22,6 +22,7 @@ from tests.core.test_engine import ScriptedRunner
 
 if TYPE_CHECKING:
     from sensai.adapters.tui.commands import CommandContext
+    from sensai.adapters.tui.panels import Panel
 
 
 class FakeContext:
@@ -34,6 +35,7 @@ class FakeContext:
         self.cleared = 0
         self.refreshed = 0
         self.exited = False
+        self.panels: list[Panel] = []
 
     @property
     def engine(self) -> Engine:
@@ -55,6 +57,10 @@ class FakeContext:
     def exit(self) -> None:
         """Record the exit."""
         self.exited = True
+
+    async def open_panel(self, panel: Panel) -> None:
+        """Record the panel."""
+        self.panels.append(panel)
 
 
 def _registry(calls: list[str] | None = None) -> CommandRegistry:
