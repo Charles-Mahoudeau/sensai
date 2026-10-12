@@ -33,6 +33,7 @@ from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.ports import McpUnavailableError
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 from sensai.core.tools.builtin import web_search
@@ -81,7 +82,7 @@ async def build_agent(
     """Build the ReAct agent and register its tools.
 
     Registers the built-in web search tool, plus the GitHub MCP server's tools
-    when a GitHub token is configured.
+    when a GitHub token is configured and the server is reachable.
 
     Args:
         config: The application configuration.
@@ -90,9 +91,6 @@ async def build_agent(
 
     Returns:
         The agent, with its tools registered.
-
-    Raises:
-        McpUnavailableError: The GitHub MCP server cannot be reached.
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
@@ -103,12 +101,20 @@ async def build_agent(
             "https://api.githubcopilot.com/mcp/",
             BearerAuth(config.mcp.github_token),
         )
-        await github_mcp.connect()
-        for tool in await github_mcp.list_tools():
-            tool_registry.register(
-                spec=tool,
-                handler=lambda args, n=tool.name: github_mcp.call_tool(n, args),
+        try:
+            await github_mcp.connect()
+            tools = await github_mcp.list_tools()
+        except McpUnavailableError as e:
+            await github_mcp.aclose()
+            logging.getLogger(__name__).warning(
+                "GitHub MCP server unavailable, skipping its tools: %s", e
             )
+        else:
+            for tool in tools:
+                tool_registry.register(
+                    spec=tool,
+                    handler=lambda args, n=tool.name: github_mcp.call_tool(n, args),
+                )
     else:
         logging.getLogger(__name__).warning(
             "GITHUB_TOKEN not set, skipping the GitHub MCP server"
