@@ -261,7 +261,11 @@ class HttpMcpClient:
             async with self._require_client().stream(
                 "POST", "", json=payload, headers=headers
             ) as resp:
-                self._logger.info(f"request to MCP {self._name}: {payload}")
+                self._logger.info(
+                    f"request to MCP {self._name}: "
+                    f"method={payload['method']} id={payload['id']}"
+                )
+                self._logger.debug(f"request payload to MCP {self._name}: {payload}")
                 if resp.is_error:
                     body = (await resp.aread()).decode(errors="replace")
                     raise McpUnavailableError(
