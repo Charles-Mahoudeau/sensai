@@ -35,6 +35,7 @@ from sensai.core.models import (
 from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ class BlockingLLM:
 
 
 def _app(llm: LLM) -> SensaiApp:
-    engine = Engine(Agent(llm), Pipeline(), EventBus())
+    engine = Engine(Agent(llm, ToolRegistry()), Pipeline(), EventBus())
     return SensaiApp(engine, model="test-model")
 
 
@@ -386,7 +387,7 @@ def test_thoughts_and_tool_calls_share_one_group_per_turn() -> None:
 
 def test_ctrl_r_cycles_the_thinking_effort_shown_in_the_status_bar() -> None:
     """Ctrl+R advances the effort, wraps after Ultra and updates the label."""
-    engine = Engine(ReActAgent(FakeLLM([])), Pipeline(), EventBus())
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
     app = SensaiApp(engine, model="test-model")
 
     async def scenario(pilot: Pilot[None]) -> None:

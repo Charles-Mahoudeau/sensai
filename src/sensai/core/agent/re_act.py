@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sensai.core.agent.base import AgentRun
     from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
+    from sensai.core.tools.registry import ToolRegistry
 
 # Llama-style chat templates only render the tool definitions in the last
 # message when it is a user one, and only open the assistant turn after a user or
@@ -54,14 +55,20 @@ def _is_ready(thought: str) -> bool:
 class ReActAgent(Agent):
     """Agent that reasons privately, then acts or answers, in think/act cycles."""
 
-    def __init__(self, llm: LLM, prompts: AgentPrompts | None = None) -> None:
-        """Initialize the agent with its chat model port and prompt texts.
+    def __init__(
+        self,
+        llm: LLM,
+        tool_registry: ToolRegistry,
+        prompts: AgentPrompts | None = None,
+    ) -> None:
+        """Initialize the agent with its chat model port, tools and prompt texts.
 
         Args:
             llm: The chat model.
+            tool_registry: The tools offered to the LLM and run on its request.
             prompts: The ReAct prompts; the code defaults when `None`.
         """
-        super().__init__(llm)
+        super().__init__(llm, tool_registry)
         self._prompts = prompts or AgentPrompts.defaults()
         self._thinking_effort = ThinkingEffort.MEDIUM
 
