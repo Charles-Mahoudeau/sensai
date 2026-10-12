@@ -26,6 +26,7 @@ from sensai.adapters.storage.repositories import (
 )
 from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
+from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.config import Config, load_config
 from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
@@ -207,7 +208,8 @@ async def _serve(config: Config) -> None:
             session_id=session.id,
             saved=len(history),
         )
-        await SensaiApp(engine, model=config.model).run_async()
+        commands = default_registry(on_clear=recorder.start_new)
+        await SensaiApp(engine, model=config.model, commands=commands).run_async()
         await recorder.save()
 
 

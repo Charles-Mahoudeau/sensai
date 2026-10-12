@@ -31,6 +31,21 @@ tasks reading or appending to the same conversation history.
 an empty history (the system prompt is still prepended). It raises
 `SubmissionInProgressError` too while a submission is running.
 
+### Session recording
+
+`SessionRecorder` (`core/sessions.py`) saves the engine history to a
+`SessionRepository`. `app.py` builds it around the session restored at start-up
+and tells it how many messages were already saved:
+
+- `save()` appends the messages saved since the last call; the TUI's exit path
+  calls it once the app closes;
+- `start_new()` saves, then records into a new session. `app.py` passes it to
+  the TUI's `/clear` command (`default_registry(on_clear=recorder.start_new)`),
+  which awaits it right before `engine.clear()`.
+
+A new session is only created when its first message is saved, so clearing and
+quitting leaves no empty session.
+
 ### Pipeline
 
 The pipeline is a synchronous sequence of stages. Each stage receives the

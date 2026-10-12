@@ -100,15 +100,19 @@ gets its `on_clear` hook. If a command needs a new UI action, add it to
 `app.py` builds everything and hands the app a ready `Engine`:
 
 ```python
-async def _serve(config: Config) -> None:
-    async with httpx.AsyncClient(timeout=None) as client:
-        engine = build_engine(config, client)
-        await SensaiApp(engine, model=config.model).run_async()
+recorder = SessionRecorder(
+    session_repo, engine, model=config.model, session_id=session.id, saved=len(history)
+)
+commands = default_registry(on_clear=recorder.start_new)
+await SensaiApp(engine, model=config.model, commands=commands).run_async()
+await recorder.save()
 ```
 
 `run_async()` runs Textual inside the loop started by `asyncio.run()`, so the
 engine task, the HTTP client and the UI share one event loop. The HTTP client is
-closed when the app exits.
+closed when the app exits. The `on_clear` hook and the final `save()` keep
+the stored sessions in step with `/clear` (see
+[Session recording](../core/engine.md#session-recording)).
 
 ## How events are rendered
 
