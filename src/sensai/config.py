@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sensai.core.models import ThinkingEffort
 from sensai.exceptions import ConfigError
 
 
@@ -23,12 +24,35 @@ class ProfileConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """Configuration for the agent."""
+
+    thinking_effort: ThinkingEffort = ThinkingEffort.MEDIUM
+
+
+@dataclass(frozen=True)
 class Config:
     """Global application configuration."""
 
     model: str
     ollama: OllamaConfig
     user_profile: ProfileConfig
+    agent: AgentConfig = AgentConfig()
+
+
+def _parse_thinking_effort(value: object) -> ThinkingEffort:
+    choices = ", ".join(effort.name.lower() for effort in ThinkingEffort)
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"agent.thinking_effort must be a string, got {type(value).__name__} "
+            f"{value!r}, expected one of: {choices}"
+        )
+    try:
+        return ThinkingEffort[value.upper()]
+    except KeyError:
+        raise ConfigError(
+            f"invalid agent.thinking_effort {value!r}, expected one of: {choices}"
+        ) from None
 
 
 def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
@@ -63,6 +87,11 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
         ollama=OllamaConfig(url=data.get("ollama", {}).get("url", "")),
         user_profile=ProfileConfig(
             profile=base / Path(data.get("profile", {}).get("path", "profile.toml"))
+        ),
+        agent=AgentConfig(
+            thinking_effort=_parse_thinking_effort(
+                data.get("agent", {}).get("thinking_effort", "medium")
+            )
         ),
     )
 

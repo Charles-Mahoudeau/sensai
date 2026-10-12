@@ -16,7 +16,7 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import Message, TextDelta, ToolCall
+from sensai.core.models import Message, TextDelta, ThinkingEffort, ToolCall
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.tools.builtin import web_search
@@ -166,3 +166,32 @@ def test_model_receives_exactly_one_system_message(
     for request in llm.messages:
         assert [m.content for m in request if m.role == "system"] == ["SYSTEM"]
         assert request[0].role == "system"
+
+
+class EffortRunner(ScriptedRunner):
+    """A scripted runner exposing a settable thinking effort."""
+
+    def __init__(self) -> None:
+        """Start with no events and the default effort."""
+        super().__init__(())
+        self.thinking_effort = ThinkingEffort.NONE
+
+
+def test_thinking_effort_cycles_and_reaches_the_runner() -> None:
+    """Cycling the effort wraps after the highest and updates the runner."""
+    runner = EffortRunner()
+    runner.thinking_effort = ThinkingEffort.HIGH
+    engine = Engine(runner, Pipeline(), EventBus())
+    assert engine.thinking_effort is ThinkingEffort.HIGH
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.ULTRA
+    assert runner.thinking_effort is ThinkingEffort.ULTRA
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+    assert runner.thinking_effort is ThinkingEffort.NONE
+
+
+def test_thinking_effort_works_with_runners_that_do_not_support_it() -> None:
+    """Without runner support the effort stays NONE and cycling is a no-op."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE

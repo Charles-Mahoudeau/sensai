@@ -52,6 +52,7 @@ def build_engine(
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
     agent = ReActAgent(llm, agent_prompts)
+    agent.thinking_effort = config.agent.thinking_effort
     return Engine(
         runner=agent,
         pipeline=Pipeline(),

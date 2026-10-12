@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sensai.core.agent import Agent
 from sensai.core.agent.events import AgentEvent, TurnCompleted
 from sensai.core.agent.prompts import AgentPrompts
-from sensai.core.models import TextDelta, ToolCall
+from sensai.core.models import TextDelta, ThinkingEffort, ToolCall
 from sensai.core.models.llm import Message, ThinkingDelta, ToolCallRequest
 
 if TYPE_CHECKING:
@@ -63,10 +63,19 @@ class ReActAgent(Agent):
         """
         super().__init__(llm)
         self._prompts = prompts or AgentPrompts.defaults()
-        self._thinking_effort = 10
+        self._thinking_effort = ThinkingEffort.MEDIUM
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort:
+        """How much the agent reasons before answering."""
+        return self._thinking_effort
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: ThinkingEffort) -> None:
+        self._thinking_effort = value
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
-        for _ in range(self._thinking_effort):
+        for _ in range(self._thinking_effort.level):
             thoughts: list[str] = []
             async for event in self._generate_thought(run, thoughts):
                 yield event

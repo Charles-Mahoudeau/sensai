@@ -3,3 +3,7 @@ url = "http://localhost:11434"
 
 [profile]
 path = "config/profile.toml"
+
+[agent]
+# none | low | medium | high | ultra
+thinking_effort = "medium"

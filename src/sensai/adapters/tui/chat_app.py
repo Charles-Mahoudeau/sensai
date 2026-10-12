@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, Static
 
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    EffortLabel,
     ErrorMessage,
     HintMessage,
     ReasoningGroup,
@@ -53,6 +54,7 @@ class SensaiApp(App[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "interrupt", "Stop generating", show=False),
         Binding("ctrl+t", "toggle_thoughts", "Toggle thoughts", show=False),
+        Binding("ctrl+r", "cycle_thinking_effort", "Thinking effort", show=False),
     ]
 
     def __init__(self, engine: Engine, model: str) -> None:
@@ -78,7 +80,9 @@ class SensaiApp(App[None]):
         """Lay out the transcript, the prompt and the status line."""
         yield VerticalScroll(id="transcript")
         yield Input(placeholder="Type a message…", id="prompt")
-        yield Static(id="status", markup=False)
+        with Horizontal(id="statusbar"):
+            yield Static(id="status", markup=False)
+            yield EffortLabel(self._engine.thinking_effort)
 
     def on_mount(self) -> None:
         """Subscribe to the engine before anything can be submitted."""
@@ -86,6 +90,7 @@ class SensaiApp(App[None]):
         self.run_worker(self._consume_events(self._events), name="engine-events")
         self.query_one("#transcript", VerticalScroll).anchor()
         self._set_status("ready")
+        self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
         self.query_one("#prompt", Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -110,6 +115,11 @@ class SensaiApp(App[None]):
         if self._submission is not None and not self._interrupted:
             self._interrupted = True
             self._engine.interrupt(self._submission)
+
+    def action_cycle_thinking_effort(self) -> None:
+        """Switch to the next thinking effort; a running turn keeps its own."""
+        effort = self._engine.cycle_thinking_effort()
+        self.query_one(EffortLabel).set_effort(effort)
 
     def action_toggle_thoughts(self) -> None:
         """Expand every reasoning group, or collapse them if all are expanded."""
@@ -218,5 +228,5 @@ class SensaiApp(App[None]):
         await self.query_one("#transcript", VerticalScroll).mount(widget)
 
     def _set_status(self, state: str) -> None:
-        hints = "esc stop · ctrl+t thoughts · ctrl+q quit"
+        hints = "esc stop · ctrl+t thoughts · ctrl+r effort · ctrl+q quit"
         self.query_one("#status", Static).update(f"{self._model} · {state}   {hints}")
