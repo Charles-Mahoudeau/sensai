@@ -9,8 +9,11 @@ import time
 from typing import TYPE_CHECKING
 
 import httpx
+from dotenv import load_dotenv
 
 from sensai.adapters.cli import PromptCommands
+from sensai.adapters.http import BearerAuth
+from sensai.adapters.mcp.http_client import HttpMcpClient
 from sensai.adapters.ollama import OllamaChat
 from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
@@ -77,6 +80,9 @@ async def build_agent(
 ) -> ReActAgent:
     """Build the ReAct agent and register its tools.
 
+    Registers the built-in web search tool, plus the GitHub MCP server's tools
+    when a GitHub token is configured.
+
     Args:
         config: The application configuration.
         client: The HTTP client used by the Ollama adapter.
@@ -84,9 +90,29 @@ async def build_agent(
 
     Returns:
         The agent, with its tools registered.
+
+    Raises:
+        McpUnavailableError: The GitHub MCP server cannot be reached.
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
+
+    if config.mcp.github_token:
+        github_mcp = HttpMcpClient(
+            "github",
+            "https://api.githubcopilot.com/mcp/",
+            BearerAuth(config.mcp.github_token),
+        )
+        await github_mcp.connect()
+        for tool in await github_mcp.list_tools():
+            tool_registry.register(
+                spec=tool,
+                handler=lambda args, n=tool.name: github_mcp.call_tool(n, args),
+            )
+    else:
+        logging.getLogger(__name__).warning(
+            "GITHUB_TOKEN not set, skipping the GitHub MCP server"
+        )
 
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
     structured_output = (
@@ -112,6 +138,7 @@ def main(model: str, config_path: pathlib.Path) -> None:
         None
     """
     logging.basicConfig(level=logging.INFO, filename="sensai.log")
+    load_dotenv()
     config = _parse_config(model, config_path)
 
     asyncio.run(_serve(config))
