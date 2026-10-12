@@ -9,8 +9,11 @@ from textual.widgets import Input
 
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
+from sensai.adapters.tui.commands.builtin import default_registry
+from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    CommandMenu,
     EffortLabel,
     ErrorMessage,
     HintMessage,
@@ -234,6 +237,158 @@ def test_exit_command_quits() -> None:
         await pilot.pause()
 
         assert not app.is_running
+
+    _run(app, scenario)
+
+
+def test_quit_alias_quits() -> None:
+    """/quit is kept as another name for /exit."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/quit")
+        await pilot.pause()
+
+        assert not app.is_running
+
+    _run(app, scenario)
+
+
+def test_clear_command_empties_the_transcript_and_history() -> None:
+    """/clear runs the hook, then empties the screen and the engine history."""
+    engine = Engine(
+        Agent(FakeLLM([[TextDelta("Hi")]]), ToolRegistry()), Pipeline(), EventBus()
+    )
+    seen: list[int] = []
+
+    async def on_clear() -> None:
+        seen.append(len(engine.history))
+
+    app = SensaiApp(
+        engine, model="test-model", commands=default_registry(on_clear=on_clear)
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        await _send(pilot, "/clear")
+        await pilot.pause()
+
+        assert seen == [2]
+        assert engine.history == ()
+        assert _texts(app, UserMessage) == []
+        assert _texts(app, AssistantMessage) == []
+        assert _texts(app, HintMessage) == [CLEARED_HINT]
+
+    _run(app, scenario)
+
+
+def test_effort_command_sets_and_shows_the_effort() -> None:
+    """/effort <level> sets it, bare /effort shows it, a bad level is explained."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/effort high")
+        await pilot.pause()
+        await _send(pilot, "/effort")
+        await pilot.pause()
+        await _send(pilot, "/effort bogus")
+        await pilot.pause()
+
+        assert engine.thinking_effort is ThinkingEffort.HIGH
+        assert app.query_one(EffortLabel).effort is ThinkingEffort.HIGH
+        assert _texts(app, HintMessage) == [
+            "Thinking effort: Deep thinking",
+            "Thinking effort: Deep thinking",
+            "Unknown effort 'bogus'. Use one of: none, low, medium, high, ultra",
+        ]
+
+    _run(app, scenario)
+
+
+def test_unknown_command_is_not_sent() -> None:
+    """An unknown command shows a hint and never reaches the model."""
+    llm = FakeLLM([])
+    app = _app(llm)
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/foo bar")
+        await pilot.pause()
+
+        assert _texts(app, HintMessage) == ["Unknown command /foo"]
+        assert _texts(app, UserMessage) == []
+        assert llm.messages == []
+
+    _run(app, scenario)
+
+
+def _menu_labels(app: SensaiApp) -> list[str]:
+    menu = app.query_one(CommandMenu)
+    return [item.label for item in menu.completions] if menu.display else []
+
+
+def test_completion_menu_follows_the_typed_command() -> None:
+    """The menu lists matches, tab completes, and arguments are offered next."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", Input)
+        await pilot.press("/")
+        assert _menu_labels(app) == ["/clear", "/effort", "/exit"]
+
+        await pilot.press("e")
+        assert _menu_labels(app) == ["/effort", "/exit"]
+
+        await pilot.press("down", "up", "tab")
+        assert prompt.value == "/effort "
+        assert _menu_labels(app) == ["none", "low", "medium", "high", "ultra"]
+
+        await pilot.press("h", "enter")
+        await pilot.pause()
+        assert engine.thinking_effort is ThinkingEffort.HIGH
+        assert prompt.value == ""
+        assert _menu_labels(app) == []
+        assert _texts(app, HintMessage) == ["Thinking effort: Deep thinking"]
+
+    _run(app, scenario)
+
+
+def test_enter_on_a_partial_command_name_completes_it() -> None:
+    """Enter accepts the highlight: /ex runs /exit, /eff waits for an argument."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.press("/", "e", "f", "f", "enter")
+        assert app.query_one("#prompt", Input).value == "/effort "
+        assert app.is_running
+
+        app.query_one("#prompt", Input).value = ""
+        await pilot.press("/", "e", "x", "enter")
+        await pilot.pause()
+        assert not app.is_running
+
+    _run(app, scenario)
+
+
+def test_escape_closes_the_menu_and_keys_fall_back_when_hidden() -> None:
+    """Esc hides the menu; with it hidden, tab moves the focus as usual."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", Input)
+        await pilot.press("/", "c")
+        assert _menu_labels(app) == ["/clear"]
+
+        await pilot.press("escape")
+        assert _menu_labels(app) == []
+        assert prompt.value == "/c"
+        assert prompt.has_focus
+
+        await pilot.press("tab")
+        assert prompt.value == "/c"
 
     _run(app, scenario)
 

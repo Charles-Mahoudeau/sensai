@@ -144,6 +144,20 @@ HintMessage {
     text-style: italic;
 }
 
+#command-menu {
+    margin: 0 2;
+    padding: 0 1;
+    border: none;
+    background: $background;
+    color: $text-muted;
+    scrollbar-size-vertical: 1;
+
+    & > .option-list--option-highlighted {
+        color: $accent;
+        background: $boost;
+    }
+}
+
 #prompt {
     margin: 0 2;
     padding: 0 1;

@@ -1,23 +1,30 @@
-"""Widgets rendering the chat transcript."""
+"""Widgets rendering the chat transcript and the prompt."""
 
 from __future__ import annotations
 
 import textwrap
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
+from rich.style import Style
+from textual.binding import Binding
 from textual.color import Color
 from textual.containers import Vertical
 from textual.content import Content
-from textual.widgets import Markdown, Static
+from textual.widgets import Input, Markdown, OptionList, Static
+
+from sensai.adapters.tui.commands import CommandHighlighter
 
 if TYPE_CHECKING:
     from typing import Literal
 
     from textual.app import ComposeResult
+    from textual.binding import BindingType
+    from textual.theme import Theme
     from textual.timer import Timer
     from textual.widgets.markdown import MarkdownStream
 
+    from sensai.adapters.tui.commands import CommandRegistry, Completion
     from sensai.core.models import ThinkingEffort
 
 
@@ -421,3 +428,137 @@ class EffortLabel(Static):
         if self._rainbow_timer is not None:
             self._rainbow_timer.stop()
             self._rainbow_timer = None
+
+
+class CommandMenu(OptionList):
+    """The completions of the command being typed, shown above the prompt.
+
+    It never takes the focus: the prompt drives it with the arrow keys, tab,
+    enter and escape (see `PromptInput`).
+    """
+
+    can_focus = False
+
+    DEFAULT_CSS = """
+    CommandMenu {
+        display: none;
+        height: auto;
+        max-height: 6;
+    }
+    """
+
+    def __init__(self) -> None:
+        """Start hidden, with no completions."""
+        super().__init__(id="command-menu")
+        self.completions: list[Completion] = []
+
+    def show(self, completions: list[Completion]) -> None:
+        """List `completions` with the first one highlighted; hide when empty."""
+        self.completions = completions
+        self.clear_options()
+        width = max((len(item.label) for item in completions), default=0)
+        self.add_options(
+            Content.assemble(
+                (item.label.ljust(width), "bold"), "   ", (item.description, "dim")
+            )
+            for item in completions
+        )
+        self.highlighted = 0 if completions else None
+        self.display = bool(completions)
+
+    def move(self, step: int) -> None:
+        """Move the highlight by `step` rows, wrapping around the ends."""
+        if self.completions:
+            current = self.highlighted or 0
+            self.highlighted = (current + step) % len(self.completions)
+
+    @property
+    def selected(self) -> Completion | None:
+        """The highlighted completion, or None if the menu is hidden."""
+        if not self.display or self.highlighted is None:
+            return None
+        return self.completions[self.highlighted]
+
+
+class PromptInput(Input):
+    """The prompt: highlights known commands and drives the completion menu.
+
+    While the menu is shown, up/down move its highlight, tab accepts it, enter
+    accepts it (then submits, unless the command still needs an argument) and
+    escape closes it. Otherwise these keys keep their usual meaning.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("up", "move_completion(-1)", "Previous completion", show=False),
+        Binding("down", "move_completion(1)", "Next completion", show=False),
+        Binding("tab", "accept_completion", "Complete", show=False),
+        Binding("escape", "close_completions", "Close completions", show=False),
+    ]
+
+    MENU_ACTIONS = frozenset(
+        {"move_completion", "accept_completion", "close_completions"}
+    )
+
+    def __init__(
+        self,
+        menu: CommandMenu,
+        commands: CommandRegistry,
+        *,
+        placeholder: str,
+        id: str,
+    ) -> None:
+        """Create the prompt that completes `commands` into `menu`."""
+        self._highlighter = CommandHighlighter(commands)
+        super().__init__(placeholder=placeholder, highlighter=self._highlighter, id=id)
+        self._menu = menu
+        self._commands = commands
+
+    def on_mount(self) -> None:
+        """Color commands with the theme accent, following theme changes."""
+        self._use_theme(self.app.current_theme)
+        self.app.theme_changed_signal.subscribe(self, self._use_theme)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Enable the menu keys only while the menu is shown."""
+        if action in self.MENU_ACTIONS:
+            return self._menu.display
+        return super().check_action(action, parameters)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Refresh the completions for the new text."""
+        if event.input is self:
+            self._menu.show(
+                self._commands.complete(event.value) if not self.disabled else []
+            )
+
+    def action_move_completion(self, step: int) -> None:
+        """Highlight another completion."""
+        self._menu.move(step)
+
+    def action_accept_completion(self) -> None:
+        """Replace the text with the highlighted completion."""
+        selected = self._menu.selected
+        if selected is not None:
+            self.value = selected.value
+            self.cursor_position = len(self.value)
+
+    def action_close_completions(self) -> None:
+        """Hide the menu until the text changes."""
+        self._menu.show([])
+
+    async def action_submit(self) -> None:
+        """Submit, accepting the highlighted completion first if there is one.
+
+        A completion that still needs an argument (it ends with a space) is
+        only accepted, so that its arguments can be picked next.
+        """
+        selected = self._menu.selected
+        if selected is not None and self.value.strip() != selected.value.strip():
+            self.action_accept_completion()
+            if selected.value.endswith(" "):
+                return
+        await super().action_submit()
+
+    def _use_theme(self, theme: Theme) -> None:
+        self._highlighter.style = Style(color=theme.accent, bold=True)
+        self.refresh()

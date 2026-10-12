@@ -7,13 +7,16 @@ from typing import TYPE_CHECKING, ClassVar
 from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Input, Static
+from textual.widgets import Input, OptionList, Static
 
+from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    CommandMenu,
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    PromptInput,
     ReasoningGroup,
     ThoughtStep,
     ToolCallLine,
@@ -37,11 +40,11 @@ if TYPE_CHECKING:
     from textual.binding import BindingType
     from textual.widget import Widget
 
+    from sensai.adapters.tui.commands import CommandRegistry
     from sensai.core.engine import Engine
     from sensai.core.events import Event
     from sensai.core.models import ToolCall
 
-EXIT_COMMANDS = frozenset({"/exit", "/quit"})
 EMPTY_INPUT_HINT = "Type a message and press Enter. /exit to quit."
 
 
@@ -57,16 +60,25 @@ class SensaiApp(App[None]):
         Binding("ctrl+r", "cycle_thinking_effort", "Thinking effort", show=False),
     ]
 
-    def __init__(self, engine: Engine, model: str) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        model: str,
+        *,
+        commands: CommandRegistry | None = None,
+    ) -> None:
         """Create the app for an already-built engine.
 
         Args:
             engine: The engine to submit messages to and read events from.
             model: The model name, shown in the status line.
+            commands: The slash commands the prompt completes and runs; the
+                built-in ones when None.
         """
         super().__init__()
         self._engine = engine
         self._model = model
+        self._commands = commands or default_registry()
         self._events: AsyncGenerator[Event] | None = None
         self._submission: str | None = None
         self._reply: AssistantMessage | None = None
@@ -79,7 +91,11 @@ class SensaiApp(App[None]):
     def compose(self) -> ComposeResult:
         """Lay out the transcript, the prompt and the status line."""
         yield VerticalScroll(id="transcript")
-        yield Input(placeholder="Type a message…", id="prompt")
+        menu = CommandMenu()
+        yield menu
+        yield PromptInput(
+            menu, self._commands, placeholder="Type a message…", id="prompt"
+        )
         with Horizontal(id="statusbar"):
             yield Static(id="status", markup=False)
             yield EffortLabel(self._engine.thinking_effort)
@@ -90,7 +106,7 @@ class SensaiApp(App[None]):
         self.run_worker(self._consume_events(self._events), name="engine-events")
         self.query_one("#transcript", VerticalScroll).anchor()
         self._set_status("ready")
-        self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
+        self.refresh_status()
         self.query_one("#prompt", Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -100,8 +116,7 @@ class SensaiApp(App[None]):
         if not text:
             await self._write(HintMessage(EMPTY_INPUT_HINT))
             return
-        if text in EXIT_COMMANDS:
-            self.exit()
+        if await self._commands.run(text, self):
             return
         await self._write(UserMessage(text))
         self._submission = self._engine.submit(text)
@@ -109,6 +124,30 @@ class SensaiApp(App[None]):
         self._streamed = False
         event.input.disabled = True
         self._set_status("generating…")
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Accept a completion clicked in the command menu."""
+        prompt = self.query_one("#prompt", PromptInput)
+        prompt.action_accept_completion()
+        prompt.focus()
+        event.stop()
+
+    @property
+    def engine(self) -> Engine:
+        """The engine commands act on."""
+        return self._engine
+
+    async def show_hint(self, text: str) -> None:
+        """Show a hint in the transcript, such as a command's feedback."""
+        await self._write(HintMessage(text))
+
+    async def clear_transcript(self) -> None:
+        """Remove every message shown so far."""
+        await self.query_one("#transcript", VerticalScroll).remove_children()
+
+    def refresh_status(self) -> None:
+        """Show the engine's current thinking effort in the status bar."""
+        self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
 
     def action_interrupt(self) -> None:
         """Stop the answer being generated, if any."""
@@ -118,8 +157,8 @@ class SensaiApp(App[None]):
 
     def action_cycle_thinking_effort(self) -> None:
         """Switch to the next thinking effort; a running turn keeps its own."""
-        effort = self._engine.cycle_thinking_effort()
-        self.query_one(EffortLabel).set_effort(effort)
+        self._engine.cycle_thinking_effort()
+        self.refresh_status()
 
     def action_toggle_thoughts(self) -> None:
         """Expand every reasoning group, or collapse them if all are expanded."""

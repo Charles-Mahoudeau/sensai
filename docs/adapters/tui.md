@@ -16,8 +16,10 @@ imports the agent, the pipeline, a port or an adapter. See
 
 | File | Role |
 | --- | --- |
-| `chat_app.py` | `SensaiApp`: layout, input handling, event rendering |
-| `widgets.py` | One widget per kind of transcript line |
+| `chat_app.py` | `SensaiApp`: layout, input handling, event rendering; the `CommandContext` of commands |
+| `commands/registry.py` | `CommandSpec`, `CommandRegistry` (completion, dispatch), `CommandContext`, `CommandHighlighter` |
+| `commands/builtin/` | One module per built-in command, and `default_registry()` |
+| `widgets.py` | One widget per kind of transcript line, the prompt and its command menu |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
 ## Usage
@@ -27,6 +29,8 @@ imports the agent, the pipeline, a port or an adapter. See
 | `Enter` | Send the message |
 | Empty input | Shows a hint, nothing is sent |
 | `/exit`, `/quit`, `ctrl+q` | Quit |
+| `/clear` | Clear the conversation and start a new session |
+| `/effort <level>` | Set the thinking effort (`/effort` alone shows it) |
 | `esc` | Stop the answer being generated, keeping the partial text |
 | `ctrl+t` | Expand every reasoning group, or collapse them if all are expanded |
 | Click a reasoning header | Expand or collapse that group |
@@ -34,6 +38,62 @@ imports the agent, the pipeline, a port or an adapter. See
 The prompt is disabled while an answer is generating, because the engine
 accepts one submission at a time. The status line shows the model, the current
 state and the key hints.
+
+## Commands
+
+A line starting with `/` is a command and is never sent to the model. Commands
+follow the same pattern as tools (`core/tools/registry.py`): a `CommandSpec`
+(name, description, arguments, aliases) and an async handler are registered in a
+`CommandRegistry`. The app only calls `registry.run(text, self)`; it has no
+per-command code.
+
+The built-in commands:
+
+| Command | Effect |
+| --- | --- |
+| `/clear` | Awaits the `on_clear` hook (which saves the session and starts a new one), calls `engine.clear()` and empties the transcript |
+| `/effort <level>` | Sets `engine.thinking_effort` to `none`, `low`, `medium`, `high` or `ultra`; a bare `/effort` shows the current one |
+| `/exit` | Quits; `/quit` is a hidden alias |
+
+An unknown command shows an "Unknown command" hint.
+
+While typing, a known command name is colored with the theme accent
+(`CommandHighlighter`), and `CommandMenu` lists the completions above the
+prompt: the matching commands, then, after a command and a space, its
+arguments. While the menu is shown, `PromptInput` changes these keys:
+
+| Key | Effect |
+| --- | --- |
+| `↑` / `↓` | Move the highlight |
+| `tab` | Insert the highlighted completion |
+| `Enter` | Insert it and run it, unless the text is already complete; a command that takes an argument is only inserted, to pick the argument next |
+| `esc` | Close the menu (it does not stop generation) |
+
+When the menu is hidden, these keys work as usual.
+
+### Adding a command
+
+1. Create `commands/builtin/<name>.py` with a handler and a `register_self()`:
+
+   ```python
+   def register_self(registry: CommandRegistry) -> None:
+       registry.register(CommandSpec("/hello", "Say hello"), _hello)
+
+
+   async def _hello(context: CommandContext, argument: str) -> None:
+       await context.show_hint(f"Hello {argument or 'you'}")
+   ```
+
+2. Call it in `default_registry()` (`commands/builtin/__init__.py`). The order
+   there is the order of the menu.
+
+The handler receives the argument string (stripped, empty if none) and a
+`CommandContext`, the small surface of the front-end a command may use:
+`engine`, `show_hint()`, `clear_transcript()`, `refresh_status()` and `exit()`.
+`SensaiApp` implements it. A command that needs something from outside the TUI
+gets it as a `register_self()` argument, wired in `app.py`, the way `/clear`
+gets its `on_clear` hook. If a command needs a new UI action, add it to
+`CommandContext` and `SensaiApp`.
 
 ## Wiring
 
@@ -80,7 +140,9 @@ usual.
 | `ThoughtStep` | One think/act cycle inside a group |
 | `ToolCallLine` | One tool call, inside a group |
 | `ErrorMessage` | An error reported by the engine |
-| `HintMessage` | Hints and the "(interrupted)" marker |
+| `HintMessage` | Hints, command feedback and the "(interrupted)" marker |
+| `PromptInput` | The prompt; highlights commands and drives the menu |
+| `CommandMenu` | The completions of the command being typed |
 
 `AssistantMessage` streams through `Markdown.get_stream()`, which batches fast
 tokens instead of re-rendering the document on each one. Its method is called
