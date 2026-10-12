@@ -1,0 +1,1 @@
+Answer the user's request now, using what you learned. Match the format and level of detail the user asked for: a full report or detailed request deserves a long, structured answer, a simple question a short one.

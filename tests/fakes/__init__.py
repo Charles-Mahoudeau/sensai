@@ -2,12 +2,14 @@
 
 from tests.fakes.llm import FakeLLM
 from tests.fakes.memory import InMemoryMemoryStore, InMemorySessionStore
+from tests.fakes.prompts import InMemoryPromptRepository
 from tests.fakes.retrieval import FakeEmbedder, InMemoryVectorStore
 
 __all__ = [
     "FakeEmbedder",
     "FakeLLM",
     "InMemoryMemoryStore",
+    "InMemoryPromptRepository",
     "InMemorySessionStore",
     "InMemoryVectorStore",
 ]
