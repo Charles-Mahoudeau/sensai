@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from sensai.app import build_engine
+from sensai.app import build_agent, build_engine
 from sensai.config import Config, OllamaConfig, ProfileConfig
 from sensai.core.engine import Engine
 
@@ -22,7 +22,8 @@ def test_build_engine_wires_the_configured_ollama_client() -> None:
             user_profile=ProfileConfig(profile=Path()),
         )
         async with httpx.AsyncClient() as client:
-            engine = build_engine(config, client, "")
+            agent = await build_agent(config, client)
+            engine = await build_engine(config, agent, "")
 
             assert isinstance(engine, Engine)
 

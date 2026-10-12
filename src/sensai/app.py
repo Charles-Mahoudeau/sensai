@@ -32,33 +32,37 @@ from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
+from sensai.core.tools.builtin import web_search
+from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     import pathlib
     from collections.abc import Awaitable, Callable, Sequence
 
+    from sensai.core.agent import Agent
     from sensai.core.models import Message
     from sensai.core.ports import LLM
 
 
 # So this function will be call at start and the engine will be built
 # and returned for the TUI or CLI to use.
-def build_engine(
-    config: Config,
-    client: httpx.AsyncClient,
+async def build_engine(
+    _config: Config,
+    agent: Agent,
     system_prompt: str,
     history: Sequence[Message] = (),
-    agent_prompts: AgentPrompts | None = None,
 ) -> Engine:
-    """Build an Engine using the configured Ollama adapter."""
-    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    structured_output = (
-        StructuredOutputCatalog(config.structured_output.schemas)
-        if config.structured_output.enabled
-        else None
-    )
-    agent = ReActAgent(llm, agent_prompts, structured_output=structured_output)
-    agent.thinking_effort = config.agent.thinking_effort
+    """Build an Engine around an already configured agent.
+
+    Args:
+        _config: The application configuration (currently unused).
+        agent: The agent that runs each turn, as built by `build_agent`.
+        system_prompt: The system prompt prepended to the conversation.
+        history: Messages restored from a previous session.
+
+    Returns:
+        The engine, ready to be driven by the TUI or CLI.
+    """
     return Engine(
         runner=agent,
         pipeline=Pipeline(),
@@ -66,6 +70,35 @@ def build_engine(
         system_prompt=system_prompt,
         history=history,
     )
+
+
+async def build_agent(
+    config: Config, client: httpx.AsyncClient, agent_prompts: AgentPrompts | None = None
+) -> ReActAgent:
+    """Build the ReAct agent and register its tools.
+
+    Args:
+        config: The application configuration.
+        client: The HTTP client used by the Ollama adapter.
+        agent_prompts: Prompts overriding the agent's defaults, if any.
+
+    Returns:
+        The agent, with its tools registered.
+    """
+    tool_registry = ToolRegistry()
+    web_search.register_self(tool_registry)
+
+    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    structured_output = (
+        StructuredOutputCatalog(config.structured_output.schemas)
+        if config.structured_output.enabled
+        else None
+    )
+    agent = ReActAgent(
+        llm, tool_registry, agent_prompts, structured_output=structured_output
+    )
+    agent.thinking_effort = config.agent.thinking_effort
+    return agent
 
 
 def main(model: str, config_path: pathlib.Path) -> None:
@@ -123,7 +156,8 @@ async def _serve(config: Config) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        engine = build_engine(config, client, system_prompt, history, agent_prompts)
+        agent = await build_agent(config, client, agent_prompts)
+        engine = await build_engine(config, agent, system_prompt, history)
         await SensaiApp(engine, model=config.model).run_async()
 
         for message in engine.history[len(history) :]:
