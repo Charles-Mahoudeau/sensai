@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING, Literal
 
 from sensai.core.agent import Agent
 from sensai.core.agent.events import AgentEvent, TurnCompleted
+from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.structured import format_structured_output
-from sensai.core.models import TextDelta, ToolCall
+from sensai.core.models import TextDelta, ThinkingEffort, ToolCall
 from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta, ToolCallRequest
 
 if TYPE_CHECKING:
@@ -22,47 +23,22 @@ if TYPE_CHECKING:
     from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
 
-THOUGHT_PROMPT = """\
-Before answering, think privately about the request above. This is not the answer.
-Tools you can call:
-{tools}
-
-Write 1 to 3 short sentences:
-- What do I actually know for sure, from the conversation or tool results?
-- What is missing or could be outdated? Which tool would provide it?
-Prefer checking with a tool over relying on memory: facts, dates, news, files,
-numbers and anything specific to the user's context must come from a tool.
-Only if the conversation already contains everything needed (or the request is
-simple small talk), write: "I am ready to answer."
-"""
-
-NOTES_TEMPLATE = """\
-
-[Private notes, the user cannot see them: {thought}
-Now call a tool if your notes say you need one, otherwise answer the user.]"""
-
-ANSWER_PROMPT = """\
-Answer the user's request now, using what you learned. Match the format and \
-level of detail the user asked for: a full report or detailed request \
-deserves a long, structured answer, a simple question a short one.\
-"""
-
-# Temp, maybe this will be moved later during the mode selection logic
 type AgentMode = Literal["answer", "plan"]
-
 # Llama-style chat templates only render the tool definitions in the last
 # message when it is a user one, and only open the assistant turn after a user or
 # tool message. Every call below therefore ends with a user or tool message.
 
 
-def _with_notes(messages: Sequence[Message], thought: str) -> list[Message]:
+def _with_notes(
+    messages: Sequence[Message], thought: str, template: str
+) -> list[Message]:
     """Attach the private thought to the end of the conversation.
 
     The notes are folded into the last message when it is the user's, so it keeps
     carrying the request; after a tool result they become a user message of
     their own. The history itself is left untouched.
     """
-    notes = NOTES_TEMPLATE.format(thought=thought)
+    notes = template.format(thought=thought)
     last = messages[-1]
     if last.role == "user":
         return [*messages[:-1], Message.user(last.content + notes)]
@@ -88,18 +64,36 @@ class ReActAgent(Agent):
     def __init__(
         self,
         llm: LLM,
+        prompts: AgentPrompts | None = None,
         *,
         mode: AgentMode = "answer",
         structured_output: StructuredOutputCatalog | None = None,
     ) -> None:
-        """Initialize the agent with its chat model port."""
+        """Initialize the agent with its chat model port and prompt texts.
+
+        Args:
+            llm: The chat model.
+            prompts: The ReAct prompts; the code defaults when `None`.
+            mode: Selects free-form answers or structured plans.
+            structured_output: Available schemas for structured agent modes.
+        """
         super().__init__(llm)
-        self._thinking_effort = 10
+        self._prompts = prompts or AgentPrompts.defaults()
+        self._thinking_effort = ThinkingEffort.MEDIUM
         self._mode = mode
         self._structured_output = structured_output
 
+    @property
+    def thinking_effort(self) -> ThinkingEffort:
+        """How much the agent reasons before answering."""
+        return self._thinking_effort
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: ThinkingEffort) -> None:
+        self._thinking_effort = value
+
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
-        for _ in range(self._thinking_effort):
+        for _ in range(self._thinking_effort.level):
             thoughts: list[str] = []
             async for event in self._generate_thought(run, thoughts):
                 yield event
@@ -132,7 +126,7 @@ class ReActAgent(Agent):
         """Stream a private thought, then append it to `thoughts`."""
         text_parts: list[str] = []
 
-        prompt = THOUGHT_PROMPT.format(
+        prompt = self._prompts.thought.format(
             tools=_describe_tools(self._tool_registry.spec())
         )
         async for event in self._llm.chat([*run.messages, Message.user(prompt)]):
@@ -163,11 +157,11 @@ class ReActAgent(Agent):
         tools = self._tool_registry.spec() if use_tools else ()
 
         if use_tools:
-            messages = _with_notes(run.messages, thought)
+            messages = _with_notes(run.messages, thought, self._prompts.notes)
         elif run.messages[-1].role == "user":
             messages = list(run.messages)
         else:
-            messages = [*run.messages, Message.user(ANSWER_PROMPT)]
+            messages = [*run.messages, Message.user(self._prompts.answer)]
 
         # Free-form answers stream directly; only plan mode needs a JSON contract.
         output_name: OutputSchemaName | None = "plan" if self._mode == "plan" else None

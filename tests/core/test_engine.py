@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sensai.core.agent.events import TurnCompleted
+from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import (
     Done,
@@ -15,12 +16,16 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import Message, TextDelta
-from sensai.core.models.llm import ThinkingDelta
+from sensai.core.models import Message, TextDelta, ThinkingEffort, ToolCall
+from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.tools.builtin import web_search
+from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Mapping
+
+    import pytest
 
     from sensai.core.agent.events import AgentEvent
 
@@ -125,3 +130,68 @@ def test_interrupt_ends_a_running_submission() -> None:
         await events.aclose()
 
     asyncio.run(run())
+
+
+def test_model_receives_exactly_one_system_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The engine adds the system message; the agent doesn't add another one."""
+
+    async def search(args: Mapping[str, Any]) -> str:
+        del args
+        return "result"
+
+    monkeypatch.setattr(web_search, "_web_search", search)
+    llm = FakeLLM(
+        [
+            [TextDelta("I need data.")],
+            [ToolCallRequest(ToolCall("web_search", {"query": "q"}, id="c1"))],
+            [TextDelta("I am ready to answer.")],
+            [TextDelta("Done.")],
+        ]
+    )
+
+    async def run() -> None:
+        engine = Engine(ReActAgent(llm), Pipeline(), EventBus(), system_prompt="SYSTEM")
+        events = engine.subscribe()
+        engine.submit("Hello")
+        async for event in events:
+            if isinstance(event, Done):
+                break
+        await events.aclose()
+
+    asyncio.run(run())
+
+    assert len(llm.messages) == 4
+    for request in llm.messages:
+        assert [m.content for m in request if m.role == "system"] == ["SYSTEM"]
+        assert request[0].role == "system"
+
+
+class EffortRunner(ScriptedRunner):
+    """A scripted runner exposing a settable thinking effort."""
+
+    def __init__(self) -> None:
+        """Start with no events and the default effort."""
+        super().__init__(())
+        self.thinking_effort = ThinkingEffort.NONE
+
+
+def test_thinking_effort_cycles_and_reaches_the_runner() -> None:
+    """Cycling the effort wraps after the highest and updates the runner."""
+    runner = EffortRunner()
+    runner.thinking_effort = ThinkingEffort.HIGH
+    engine = Engine(runner, Pipeline(), EventBus())
+    assert engine.thinking_effort is ThinkingEffort.HIGH
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.ULTRA
+    assert runner.thinking_effort is ThinkingEffort.ULTRA
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+    assert runner.thinking_effort is ThinkingEffort.NONE
+
+
+def test_thinking_effort_works_with_runners_that_do_not_support_it() -> None:
+    """Without runner support the effort stays NONE and cycling is a no-op."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE

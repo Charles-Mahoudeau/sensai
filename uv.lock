@@ -1069,6 +1069,7 @@ source = { editable = "." }
 dependencies = [
     { name = "ddgs" },
     { name = "httpx" },
+    { name = "rich" },
     { name = "textual" },
 ]
 
@@ -1087,6 +1088,7 @@ dev = [
 requires-dist = [
     { name = "ddgs", specifier = ">=9.16.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "textual", specifier = ">=8.2.8" },
 ]
 
