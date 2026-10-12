@@ -37,6 +37,7 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import McpUnavailableError
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
+from sensai.core.sessions import SessionRecorder
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
 
@@ -199,10 +200,15 @@ async def _serve(config: Config) -> None:
 
         agent = await build_agent(config, client, stack, agent_prompts)
         engine = await build_engine(config, agent, system_prompt, history)
+        recorder = SessionRecorder(
+            session_repo,
+            engine,
+            model=config.model,
+            session_id=session.id,
+            saved=len(history),
+        )
         await SensaiApp(engine, model=config.model).run_async()
-
-        for message in engine.history[len(history) :]:
-            await session_repo.append_message(session.id, message)
+        await recorder.save()
 
 
 def prompts_list() -> None:
