@@ -54,7 +54,7 @@ class SessionRecorder:
             self._session_id = session.id
         for message in unsaved:
             await self._repo.append_message(self._session_id, message)
-        self._saved += len(unsaved)
+            self._saved += 1
 
     async def start_new(self) -> None:
         """Save the current session, then record into a new one.
