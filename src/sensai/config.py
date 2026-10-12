@@ -1,6 +1,7 @@
 """Configuration parsing."""
 
 import json
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,16 @@ class StructuredOutputConfig:
 
 
 @dataclass(frozen=True)
+class McpConfig:
+    """Configuration for MCP servers.
+
+    Secrets come from the environment, never from the TOML file.
+    """
+
+    github_token: str | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     """Global application configuration."""
 
@@ -52,6 +63,7 @@ class Config:
     structured_output: StructuredOutputConfig = field(
         default_factory=StructuredOutputConfig
     )
+    mcp: McpConfig = McpConfig()
 
 
 def _parse_thinking_effort(value: object) -> ThinkingEffort:
@@ -135,6 +147,7 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
             enabled=structured_output.get("enabled", False),
             schemas=schemas,
         ),
+        mcp=McpConfig(github_token=os.environ.get("GITHUB_TOKEN") or None),
     )
 
     return config
