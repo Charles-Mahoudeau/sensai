@@ -132,22 +132,28 @@ class HttpMcpClient:
         """List the tools the server exposes, under their original names.
 
         Raises:
-            McpUnavailableError: The server cannot be reached.
+            McpUnavailableError: The server cannot be reached, or answered with a
+                malformed response or invalid tool data.
         """
-        _, resp_json = await self._request("tools/list")
-        # `description` and `annotations` are optional; an unannotated tool is
-        # assumed to have side effects, as the spec's `readOnlyHint` default says.
-        return [
-            ToolSpec(
-                name=tool["name"],
-                description=tool.get("description", ""),
-                parameters=tool["inputSchema"],
-                requires_confirmation=not tool.get("annotations", {}).get(
-                    "readOnlyHint", False
-                ),
-            )
-            for tool in self._result("tools/list", resp_json)["tools"]
-        ]
+        try:
+            _, resp_json = await self._request("tools/list")
+            # `description` and `annotations` are optional; an unannotated tool is
+            # assumed to have side effects, as the spec's `readOnlyHint` default says.
+            return [
+                ToolSpec(
+                    name=tool["name"],
+                    description=tool.get("description", ""),
+                    parameters=tool["inputSchema"],
+                    requires_confirmation=not tool.get("annotations", {}).get(
+                        "readOnlyHint", False
+                    ),
+                )
+                for tool in self._result("tools/list", resp_json)["tools"]
+            ]
+        except McpUnavailableError:
+            raise
+        except Exception as e:
+            raise McpUnavailableError(f"{self._name}: tools/list failed: {e!r}") from e
 
     async def call_tool(self, name: str, arguments: Mapping[str, Any]) -> str:
         """Call a tool and return its content flattened to text.
