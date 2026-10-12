@@ -57,6 +57,11 @@ class HttpMcpClient:
         """Server name, used to namespace its tools."""
         return self._name
 
+    @property
+    def url(self) -> str:
+        """Endpoint of the MCP server."""
+        return self._url
+
     async def connect(self) -> None:
         """Start the server connection and perform the MCP handshake.
 

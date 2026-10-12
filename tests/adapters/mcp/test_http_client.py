@@ -255,3 +255,11 @@ def test_aclose_is_safe_twice_and_before_connect() -> None:
         await client.aclose()
 
     asyncio.run(run())
+
+
+def test_url_is_the_configured_endpoint() -> None:
+    """The client reports where it connects, for /mcp."""
+    client = HttpMcpClient("github", "https://mcp.test/")
+
+    assert client.url == "https://mcp.test/"
+    assert client.name == "github"
