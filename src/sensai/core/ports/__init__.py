@@ -7,6 +7,12 @@ from sensai.core.ports.llm import (
     LLMUnavailableError,
     ModelNotFoundError,
 )
+from sensai.core.ports.mcp import (
+    McpClient,
+    McpError,
+    McpToolError,
+    McpUnavailableError,
+)
 from sensai.core.ports.repositories.memory import (
     DuplicateMemoryError,
     MemoryNotFoundError,
@@ -41,6 +47,10 @@ __all__ = [
     "LLMError",
     "LLMResponseError",
     "LLMUnavailableError",
+    "McpClient",
+    "McpError",
+    "McpToolError",
+    "McpUnavailableError",
     "MemoryNotFoundError",
     "MemoryRepository",
     "ModelNotFoundError",
