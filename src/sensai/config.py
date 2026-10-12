@@ -40,11 +40,16 @@ class Config:
     agent: AgentConfig = AgentConfig()
 
 
-def _parse_thinking_effort(value: str) -> ThinkingEffort:
+def _parse_thinking_effort(value: object) -> ThinkingEffort:
+    choices = ", ".join(effort.name.lower() for effort in ThinkingEffort)
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"agent.thinking_effort must be a string, got {type(value).__name__} "
+            f"{value!r}, expected one of: {choices}"
+        )
     try:
         return ThinkingEffort[value.upper()]
     except KeyError:
-        choices = ", ".join(effort.name.lower() for effort in ThinkingEffort)
         raise ConfigError(
             f"invalid agent.thinking_effort {value!r}, expected one of: {choices}"
         ) from None

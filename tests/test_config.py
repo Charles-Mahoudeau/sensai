@@ -39,3 +39,9 @@ def test_unknown_thinking_effort_is_rejected(tmp_path: Path) -> None:
     """An unknown effort name raises a ConfigError listing the choices."""
     with pytest.raises(ConfigError, match="expected one of: none, low"):
         load_config(_write(tmp_path, '[agent]\nthinking_effort = "max"\n'))
+
+
+def test_non_string_thinking_effort_is_rejected(tmp_path: Path) -> None:
+    """A non-string effort raises a ConfigError listing the choices."""
+    with pytest.raises(ConfigError, match=r"must be a string.*expected one of: none"):
+        load_config(_write(tmp_path, "[agent]\nthinking_effort = 3\n"))
