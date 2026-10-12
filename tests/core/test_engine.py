@@ -19,7 +19,13 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import Message, TextDelta, ThinkingEffort, ToolCall
+from sensai.core.models import (
+    McpServerStatus,
+    Message,
+    TextDelta,
+    ThinkingEffort,
+    ToolCall,
+)
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.tools.builtin import web_search
@@ -228,3 +234,39 @@ def test_thinking_effort_works_with_runners_that_do_not_support_it() -> None:
     engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
 
     assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+
+
+def test_engine_lists_and_toggles_its_tools() -> None:
+    """Front-ends see every tool and toggle them through the engine."""
+    registry = ToolRegistry()
+    web_search.register_self(registry)
+    status = McpServerStatus("github", "https://mcp.test/", connected=False)
+    engine = Engine(
+        ScriptedRunner(()),
+        Pipeline(),
+        EventBus(),
+        tools=registry,
+        mcp_servers=[status],
+    )
+
+    engine.set_tool_enabled("web_search", enabled=False)
+    assert [tool.enabled for tool in engine.tools()] == [False]
+    assert registry.spec() == ()
+
+    engine.set_tools_enabled(enabled=True)
+    assert [tool.enabled for tool in engine.tools()] == [True]
+    assert engine.mcp_servers() == (status,)
+
+
+def test_engine_without_tools_lists_none() -> None:
+    """With no registry there is nothing to list, and naming a tool fails."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    engine.set_tools_enabled(enabled=False)
+
+    assert engine.tools() == ()
+    assert engine.mcp_servers() == ()
+    with pytest.raises(KeyError):
+        engine.set_tool_enabled("web_search", enabled=False)
+    with pytest.raises(KeyError):
+        engine.set_tools_enabled(enabled=False, names=["web_search"])

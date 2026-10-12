@@ -35,11 +35,11 @@ from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
-from sensai.core.ports import McpUnavailableError
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 from sensai.core.sessions import SessionRecorder
 from sensai.core.tools.builtin import web_search
+from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -47,8 +47,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
     from sensai.core.agent import Agent
-    from sensai.core.models import Message
-    from sensai.core.ports import LLM
+    from sensai.core.models import McpServerStatus, Message
+    from sensai.core.ports import LLM, McpClient
 
 
 # So this function will be call at start and the engine will be built
@@ -58,6 +58,9 @@ async def build_engine(
     agent: Agent,
     system_prompt: str,
     history: Sequence[Message] = (),
+    *,
+    tools: ToolRegistry | None = None,
+    mcp_servers: Sequence[McpServerStatus] = (),
 ) -> Engine:
     """Build an Engine around an already configured agent.
 
@@ -66,6 +69,8 @@ async def build_engine(
         agent: The agent that runs each turn, as built by `build_agent`.
         system_prompt: The system prompt prepended to the conversation.
         history: Messages restored from a previous session.
+        tools: The agent's tools, so front-ends can list and toggle them.
+        mcp_servers: The outcome of connecting to each MCP server.
 
     Returns:
         The engine, ready to be driven by the TUI or CLI.
@@ -76,57 +81,66 @@ async def build_engine(
         bus=EventBus(),
         system_prompt=system_prompt,
         history=history,
+        tools=tools,
+        mcp_servers=mcp_servers,
     )
 
 
-async def build_agent(
-    config: Config,
-    client: httpx.AsyncClient,
-    stack: contextlib.AsyncExitStack,
-    agent_prompts: AgentPrompts | None = None,
-) -> ReActAgent:
-    """Build the ReAct agent and register its tools.
+async def build_tools(
+    config: Config, stack: contextlib.AsyncExitStack
+) -> tuple[ToolRegistry, tuple[McpServerStatus, ...]]:
+    """Build the tool registry: the built-in tools, then each MCP server's.
 
-    Registers the built-in web search tool, plus the GitHub MCP server's tools
-    when a GitHub token is configured and the server is reachable.
+    A server that cannot be reached is skipped and reported in its status.
 
     Args:
         config: The application configuration.
-        client: The HTTP client used by the Ollama adapter.
-        stack: Takes ownership of the GitHub MCP client, so the caller closes it.
-        agent_prompts: Prompts overriding the agent's defaults, if any.
+        stack: Closes the MCP clients when the app exits.
 
     Returns:
-        The agent, with its tools registered.
+        The registry, and the outcome of connecting to each MCP server.
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
 
+    clients: list[McpClient] = []
     if config.mcp.github_token:
-        github_mcp = HttpMcpClient(
-            "github",
-            "https://api.githubcopilot.com/mcp/",
-            BearerAuth(config.mcp.github_token),
-        )
-        stack.push_async_callback(github_mcp.aclose)
-        try:
-            await github_mcp.connect()
-            tools = await github_mcp.list_tools()
-        except McpUnavailableError as e:
-            logging.getLogger(__name__).warning(
-                "GitHub MCP server unavailable, skipping its tools: %s", e
+        clients.append(
+            HttpMcpClient(
+                "github",
+                "https://api.githubcopilot.com/mcp/",
+                BearerAuth(config.mcp.github_token),
             )
-        else:
-            for tool in tools:
-                tool_registry.register(
-                    spec=tool,
-                    handler=lambda args, n=tool.name: github_mcp.call_tool(n, args),
-                )
+        )
     else:
         logging.getLogger(__name__).warning(
             "GITHUB_TOKEN not set, skipping the GitHub MCP server"
         )
 
+    statuses: list[McpServerStatus] = []
+    for client in clients:
+        stack.push_async_callback(client.aclose)
+        statuses.append(await register_mcp_server(tool_registry, client))
+    return tool_registry, tuple(statuses)
+
+
+async def build_agent(
+    config: Config,
+    client: httpx.AsyncClient,
+    tool_registry: ToolRegistry,
+    agent_prompts: AgentPrompts | None = None,
+) -> ReActAgent:
+    """Build the ReAct agent around its tools.
+
+    Args:
+        config: The application configuration.
+        client: The HTTP client used by the Ollama adapter.
+        tool_registry: The tools offered to the model, as built by `build_tools`.
+        agent_prompts: Prompts overriding the agent's defaults, if any.
+
+    Returns:
+        The agent.
+    """
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
     structured_output = (
         StructuredOutputCatalog(config.structured_output.schemas)
@@ -199,8 +213,16 @@ async def _serve(config: Config) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        agent = await build_agent(config, client, stack, agent_prompts)
-        engine = await build_engine(config, agent, system_prompt, history)
+        tools, mcp_servers = await build_tools(config, stack)
+        agent = await build_agent(config, client, tools, agent_prompts)
+        engine = await build_engine(
+            config,
+            agent,
+            system_prompt,
+            history,
+            tools=tools,
+            mcp_servers=mcp_servers,
+        )
         recorder = SessionRecorder(
             session_repo,
             engine,
