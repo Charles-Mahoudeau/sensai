@@ -45,3 +45,23 @@ def test_non_string_thinking_effort_is_rejected(tmp_path: Path) -> None:
     """A non-string effort raises a ConfigError listing the choices."""
     with pytest.raises(ConfigError, match=r"must be a string.*expected one of: none"):
         load_config(_write(tmp_path, "[agent]\nthinking_effort = 3\n"))
+
+
+def test_github_token_is_read_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`GITHUB_TOKEN` fills `mcp.github_token`."""
+    monkeypatch.setenv("GITHUB_TOKEN", "s3cret")
+    assert load_config(_write(tmp_path, "")).mcp.github_token == "s3cret"
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_github_token_is_none_when_unset_or_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """A missing or empty `GITHUB_TOKEN` means no token."""
+    if value is None:
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("GITHUB_TOKEN", value)
+    assert load_config(_write(tmp_path, "")).mcp.github_token is None

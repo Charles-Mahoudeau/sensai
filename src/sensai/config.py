@@ -1,5 +1,6 @@
 """Configuration parsing."""
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,16 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class McpConfig:
+    """Configuration for MCP servers.
+
+    Secrets come from the environment, never from the TOML file.
+    """
+
+    github_token: str | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     """Global application configuration."""
 
@@ -38,6 +49,7 @@ class Config:
     ollama: OllamaConfig
     user_profile: ProfileConfig
     agent: AgentConfig = AgentConfig()
+    mcp: McpConfig = McpConfig()
 
 
 def _parse_thinking_effort(value: object) -> ThinkingEffort:
@@ -93,6 +105,7 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
                 data.get("agent", {}).get("thinking_effort", "medium")
             )
         ),
+        mcp=McpConfig(github_token=os.environ.get("GITHUB_TOKEN") or None),
     )
 
     return config
