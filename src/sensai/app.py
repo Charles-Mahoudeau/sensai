@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 import time
@@ -77,7 +78,10 @@ async def build_engine(
 
 
 async def build_agent(
-    config: Config, client: httpx.AsyncClient, agent_prompts: AgentPrompts | None = None
+    config: Config,
+    client: httpx.AsyncClient,
+    stack: contextlib.AsyncExitStack,
+    agent_prompts: AgentPrompts | None = None,
 ) -> ReActAgent:
     """Build the ReAct agent and register its tools.
 
@@ -87,6 +91,7 @@ async def build_agent(
     Args:
         config: The application configuration.
         client: The HTTP client used by the Ollama adapter.
+        stack: Takes ownership of the GitHub MCP client, so the caller closes it.
         agent_prompts: Prompts overriding the agent's defaults, if any.
 
     Returns:
@@ -101,11 +106,11 @@ async def build_agent(
             "https://api.githubcopilot.com/mcp/",
             BearerAuth(config.mcp.github_token),
         )
+        stack.push_async_callback(github_mcp.aclose)
         try:
             await github_mcp.connect()
             tools = await github_mcp.list_tools()
         except McpUnavailableError as e:
-            await github_mcp.aclose()
             logging.getLogger(__name__).warning(
                 "GitHub MCP server unavailable, skipping its tools: %s", e
             )
@@ -174,7 +179,10 @@ async def _get_prompt_library(db: SqliteDatabase) -> PromptLibrary:
 
 
 async def _serve(config: Config) -> None:
-    async with httpx.AsyncClient(timeout=None) as client:
+    async with (
+        httpx.AsyncClient(timeout=None) as client,
+        contextlib.AsyncExitStack() as stack,
+    ):
         db = _get_db()
 
         prompts = await _get_prompt_library(db)
@@ -189,7 +197,7 @@ async def _serve(config: Config) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        agent = await build_agent(config, client, agent_prompts)
+        agent = await build_agent(config, client, stack, agent_prompts)
         engine = await build_engine(config, agent, system_prompt, history)
         await SensaiApp(engine, model=config.model).run_async()
 
