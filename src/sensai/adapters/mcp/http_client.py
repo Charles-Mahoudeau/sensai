@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -67,7 +68,13 @@ class HttpMcpClient:
             headers=self._headers(),
             timeout=30,
         )
-        await self._initialize()
+        try:
+            await self._initialize()
+        except BaseException:
+            # Includes cancellation; don't leak the client or mask the original error.
+            with contextlib.suppress(Exception):
+                await self.aclose()
+            raise
 
     async def _initialize(self) -> None:
         """Discover the server and record its protocol version and session id.
