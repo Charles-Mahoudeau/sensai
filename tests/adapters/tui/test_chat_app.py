@@ -11,6 +11,7 @@ from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
+from sensai.adapters.tui.companion import ANIMATIONS, Companion, Mood
 from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
@@ -19,6 +20,7 @@ from sensai.adapters.tui.widgets import (
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    PromptInput,
     ReasoningGroup,
     ThoughtStep,
     ToolCallLine,
@@ -811,3 +813,115 @@ def test_tool_description_keeps_off_the_scrollbar() -> None:
             assert tools.vertical_scrollbar.region.x - ellipsis >= 2
 
     asyncio.run(run())
+
+
+class RecordingCompanion(Companion):
+    """A companion that remembers every mood it was asked to show."""
+
+    def __init__(self) -> None:
+        """Start with no recorded mood."""
+        super().__init__()
+        self.moods: list[Mood] = []
+
+    def set_mood(self, mood: Mood) -> None:
+        """Record the mood, once per change, then set it."""
+        if not self.moods or self.moods[-1] is not mood:
+            self.moods.append(mood)
+        super().set_mood(mood)
+
+    def flash(self, mood: Mood, seconds: float) -> None:
+        """Record the flashed mood, then flash it."""
+        self.moods.append(mood)
+        super().flash(mood, seconds)
+
+
+def _spy_companion(app: SensaiApp) -> RecordingCompanion:
+    companion = RecordingCompanion()
+    app.query_one("#prompt", PromptInput).companion = companion
+    return companion
+
+
+def test_companion_follows_the_turn_and_cheers_at_the_end() -> None:
+    """Thinking, tool, thinking, answering, then a happy flash once done."""
+    call = ToolCall("web_search", id="1")
+    app = _tool_app(
+        [
+            ThinkingDelta("Let me search"),
+            ToolRunStarted(call),
+            ToolRunFinished(call, ToolResult("web_search", "ok", "1")),
+            TextDelta("Found it"),
+        ]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        turn = companion.moods[companion.moods.index(Mood.THINKING) :]
+        assert turn == [
+            Mood.THINKING,
+            Mood.TOOL,
+            Mood.THINKING,
+            Mood.ANSWERING,
+            Mood.IDLE,
+            Mood.HAPPY,
+        ]
+        assert companion.mood is Mood.HAPPY
+
+    _run(app, scenario)
+
+
+def test_companion_is_dizzy_after_an_error() -> None:
+    """An engine error ends the turn on the error face."""
+    app = _app(FakeLLM([[LLMUnavailableError("Ollama is down")]]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        assert companion.mood is Mood.ERROR
+
+    _run(app, scenario)
+
+
+def test_companion_is_startled_by_an_interrupt() -> None:
+    """Esc shows the interrupted face, which outlives the end of the turn."""
+    app = _app(BlockingLLM())
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await pilot.pause()
+        await pilot.press("escape")
+
+        assert companion.mood is Mood.INTERRUPTED
+
+        await _wait_until_idle(pilot)
+
+        assert companion.mood is Mood.INTERRUPTED
+
+    _run(app, scenario)
+
+
+def test_companion_watches_the_user_type_in_the_border() -> None:
+    """Typing switches the face drawn in the prompt border; clearing rests it."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", PromptInput)
+        assert prompt.border_title in ANIMATIONS[Mood.IDLE].frames
+
+        await pilot.press("h", "i")
+        await pilot.pause(0.3)
+
+        assert prompt.companion.mood is Mood.TYPING
+        assert prompt.border_title in ANIMATIONS[Mood.TYPING].frames
+
+        prompt.value = ""
+        await pilot.pause()
+
+        assert prompt.companion.mood is Mood.IDLE
+
+    _run(app, scenario)

@@ -14,6 +14,7 @@ from textual.content import Content
 from textual.widgets import Input, Markdown, OptionList, Static
 
 from sensai.adapters.tui.commands import CommandHighlighter
+from sensai.adapters.tui.companion import Companion, Mood
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -486,7 +487,11 @@ class PromptInput(Input):
     While the menu is shown, up/down move its highlight, tab accepts it, enter
     accepts it (then submits, unless the command still needs an argument) and
     escape closes it. Otherwise these keys keep their usual meaning.
+
+    The companion is drawn in its top border, and watches the user type.
     """
+
+    COMPANION_INTERVAL = 0.2
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "move_completion(-1)", "Previous completion", show=False),
@@ -512,11 +517,14 @@ class PromptInput(Input):
         super().__init__(placeholder=placeholder, highlighter=self._highlighter, id=id)
         self._menu = menu
         self._commands = commands
+        self.companion = Companion()
 
     def on_mount(self) -> None:
-        """Color commands with the theme accent, following theme changes."""
+        """Color commands with the theme accent, and animate the companion."""
         self._use_theme(self.app.current_theme)
         self.app.theme_changed_signal.subscribe(self, self._use_theme)
+        self._tick_companion()
+        self.set_interval(self.COMPANION_INTERVAL, self._tick_companion)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Enable the menu keys only while the menu is shown."""
@@ -530,6 +538,9 @@ class PromptInput(Input):
             self._menu.show(
                 self._commands.complete(event.value) if not self.disabled else []
             )
+            self.companion.poke()
+            if not self.disabled:
+                self.companion.set_mood(Mood.TYPING if event.value else Mood.IDLE)
 
     def action_move_completion(self, step: int) -> None:
         """Highlight another completion."""
@@ -558,6 +569,11 @@ class PromptInput(Input):
             if selected.value.endswith(" "):
                 return
         await super().action_submit()
+
+    def _tick_companion(self) -> None:
+        frame = self.companion.frame()
+        if frame != self.border_title:
+            self.border_title = frame
 
     def _use_theme(self, theme: Theme) -> None:
         self._highlighter.style = Style(color=theme.accent, bold=True)

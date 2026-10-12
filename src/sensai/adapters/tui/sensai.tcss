@@ -163,15 +163,19 @@ HintMessage {
     padding: 0 1;
     border: round $panel-lighten-2;
     background: $background;
+    /* the companion, drawn in the top border (see companion.py) */
+    border-title-align: right;
+    border-title-color: $accent;
 
     &:focus {
         border: round $accent;
         background-tint: $foreground 3%;
     }
 
+    /* dims the text only: the companion stays bright while it works */
     &:disabled {
         border: round $panel;
-        opacity: 70%;
+        color: $text-muted;
     }
 
     & > .input--placeholder {

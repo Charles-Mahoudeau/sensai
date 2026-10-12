@@ -10,6 +10,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, OptionList, Static
 
 from sensai.adapters.tui.commands.builtin import default_registry
+from sensai.adapters.tui.companion import Companion, Mood
 from sensai.adapters.tui.panels import Panel
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
@@ -47,6 +48,9 @@ if TYPE_CHECKING:
     from sensai.core.models import ToolCall
 
 EMPTY_INPUT_HINT = "Type a message and press Enter. /exit to quit."
+HAPPY_SECONDS = 2.0
+INTERRUPTED_SECONDS = 2.0
+ERROR_SECONDS = 3.0
 
 
 class SensaiApp(App[None]):
@@ -88,6 +92,7 @@ class SensaiApp(App[None]):
         self._streamed = False
         self._running_tools: list[tuple[ToolCall, ToolCallLine]] = []
         self._interrupted = False
+        self._errored = False
 
     def compose(self) -> ComposeResult:
         """Lay out the transcript, the prompt and the status line."""
@@ -122,8 +127,10 @@ class SensaiApp(App[None]):
         await self._write(UserMessage(text))
         self._submission = self._engine.submit(text)
         self._interrupted = False
+        self._errored = False
         self._streamed = False
         event.input.disabled = True
+        self._companion.set_mood(Mood.THINKING)
         self._set_status("generating…")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -171,6 +178,7 @@ class SensaiApp(App[None]):
         if self._submission is not None and not self._interrupted:
             self._interrupted = True
             self._engine.interrupt(self._submission)
+            self._companion.set_mood(Mood.INTERRUPTED)
 
     def action_cycle_thinking_effort(self) -> None:
         """Switch to the next thinking effort; a running turn keeps its own."""
@@ -197,6 +205,7 @@ class SensaiApp(App[None]):
             case MessageStarted():
                 pass  # the answer is mounted lazily, below any tool call
             case ThinkingGenerated(text=text, ready=ready):
+                self._companion.set_mood(Mood.THINKING)
                 await self._finish_reply()
                 if self._step is None:
                     group = await self._open_group()
@@ -205,6 +214,7 @@ class SensaiApp(App[None]):
                 if ready:
                     self._step.mark_ready()
             case TokenGenerated(text=text):
+                self._companion.set_mood(Mood.ANSWERING)
                 self._streamed = True
                 await self._close_reasoning()
                 if self._reply is None:
@@ -212,6 +222,7 @@ class SensaiApp(App[None]):
                     await self._write(self._reply)
                 await self._reply.add_fragment(text)
             case ToolRunStarted(call=call):
+                self._companion.set_mood(Mood.TOOL)
                 await self._end_step()
                 await self._finish_reply()
                 line = ToolCallLine(call.name)
@@ -219,6 +230,8 @@ class SensaiApp(App[None]):
                 await (await self._open_group()).add_tool(line)
             case ToolRunFinished(call=call, result=result):
                 self._finish_tool(call, result.content, is_error=result.is_error)
+                if not self._running_tools:
+                    self._companion.set_mood(Mood.THINKING)
             case MessageCompleted(message=message):
                 if not self._streamed and message.content:
                     self._reply = AssistantMessage()
@@ -226,6 +239,8 @@ class SensaiApp(App[None]):
                     await self._reply.add_fragment(message.content)
                 await self._finish_reply()
             case ErrorEvent(error=error):
+                self._errored = True
+                self._companion.set_mood(Mood.ERROR)
                 await self._close_reasoning()
                 await self._drop_empty_reply()
                 await self._write(ErrorMessage(str(error) or type(error).__name__))
@@ -242,6 +257,21 @@ class SensaiApp(App[None]):
                 prompt.disabled = False
                 prompt.focus()
                 self._set_status("ready")
+                self._cheer()
+
+    def _cheer(self) -> None:
+        """Let the companion react to how the turn ended, then rest."""
+        self._companion.set_mood(Mood.IDLE)
+        if self._interrupted:
+            self._companion.flash(Mood.INTERRUPTED, INTERRUPTED_SECONDS)
+        elif self._errored:
+            self._companion.flash(Mood.ERROR, ERROR_SECONDS)
+        else:
+            self._companion.flash(Mood.HAPPY, HAPPY_SECONDS)
+
+    @property
+    def _companion(self) -> Companion:
+        return self.query_one("#prompt", PromptInput).companion
 
     def _finish_tool(self, call: ToolCall, content: str, *, is_error: bool) -> None:
         for index, (started, line) in enumerate(self._running_tools):

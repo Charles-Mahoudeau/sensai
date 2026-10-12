@@ -22,6 +22,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `commands/builtin/` | One module per built-in command, and `default_registry()` |
 | `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
 | `widgets.py` | One widget per kind of transcript line, the prompt and its command menu |
+| `companion.py` | `Companion`: the animated face drawn in the prompt border, and its `Mood` frames |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
 ## Usage
@@ -215,6 +216,29 @@ What is visible is decided by CSS classes on the group (`-live`, `-full`,
 `-collapsed`) and on each step (`-streaming`, `-done`); see `sensai.tcss`.
 A text fragment arriving before a later tool call closes the group, so that
 tool call opens a new one.
+
+## Companion
+
+A small kaomoji face lives in the top-right corner of the prompt border (its
+right-aligned `border_title`). It takes no extra row and reacts to the turn:
+
+| Mood | Face | When |
+| --- | --- | --- |
+| idle | `(•ᴗ•)`, blinking | Nothing is happening |
+| typing | `(•ᴗ<)` | The prompt holds text |
+| thinking | `...(•_•)` | Submitted, `ThinkingGenerated`, or after the last tool returns |
+| tool | `◐(•ᴗ•)` | `ToolRunStarted` |
+| answering | `(•o•)` | `TokenGenerated` |
+| error | `(×_×)` | `ErrorEvent`, then for 3s after `Done` |
+| interrupted | `!(°□°)` | `esc`, then for 2s after `Done` |
+| happy | `♪(^ᴗ^)` | For 2s after a turn that ended well |
+| asleep | `zZz(-_-)` | Idle for 2 minutes; any keystroke wakes it |
+
+`Companion` is plain Python with an injectable clock: `SensaiApp` sets its base
+mood (`set_mood()`) or a passing one (`flash()`), and `PromptInput` redraws the
+frame every 0.2s. To change a face, edit `ANIMATIONS` in `companion.py`: keep
+the face as the last 5 cells and props on its left, so the face doesn't move,
+and only use single-width characters (`test_companion.py` checks both).
 
 ## Styling
 
