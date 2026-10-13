@@ -22,6 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="An advanced AI agent.",
         parents=[_model_options(required=False)],
     )
+    parser.add_argument(
+        "--no-tools",
+        action="store_true",
+        help="start the chat with every tool disabled",
+    )
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_prompts_commands(commands)
     return parser
@@ -127,4 +132,4 @@ def main() -> None:
     if args.model is None or args.config is None:
         parser.error("--model and --config are required to start the chat")
 
-    app.main(args.model, args.config)
+    app.main(args.model, args.config, app.ChatOptions(tools_enabled=not args.no_tools))

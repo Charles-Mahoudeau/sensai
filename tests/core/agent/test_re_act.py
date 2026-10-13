@@ -48,6 +48,12 @@ def offline_search(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_search, "_web_search", search)
 
 
+def _tools() -> ToolRegistry:
+    registry = ToolRegistry()
+    web_search.register_self(registry)
+    return registry
+
+
 def _run(agent: ReActAgent) -> list[AgentEvent]:
     async def collect() -> list[AgentEvent]:
         return [event async for event in agent.run(HISTORY)]
@@ -66,7 +72,7 @@ def test_injected_prompts_build_every_request() -> None:
     """Thought, notes and answer requests use the injected texts."""
     llm = FakeLLM(TOOL_TURN)
 
-    _run(_agent(llm, PROMPTS))
+    _run(ReActAgent(llm, _tools(), PROMPTS))
 
     thought, act, ready_thought, answer = llm.messages
     assert thought[-1].content.startswith("THINK with - web_search: ")
@@ -79,7 +85,7 @@ def test_agent_adds_no_system_message() -> None:
     """Every request starts with the caller's system message, and only that."""
     llm = FakeLLM(TOOL_TURN)
 
-    _run(_agent(llm, PROMPTS))
+    _run(ReActAgent(llm, _tools(), PROMPTS))
 
     for request in llm.messages:
         assert [m for m in request if m.role == "system"] == [HISTORY[0]]
@@ -90,7 +96,7 @@ def test_defaults_are_used_without_prompts() -> None:
     llm = FakeLLM(TOOL_TURN)
     defaults = AgentPrompts.defaults()
 
-    _run(_agent(llm))
+    _run(ReActAgent(llm, _tools()))
 
     assert llm.messages[0][-1].content.startswith(defaults.thought[:40])
     assert llm.messages[3][-1] == Message.user(defaults.answer)

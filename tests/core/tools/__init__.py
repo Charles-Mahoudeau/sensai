@@ -1,1 +1,1 @@
-"""Tests for core tool infrastructure."""
+"""Tests for the tool registry and the tools it exposes."""

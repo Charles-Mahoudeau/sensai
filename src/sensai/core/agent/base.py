@@ -57,11 +57,14 @@ class Agent:
     """Stream one LLM response for the prepared conversation history."""
 
     def __init__(self, llm: LLM, tool_registry: ToolRegistry) -> None:
-        """Initialize the agent with its chat model port and shared tools."""
+        """Initialize the agent with its chat model port and its tools.
+
+        Args:
+            llm: The chat model.
+            tool_registry: The tools offered to the LLM and run on its request.
+        """
         self._llm = llm
         self._tool_registry = tool_registry
-        # web_search.register_self(self._tool_registry)
-
         self._max_tool_calls = 10
         self._logger = logging.getLogger("Agent")
 

@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "requires_confirmation": {
+      "type": "boolean",
+      "enum": [true]
+    }
+  },
+  "required": ["action", "targets", "risk", "reason", "requires_confirmation"],
+  "additionalProperties": false
+}

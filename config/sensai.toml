@@ -6,3 +6,7 @@ path = "config/profile.toml"
 
 [structured_output]
 enabled = false
+
+[agent]
+# none | low | medium | high | ultra
+thinking_effort = "medium"

@@ -11,3 +11,6 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.log
+
+# Local secrets
+.env

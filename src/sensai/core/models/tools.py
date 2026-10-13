@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
+SOURCE_SEPARATOR = "__"
+"""Joins an MCP server's name to its tools' names: `github__get_me`."""
+
 
 @dataclass(frozen=True, slots=True)
 class ToolCall:
@@ -70,3 +73,23 @@ class PermissionDecision:
 
     allowed: bool
     reason: str | None = None  # Optional
+
+
+@dataclass(frozen=True, slots=True)
+class ToolInfo:
+    """Describe a registered tool as a front-end lists it.
+
+    Attributes:
+        spec: The tool's specification.
+        source: Where the tool comes from: `builtin`, or an MCP server's name.
+        enabled: Whether the tool is offered to the model.
+    """
+
+    spec: ToolSpec
+    source: str
+    enabled: bool
+
+    @property
+    def short_name(self) -> str:
+        """The name without the `<source>__` prefix of an MCP tool."""
+        return self.spec.name.removeprefix(f"{self.source}{SOURCE_SEPARATOR}")

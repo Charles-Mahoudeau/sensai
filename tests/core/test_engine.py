@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from sensai.core.agent.events import TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
+from sensai.core.errors import SubmissionInProgressError
 from sensai.core.events import (
     Done,
     EventBus,
@@ -16,7 +19,13 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
-from sensai.core.models import Message, TextDelta, ToolCall
+from sensai.core.models import (
+    McpServerStatus,
+    Message,
+    TextDelta,
+    ThinkingEffort,
+    ToolCall,
+)
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.tools.builtin import web_search
@@ -25,8 +34,6 @@ from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
-
-    import pytest
 
     from sensai.core.agent.events import AgentEvent
 
@@ -152,12 +159,12 @@ def test_model_receives_exactly_one_system_message(
         ]
     )
 
+    tools = ToolRegistry()
+    web_search.register_self(tools)
+
     async def run() -> None:
-        registry = ToolRegistry()
-        web_search.register_self(registry)
-        engine = Engine(
-            ReActAgent(llm, registry), Pipeline(), EventBus(), system_prompt="SYSTEM"
-        )
+        agent = ReActAgent(llm, tools)
+        engine = Engine(agent, Pipeline(), EventBus(), system_prompt="SYSTEM")
         events = engine.subscribe()
         engine.submit("Hello")
         async for event in events:
@@ -171,3 +178,95 @@ def test_model_receives_exactly_one_system_message(
     for request in llm.messages:
         assert [m.content for m in request if m.role == "system"] == ["SYSTEM"]
         assert request[0].role == "system"
+
+
+class EffortRunner(ScriptedRunner):
+    """A scripted runner exposing a settable thinking effort."""
+
+    def __init__(self) -> None:
+        """Start with no events and the default effort."""
+        super().__init__(())
+        self.thinking_effort = ThinkingEffort.NONE
+
+
+def test_clear_forgets_the_history() -> None:
+    """Clearing empties the history the next submission starts from."""
+    engine = Engine(
+        ScriptedRunner(()), Pipeline(), EventBus(), history=[Message.user("Hi")]
+    )
+
+    engine.clear()
+
+    assert engine.history == ()
+
+
+def test_clear_is_refused_while_a_submission_runs() -> None:
+    """The history can't be cleared under a running turn."""
+
+    async def run() -> None:
+        engine = Engine(WaitingRunner(), Pipeline(), EventBus())
+        submission_id = engine.submit("Hello")
+
+        with pytest.raises(SubmissionInProgressError):
+            engine.clear()
+
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
+
+
+def test_thinking_effort_cycles_and_reaches_the_runner() -> None:
+    """Cycling the effort wraps after the highest and updates the runner."""
+    runner = EffortRunner()
+    runner.thinking_effort = ThinkingEffort.HIGH
+    engine = Engine(runner, Pipeline(), EventBus())
+    assert engine.thinking_effort is ThinkingEffort.HIGH
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.ULTRA
+    assert runner.thinking_effort is ThinkingEffort.ULTRA
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+    assert runner.thinking_effort is ThinkingEffort.NONE
+
+
+def test_thinking_effort_works_with_runners_that_do_not_support_it() -> None:
+    """Without runner support the effort stays NONE and cycling is a no-op."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+
+
+def test_engine_lists_and_toggles_its_tools() -> None:
+    """Front-ends see every tool and toggle them through the engine."""
+    registry = ToolRegistry()
+    web_search.register_self(registry)
+    status = McpServerStatus("github", "https://mcp.test/", connected=False)
+    engine = Engine(
+        ScriptedRunner(()),
+        Pipeline(),
+        EventBus(),
+        tools=registry,
+        mcp_servers=[status],
+    )
+
+    engine.set_tool_enabled("web_search", enabled=False)
+    assert [tool.enabled for tool in engine.tools()] == [False]
+    assert registry.spec() == ()
+
+    engine.set_tools_enabled(enabled=True)
+    assert [tool.enabled for tool in engine.tools()] == [True]
+    assert engine.mcp_servers() == (status,)
+
+
+def test_engine_without_tools_lists_none() -> None:
+    """With no registry there is nothing to list, and naming a tool fails."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    engine.set_tools_enabled(enabled=False)
+
+    assert engine.tools() == ()
+    assert engine.mcp_servers() == ()
+    with pytest.raises(KeyError):
+        engine.set_tool_enabled("web_search", enabled=False)
+    with pytest.raises(KeyError):
+        engine.set_tools_enabled(enabled=False, names=["web_search"])

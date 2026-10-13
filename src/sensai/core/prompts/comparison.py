@@ -181,7 +181,7 @@ def _parse_verdict(reply: str) -> tuple[Winner, str]:
         reason = str(data.get("reason", ""))
     except json.JSONDecodeError, KeyError, TypeError:
         return "tie", f"unreadable verdict: {reply[:80]!r}"
-    if winner not in _SWAPPED:
+    if not isinstance(winner, str) or winner not in _SWAPPED:
         return "tie", f"unknown winner: {winner!r}"
     return winner, reason
 

@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import httpx
+from dotenv import load_dotenv
 
 from sensai.adapters.cli import PromptCommands
+from sensai.adapters.http import BearerAuth
+from sensai.adapters.mcp.http_client import HttpMcpClient
 from sensai.adapters.ollama import OllamaChat
 from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
@@ -23,74 +28,164 @@ from sensai.adapters.storage.repositories import (
 )
 from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
+from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.config import Config, load_config
 from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
-from sensai.core.tools.builtin import memory, web_search
+from sensai.core.sessions import SessionRecorder
+from sensai.core.tools.builtin import web_search
+from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     import pathlib
     from collections.abc import Awaitable, Callable, Sequence
 
-    from sensai.core.models import Message
-    from sensai.core.ports import LLM, MemoryRepository
+    from sensai.core.agent import Agent
+    from sensai.core.models import McpServerStatus, Message
+    from sensai.core.ports import LLM, McpClient
 
 
-# tools are register at app level instead of agent level
-def register_tools(
-    tool_registry: ToolRegistry, memory_repository: MemoryRepository
-) -> None:
-    """Register built-in tools with the given tool registry and memory repository."""
-    web_search.register_self(tool_registry)
-    memory.register_self(tool_registry, memory_repository)
+@dataclass(frozen=True)
+class ChatOptions:
+    """How the chat starts, as chosen on the command line.
+
+    Attributes:
+        tools_enabled: Whether the tools start enabled; they can still be
+            toggled from the TUI.
+    """
+
+    tools_enabled: bool = True
 
 
 # So this function will be call at start and the engine will be built
 # and returned for the TUI or CLI to use.
-def build_engine(
-    config: Config,
-    client: httpx.AsyncClient,
+async def build_engine(
+    _config: Config,
+    agent: Agent,
     system_prompt: str,
     history: Sequence[Message] = (),
     *,
-    memory_repository: MemoryRepository,
-    agent_prompts: AgentPrompts | None = None,
+    tools: ToolRegistry | None = None,
+    mcp_servers: Sequence[McpServerStatus] = (),
 ) -> Engine:
-    """Build an Engine using the configured Ollama adapter."""
-    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    tool_registry = ToolRegistry()
-    register_tools(tool_registry, memory_repository)
-    agent = ReActAgent(llm, tool_registry, prompts=agent_prompts)
+    """Build an Engine around an already configured agent.
+
+    Args:
+        _config: The application configuration (currently unused).
+        agent: The agent that runs each turn, as built by `build_agent`.
+        system_prompt: The system prompt prepended to the conversation.
+        history: Messages restored from a previous session.
+        tools: The agent's tools, so front-ends can list and toggle them.
+        mcp_servers: The outcome of connecting to each MCP server.
+
+    Returns:
+        The engine, ready to be driven by the TUI or CLI.
+    """
     return Engine(
         runner=agent,
         pipeline=Pipeline(),
         bus=EventBus(),
         system_prompt=system_prompt,
         history=history,
+        tools=tools,
+        mcp_servers=mcp_servers,
     )
 
 
-def main(model: str, config_path: pathlib.Path) -> None:
+async def build_tools(
+    config: Config, stack: contextlib.AsyncExitStack
+) -> tuple[ToolRegistry, tuple[McpServerStatus, ...]]:
+    """Build the tool registry: the built-in tools, then each MCP server's.
+
+    A server that cannot be reached is skipped and reported in its status.
+
+    Args:
+        config: The application configuration.
+        stack: Closes the MCP clients when the app exits.
+
+    Returns:
+        The registry, and the outcome of connecting to each MCP server.
+    """
+    tool_registry = ToolRegistry()
+    web_search.register_self(tool_registry)
+
+    clients: list[McpClient] = []
+    if config.mcp.github_token:
+        clients.append(
+            HttpMcpClient(
+                "github",
+                "https://api.githubcopilot.com/mcp/",
+                BearerAuth(config.mcp.github_token),
+            )
+        )
+    else:
+        logging.getLogger(__name__).warning(
+            "GITHUB_TOKEN not set, skipping the GitHub MCP server"
+        )
+
+    statuses: list[McpServerStatus] = []
+    for client in clients:
+        stack.push_async_callback(client.aclose)
+        statuses.append(await register_mcp_server(tool_registry, client))
+    return tool_registry, tuple(statuses)
+
+
+async def build_agent(
+    config: Config,
+    client: httpx.AsyncClient,
+    tool_registry: ToolRegistry,
+    agent_prompts: AgentPrompts | None = None,
+) -> ReActAgent:
+    """Build the ReAct agent around its tools.
+
+    Args:
+        config: The application configuration.
+        client: The HTTP client used by the Ollama adapter.
+        tool_registry: The tools offered to the model, as built by `build_tools`.
+        agent_prompts: Prompts overriding the agent's defaults, if any.
+
+    Returns:
+        The agent.
+    """
+    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    structured_output = (
+        StructuredOutputCatalog(config.structured_output.schemas)
+        if config.structured_output.enabled
+        else None
+    )
+    agent = ReActAgent(
+        llm, tool_registry, agent_prompts, structured_output=structured_output
+    )
+    agent.thinking_effort = config.agent.thinking_effort
+    return agent
+
+
+def main(
+    model: str, config_path: pathlib.Path, options: ChatOptions | None = None
+) -> None:
     """Application entrypoint.
 
     Args:
         model: The model name.
         config_path: The path to the configuration file.
+        options: How the chat starts; the defaults when `None`.
 
     Returns:
         None
     """
     logging.basicConfig(level=logging.INFO, filename="sensai.log")
+    load_dotenv()
     config = _parse_config(model, config_path)
 
-    asyncio.run(_serve(config))
+    asyncio.run(_serve(config, options or ChatOptions()))
 
 
 def _get_db() -> SqliteDatabase:
@@ -116,8 +211,11 @@ async def _get_prompt_library(db: SqliteDatabase) -> PromptLibrary:
     return library
 
 
-async def _serve(config: Config) -> None:
-    async with httpx.AsyncClient(timeout=None) as client:
+async def _serve(config: Config, options: ChatOptions) -> None:
+    async with (
+        httpx.AsyncClient(timeout=None) as client,
+        contextlib.AsyncExitStack() as stack,
+    ):
         db = _get_db()
 
         prompts = await _get_prompt_library(db)
@@ -133,18 +231,27 @@ async def _serve(config: Config) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        engine = build_engine(
+        tools, mcp_servers = await build_tools(config, stack)
+        tools.set_all_enabled(enabled=options.tools_enabled)
+        agent = await build_agent(config, client, tools, agent_prompts)
+        engine = await build_engine(
             config,
-            client,
+            agent,
             system_prompt,
             history,
-            memory_repository=memory_repo,
-            agent_prompts=agent_prompts,
+            tools=tools,
+            mcp_servers=mcp_servers,
         )
-        await SensaiApp(engine, model=config.model).run_async()
-
-        for message in engine.history[len(history) :]:
-            await session_repo.append_message(session.id, message)
+        recorder = SessionRecorder(
+            session_repo,
+            engine,
+            model=config.model,
+            session_id=session.id,
+            saved=len(history),
+        )
+        commands = default_registry(on_clear=recorder.start_new)
+        await SensaiApp(engine, model=config.model, commands=commands).run_async()
+        await recorder.save()
 
 
 def prompts_list() -> None:
@@ -227,7 +334,9 @@ def prompts_compare(
     config = _parse_config(model, config_path)
 
     async def compare(commands: PromptCommands) -> None:
-        async with httpx.AsyncClient(timeout=None) as client:
+        # Fail fast if Ollama can't be reached; a slow answer may take minutes.
+        timeout = httpx.Timeout(None, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             llm = OllamaChat(client, config.ollama.url, config.model)
             await commands.compare(
                 PromptComparison(llm, time.perf_counter),
