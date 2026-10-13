@@ -6,6 +6,7 @@ import asyncio
 
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
+from sensai.adapters.tui.panels import McpPanel, ToolsPanel
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
@@ -18,10 +19,12 @@ from tests.fakes import FakeLLM
 
 
 def test_default_registry_lists_the_builtins_in_menu_order() -> None:
-    """The menu shows /clear, /effort and /exit."""
+    """The menu shows /clear, /effort, /mcp, /tools and /exit."""
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
+        "/mcp",
+        "/tools",
         "/exit",
     ]
 
@@ -82,3 +85,17 @@ def test_exit_and_its_alias_close_the_front_end() -> None:
         context = FakeContext()
         asyncio.run(default_registry().run(text, context))
         assert context.exited
+
+
+def test_mcp_and_tools_open_their_panels() -> None:
+    """/mcp and /tools each open their panel in place of the prompt."""
+    context = FakeContext()
+    registry = default_registry()
+
+    async def run() -> None:
+        await registry.run("/mcp", context)
+        await registry.run("/tools", context)
+
+    asyncio.run(run())
+
+    assert [type(panel) for panel in context.panels] == [McpPanel, ToolsPanel]

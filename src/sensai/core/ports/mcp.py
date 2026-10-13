@@ -32,6 +32,11 @@ class McpClient(Protocol):
         """Server name, used to namespace its tools."""
         ...
 
+    @property
+    def url(self) -> str:
+        """Where the server is reached, shown to the user."""
+        ...
+
     async def connect(self) -> None:
         """Start the server connection and perform the MCP handshake.
 

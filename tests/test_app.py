@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from pathlib import Path
 
 import httpx
@@ -11,6 +10,7 @@ import httpx
 from sensai.app import build_agent, build_engine
 from sensai.config import Config, OllamaConfig, ProfileConfig
 from sensai.core.engine import Engine
+from sensai.core.tools.registry import ToolRegistry
 
 
 def test_build_engine_wires_the_configured_ollama_client() -> None:
@@ -22,8 +22,8 @@ def test_build_engine_wires_the_configured_ollama_client() -> None:
             ollama=OllamaConfig("http://ollama"),
             user_profile=ProfileConfig(profile=Path()),
         )
-        async with httpx.AsyncClient() as client, contextlib.AsyncExitStack() as stack:
-            agent = await build_agent(config, client, stack)
+        async with httpx.AsyncClient() as client:
+            agent = await build_agent(config, client, ToolRegistry())
             engine = await build_engine(config, agent, "")
 
             assert isinstance(engine, Engine)

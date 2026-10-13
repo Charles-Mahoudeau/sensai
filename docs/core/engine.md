@@ -31,6 +31,22 @@ tasks reading or appending to the same conversation history.
 an empty history (the system prompt is still prepended). It raises
 `SubmissionInProgressError` too while a submission is running.
 
+`app.py` also hands the engine the runner's `ToolRegistry` and the outcome of
+connecting to each MCP server, so front-ends can list and toggle tools without
+reaching into the registry:
+
+- `engine.tools()` lists every tool as a `ToolInfo` (spec, source, enabled);
+- `engine.set_tool_enabled(name, enabled=...)` and
+  `engine.set_tools_enabled(enabled=..., names=None)` change what the model is
+  offered from the next submission (a disabled tool is left out of
+  `ToolRegistry.spec()`, and calling it anyway returns an error result);
+- `engine.mcp_servers()` lists each server as a `McpServerStatus`.
+
+MCP servers are registered by `core/tools/mcp.py::register_mcp_server`: each
+tool is namespaced as `<server>__<tool>` (`github__get_me`), with the server as
+its source, and a server that cannot be reached is logged and reported as
+failed instead of stopping the app.
+
 ### Session recording
 
 `SessionRecorder` (`core/sessions.py`) saves the engine history to a

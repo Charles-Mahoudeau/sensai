@@ -140,6 +140,27 @@ def test_list_tools_raises_unavailable_on_a_json_rpc_error() -> None:
         _run(transport, lambda client: client.list_tools())
 
 
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        {"tools": None},
+        {"tools": ["not-a-tool"]},
+        {"tools": [{"name": "t"}]},
+        {"tools": [{"name": "bad name", "inputSchema": {"type": "object"}}]},
+    ],
+    ids=["no-tools", "tools-not-a-list", "tool-not-an-object", "no-schema", "bad-name"],
+)
+def test_list_tools_raises_unavailable_on_invalid_tool_data(
+    result: dict[str, Any],
+) -> None:
+    """Malformed `tools/list` results surface as the adapter's error type."""
+    transport = _server(_with_discover({"tools/list": {"result": result}}))
+
+    with pytest.raises(McpUnavailableError, match="tools/list failed"):
+        _run(transport, lambda client: client.list_tools())
+
+
 def test_call_tool_joins_the_text_content() -> None:
     """Text blocks are joined by newlines; other content types are dropped."""
     seen: list[httpx.Request] = []
@@ -223,8 +244,14 @@ def test_event_stream_skips_notifications_until_the_response() -> None:
         (httpx.Response(500, text="oops"), "HTTP 500 for tools/list: oops"),
         (_sse({"jsonrpc": "2.0", "method": "ping"}), "stream ended without"),
         (httpx.Response(200, text="hi"), "unexpected content-type"),
+        (
+            httpx.Response(
+                200, text="data: []\n\n", headers={"content-type": "text/event-stream"}
+            ),
+            "tools/list failed",
+        ),
     ],
-    ids=["http-error", "stream-without-response", "bad-content-type"],
+    ids=["http-error", "stream-without-response", "bad-content-type", "sse-not-dict"],
 )
 def test_bad_transport_replies_raise_unavailable(
     response: httpx.Response, match: str
@@ -255,3 +282,11 @@ def test_aclose_is_safe_twice_and_before_connect() -> None:
         await client.aclose()
 
     asyncio.run(run())
+
+
+def test_url_is_the_configured_endpoint() -> None:
+    """The client reports where it connects, for /mcp."""
+    client = HttpMcpClient("github", "https://mcp.test/")
+
+    assert client.url == "https://mcp.test/"
+    assert client.name == "github"
