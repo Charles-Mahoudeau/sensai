@@ -25,9 +25,11 @@ from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Sequence
 
     from sensai.core.agent.events import AgentEvent
+    from sensai.core.models import McpServerStatus, ToolInfo
+    from sensai.core.tools.registry import ToolRegistry
 
 
 class Runner(Protocol):
@@ -56,14 +58,28 @@ class Engine:
         *,
         system_prompt: str = "",
         history: Sequence[Message] = (),
+        tools: ToolRegistry | None = None,
+        mcp_servers: Sequence[McpServerStatus] = (),
     ) -> None:
-        """Initialize the engine with its processing dependencies."""
+        """Initialize the engine with its processing dependencies.
+
+        Args:
+            runner: Runs each turn.
+            pipeline: Prepares the messages, or answers without the runner.
+            bus: Carries the public events.
+            system_prompt: Prepended to the conversation on every turn.
+            history: Messages restored from a previous session.
+            tools: The runner's tools, listed and toggled by front-ends.
+            mcp_servers: The outcome of connecting to each MCP server.
+        """
         self._runner = runner
         self._pipeline = pipeline
         self._bus = bus
         self._system_prompt = system_prompt
         self._history: list[Message] = list(history)
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._tools = tools
+        self._mcp_servers = tuple(mcp_servers)
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -85,6 +101,37 @@ class Engine:
         self.thinking_effort = self.thinking_effort.next()
         return self.thinking_effort
 
+    def tools(self) -> tuple[ToolInfo, ...]:
+        """Every tool the runner may be offered, enabled or not."""
+        return self._tools.tools() if self._tools is not None else ()
+
+    def set_tool_enabled(self, name: str, *, enabled: bool) -> None:
+        """Offer a tool to the runner or not, from the next submission.
+
+        Raises:
+            KeyError: No tool is called `name`.
+        """
+        if self._tools is None:
+            raise KeyError(f"Unknown tool {name!r}")
+        self._tools.set_enabled(name, enabled=enabled)
+
+    def set_tools_enabled(
+        self, *, enabled: bool, names: Iterable[str] | None = None
+    ) -> None:
+        """Enable or disable several tools (every one when `names` is None).
+
+        Raises:
+            KeyError: One of `names` is not a tool; nothing changed.
+        """
+        if self._tools is not None:
+            self._tools.set_all_enabled(enabled=enabled, names=names)
+        elif names is not None and (unknown := list(names)):
+            raise KeyError(f"Unknown tools {unknown!r}")
+
+    def mcp_servers(self) -> tuple[McpServerStatus, ...]:
+        """The MCP servers configured at startup, connected or not."""
+        return self._mcp_servers
+
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
         return self._bus.subscribe()
@@ -100,6 +147,16 @@ class Engine:
         task = asyncio.create_task(self._run(submission_id))
         self._tasks[submission_id] = task
         return submission_id
+
+    def clear(self) -> None:
+        """Forget the conversation; the next submission starts from scratch.
+
+        Raises:
+            SubmissionInProgressError: A submission is still running.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        self._history.clear()
 
     def interrupt(self, submission_id: str) -> None:
         """Interrupt a running submission."""

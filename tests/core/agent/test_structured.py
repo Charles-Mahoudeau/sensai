@@ -16,6 +16,7 @@ from sensai.core.agent.structured import (
 )
 from sensai.core.models import ChatDone, Message, TextDelta
 from sensai.core.models.llm import ChatOptions
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ def test_react_agent_streams_an_ordinary_answer_without_a_schema() -> None:
         ]
     )
     structured_output = StructuredOutputCatalog(SCHEMAS)
-    agent = ReActAgent(llm, structured_output=structured_output)
+    agent = ReActAgent(llm, ToolRegistry(), structured_output=structured_output)
 
     events = asyncio.run(_collect(agent.run((Message.user("Say hello"),))))
 
@@ -84,7 +85,9 @@ def test_react_agent_does_not_validate_a_tool_generation_reply() -> None:
             [TextDelta('{"name":"web_search"}'), ChatDone()],
         ]
     )
-    agent = ReActAgent(llm, structured_output=StructuredOutputCatalog(SCHEMAS))
+    agent = ReActAgent(
+        llm, ToolRegistry(), structured_output=StructuredOutputCatalog(SCHEMAS)
+    )
 
     events = asyncio.run(_collect(agent.run((Message.user("Find recent news"),))))
 
@@ -125,7 +128,10 @@ def test_react_agent_uses_plan_schema_in_plan_mode() -> None:
         ]
     )
     agent = ReActAgent(
-        llm, mode="plan", structured_output=StructuredOutputCatalog(SCHEMAS)
+        llm,
+        ToolRegistry(),
+        mode="plan",
+        structured_output=StructuredOutputCatalog(SCHEMAS),
     )
 
     events = asyncio.run(_collect(agent.run((Message.user("Plan the work"),))))

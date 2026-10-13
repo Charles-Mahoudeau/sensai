@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     )
     from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
+    from sensai.core.tools.registry import ToolRegistry
 
 type AgentMode = Literal["answer", "plan"]
 # Llama-style chat templates only render the tool definitions in the last
@@ -64,20 +65,22 @@ class ReActAgent(Agent):
     def __init__(
         self,
         llm: LLM,
+        tool_registry: ToolRegistry,
         prompts: AgentPrompts | None = None,
         *,
         mode: AgentMode = "answer",
         structured_output: StructuredOutputCatalog | None = None,
     ) -> None:
-        """Initialize the agent with its chat model port and prompt texts.
+        """Initialize the agent with its chat model port, tools and prompt texts.
 
         Args:
             llm: The chat model.
+            tool_registry: The tools offered to the LLM and run on its request.
             prompts: The ReAct prompts; the code defaults when `None`.
             mode: Selects free-form answers or structured plans.
             structured_output: Available schemas for structured agent modes.
         """
-        super().__init__(llm)
+        super().__init__(llm, tool_registry)
         self._prompts = prompts or AgentPrompts.defaults()
         self._thinking_effort = ThinkingEffort.MEDIUM
         self._mode = mode

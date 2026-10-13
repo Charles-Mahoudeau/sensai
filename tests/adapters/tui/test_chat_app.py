@@ -5,15 +5,22 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from textual.widgets import Input
+from textual.widgets import Button, Input
 
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
+from sensai.adapters.tui.commands.builtin import default_registry
+from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
+from sensai.adapters.tui.companion import ANIMATIONS, Companion, Mood
+from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel
+from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    CommandMenu,
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    PromptInput,
     ReasoningGroup,
     ThoughtStep,
     ToolCallLine,
@@ -26,15 +33,18 @@ from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import (
     ChatDone,
+    McpServerStatus,
     Message,
     TextDelta,
     ThinkingEffort,
     ToolCall,
     ToolResult,
+    ToolSpec,
 )
 from sensai.core.models.llm import ThinkingDelta
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
+from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
 if TYPE_CHECKING:
@@ -43,7 +53,7 @@ if TYPE_CHECKING:
     from textual.pilot import Pilot
 
     from sensai.core.agent.events import AgentEvent
-    from sensai.core.models import ChatEvent, ToolSpec
+    from sensai.core.models import ChatEvent
     from sensai.core.models.llm import ChatOptions
     from sensai.core.ports import LLM
     from tests.fakes.llm import Turn
@@ -71,7 +81,7 @@ class BlockingLLM:
 
 
 def _app(llm: LLM) -> SensaiApp:
-    engine = Engine(Agent(llm), Pipeline(), EventBus())
+    engine = Engine(Agent(llm, ToolRegistry()), Pipeline(), EventBus())
     return SensaiApp(engine, model="test-model")
 
 
@@ -237,6 +247,158 @@ def test_exit_command_quits() -> None:
     _run(app, scenario)
 
 
+def test_quit_alias_quits() -> None:
+    """/quit is kept as another name for /exit."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/quit")
+        await pilot.pause()
+
+        assert not app.is_running
+
+    _run(app, scenario)
+
+
+def test_clear_command_empties_the_transcript_and_history() -> None:
+    """/clear runs the hook, then empties the screen and the engine history."""
+    engine = Engine(
+        Agent(FakeLLM([[TextDelta("Hi")]]), ToolRegistry()), Pipeline(), EventBus()
+    )
+    seen: list[int] = []
+
+    async def on_clear() -> None:
+        seen.append(len(engine.history))
+
+    app = SensaiApp(
+        engine, model="test-model", commands=default_registry(on_clear=on_clear)
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        await _send(pilot, "/clear")
+        await pilot.pause()
+
+        assert seen == [2]
+        assert engine.history == ()
+        assert _texts(app, UserMessage) == []
+        assert _texts(app, AssistantMessage) == []
+        assert _texts(app, HintMessage) == [CLEARED_HINT]
+
+    _run(app, scenario)
+
+
+def test_effort_command_sets_and_shows_the_effort() -> None:
+    """/effort <level> sets it, bare /effort shows it, a bad level is explained."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/effort high")
+        await pilot.pause()
+        await _send(pilot, "/effort")
+        await pilot.pause()
+        await _send(pilot, "/effort bogus")
+        await pilot.pause()
+
+        assert engine.thinking_effort is ThinkingEffort.HIGH
+        assert app.query_one(EffortLabel).effort is ThinkingEffort.HIGH
+        assert _texts(app, HintMessage) == [
+            "Thinking effort: Deep thinking",
+            "Thinking effort: Deep thinking",
+            "Unknown effort 'bogus'. Use one of: none, low, medium, high, ultra",
+        ]
+
+    _run(app, scenario)
+
+
+def test_unknown_command_is_not_sent() -> None:
+    """An unknown command shows a hint and never reaches the model."""
+    llm = FakeLLM([])
+    app = _app(llm)
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/foo bar")
+        await pilot.pause()
+
+        assert _texts(app, HintMessage) == ["Unknown command /foo"]
+        assert _texts(app, UserMessage) == []
+        assert llm.messages == []
+
+    _run(app, scenario)
+
+
+def _menu_labels(app: SensaiApp) -> list[str]:
+    menu = app.query_one(CommandMenu)
+    return [item.label for item in menu.completions] if menu.display else []
+
+
+def test_completion_menu_follows_the_typed_command() -> None:
+    """The menu lists matches, tab completes, and arguments are offered next."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", Input)
+        await pilot.press("/")
+        assert _menu_labels(app) == ["/clear", "/effort", "/mcp", "/tools", "/exit"]
+
+        await pilot.press("e")
+        assert _menu_labels(app) == ["/effort", "/exit"]
+
+        await pilot.press("down", "up", "tab")
+        assert prompt.value == "/effort "
+        assert _menu_labels(app) == ["none", "low", "medium", "high", "ultra"]
+
+        await pilot.press("h", "enter")
+        await pilot.pause()
+        assert engine.thinking_effort is ThinkingEffort.HIGH
+        assert prompt.value == ""
+        assert _menu_labels(app) == []
+        assert _texts(app, HintMessage) == ["Thinking effort: Deep thinking"]
+
+    _run(app, scenario)
+
+
+def test_enter_on_a_partial_command_name_completes_it() -> None:
+    """Enter accepts the highlight: /ex runs /exit, /eff waits for an argument."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.press("/", "e", "f", "f", "enter")
+        assert app.query_one("#prompt", Input).value == "/effort "
+        assert app.is_running
+
+        app.query_one("#prompt", Input).value = ""
+        await pilot.press("/", "e", "x", "enter")
+        await pilot.pause()
+        assert not app.is_running
+
+    _run(app, scenario)
+
+
+def test_escape_closes_the_menu_and_keys_fall_back_when_hidden() -> None:
+    """Esc hides the menu; with it hidden, tab moves the focus as usual."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", Input)
+        await pilot.press("/", "c")
+        assert _menu_labels(app) == ["/clear"]
+
+        await pilot.press("escape")
+        assert _menu_labels(app) == []
+        assert prompt.value == "/c"
+        assert prompt.has_focus
+
+        await pilot.press("tab")
+        assert prompt.value == "/c"
+
+    _run(app, scenario)
+
+
 def test_prompt_is_disabled_while_generating() -> None:
     """A second message can't be sent until the answer is complete."""
     llm = BlockingLLM()
@@ -386,7 +548,7 @@ def test_thoughts_and_tool_calls_share_one_group_per_turn() -> None:
 
 def test_ctrl_r_cycles_the_thinking_effort_shown_in_the_status_bar() -> None:
     """Ctrl+R advances the effort, wraps after Ultra and updates the label."""
-    engine = Engine(ReActAgent(FakeLLM([])), Pipeline(), EventBus())
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
     app = SensaiApp(engine, model="test-model")
 
     async def scenario(pilot: Pilot[None]) -> None:
@@ -403,5 +565,363 @@ def test_ctrl_r_cycles_the_thinking_effort_shown_in_the_status_bar() -> None:
         assert label._rainbow_timer is None
         assert str(label.render()) == "No thinking"
         assert app._engine.thinking_effort is ThinkingEffort.NONE
+
+    _run(app, scenario)
+
+
+async def _noop(arguments: object) -> str:
+    del arguments
+    return ""
+
+
+def _tools_app() -> tuple[SensaiApp, Engine]:
+    registry = ToolRegistry()
+    registry.register(ToolSpec("web_search", "Search the web"), _noop)
+    for name in ("get_me", "delete_repository", "delete_file"):
+        registry.register(
+            ToolSpec(f"github__{name}", f"Do {name}"), _noop, source="github"
+        )
+    engine = Engine(
+        Agent(FakeLLM([]), registry), Pipeline(), EventBus(), tools=registry
+    )
+    return SensaiApp(engine, model="test-model"), engine
+
+
+def _title(app: SensaiApp) -> str:
+    return str(app.query_one(ToolsPanel).border_title)
+
+
+def _enabled(engine: Engine) -> list[str]:
+    return [tool.spec.name for tool in engine.tools() if tool.enabled]
+
+
+def test_tools_panel_replaces_the_prompt_and_escape_restores_it() -> None:
+    """/tools hides the prompt, focuses the filter; escape gives the prompt back."""
+    app, _ = _tools_app()
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", Input)
+        await _send(pilot, "/tools")
+        await pilot.pause()
+
+        assert not prompt.display
+        assert app.focused is app.query_one("#tools-filter", Input)
+        assert _title(app) == "Tools · 4/4 enabled"
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert not app.query(Panel)
+        assert prompt.display
+        assert app.focused is prompt
+
+    _run(app, scenario)
+
+
+def test_space_toggles_the_highlighted_tool() -> None:
+    """Space disables the highlighted tool, skipping headers; again re-enables it."""
+    app, engine = _tools_app()
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/tools")
+        await pilot.pause()
+
+        await pilot.press("down", "space")
+        assert "github__get_me" not in _enabled(engine)
+        assert _title(app) == "Tools · 3/4 enabled"
+
+        await pilot.press("space")
+        assert "github__get_me" in _enabled(engine)
+
+    _run(app, scenario)
+
+
+def test_bulk_actions_only_apply_to_the_filtered_tools() -> None:
+    """With a filter, ctrl+d disables only the tools shown; ctrl+a enables all."""
+    app, engine = _tools_app()
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/tools")
+        await pilot.pause()
+
+        await pilot.press(*"delete")
+        assert str(app.query_one("#tools-disable", Button).label) == "Disable shown"
+        await pilot.press("ctrl+d")
+        assert _enabled(engine) == ["web_search", "github__get_me"]
+        assert _title(app) == "Tools · 2/4 enabled · 2 shown"
+
+        app.query_one("#tools-filter", Input).value = ""
+        await pilot.pause()
+        await pilot.press("ctrl+a")
+        assert len(_enabled(engine)) == 4
+
+    _run(app, scenario)
+
+
+def test_disable_all_button_disables_every_tool() -> None:
+    """Clicking Disable all with no filter disables every tool."""
+    app, engine = _tools_app()
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/tools")
+        await pilot.pause()
+
+        await pilot.click("#tools-disable")
+        await pilot.pause()
+
+        assert _enabled(engine) == []
+        assert engine.tools() and app.query(ToolsPanel)
+
+    _run(app, scenario)
+
+
+def test_mcp_panel_lists_connected_and_failed_servers() -> None:
+    """/mcp shows each server with its status, and escape closes it."""
+    servers = [
+        McpServerStatus("github", "https://gh/", connected=True, tool_count=42),
+        McpServerStatus("notion", "https://no/", connected=False, error="HTTP 401"),
+    ]
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()),
+        Pipeline(),
+        EventBus(),
+        mcp_servers=servers,
+    )
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/mcp")
+        await pilot.pause()
+
+        panel = app.query_one(McpPanel)
+        rows = [str(row.render()) for row in panel.query(".mcp-server")]
+        assert str(panel.border_title) == "MCP servers · 1 connected"
+        assert rows == [
+            "● github   connected   42 tools",
+            "✗ notion   failed: HTTP 401",
+        ]
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not app.query(Panel)
+
+    _run(app, scenario)
+
+
+def test_tools_list_fits_a_small_window_and_follows_the_highlight() -> None:
+    """In a short window the list shrinks to the room left and scrolls."""
+    registry = ToolRegistry()
+    for index in range(40):
+        registry.register(
+            ToolSpec(f"github__tool_{index}", "Do it"), _noop, source="github"
+        )
+    engine = Engine(
+        Agent(FakeLLM([]), registry), Pipeline(), EventBus(), tools=registry
+    )
+    app = SensaiApp(engine, model="test-model")
+
+    async def run() -> None:
+        async with app.run_test(size=(80, 20)) as pilot:
+            await _send(pilot, "/tools")
+            await pilot.pause()
+            panel = app.query_one(ToolsPanel)
+            tools = app.query_one(ToolList)
+
+            assert tools.region.height >= 5
+            assert panel.region.contains_region(tools.region)
+
+            await pilot.press(*["down"] * 15)
+            await pilot.pause()
+
+            assert tools.scroll_y > 0
+            assert tools.highlighted is not None
+            row = tools.highlighted - tools.scroll_y
+            assert 0 <= row < tools.size.height
+
+    asyncio.run(run())
+
+
+LONG_DESCRIPTION = (
+    "Search for GitHub repositories by name, description, readme, topics "
+    "or other metadata and return the matches"
+)
+
+
+def _tool_rows(width: int) -> list[str]:
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec("github__search", f"{LONG_DESCRIPTION}\nMore details."),
+        _noop,
+        source="github",
+    )
+    registry.register(ToolSpec("web_search", "Search the web"), _noop)
+    engine = Engine(
+        Agent(FakeLLM([]), registry), Pipeline(), EventBus(), tools=registry
+    )
+    app = SensaiApp(engine, model="test-model")
+    rows: list[str] = []
+
+    async def run() -> None:
+        async with app.run_test(size=(width, 24)) as pilot:
+            await _send(pilot, "/tools")
+            await pilot.pause()
+            tools = app.query_one(ToolList)
+            rows.extend(
+                tools.render_line(y).text.rstrip() for y in range(tools.size.height)
+            )
+
+    asyncio.run(run())
+    return [row for row in rows if row]
+
+
+def test_tool_description_uses_the_whole_width() -> None:
+    """A wide terminal shows the description's whole first line."""
+    rows = _tool_rows(180)
+
+    assert rows[1] == f"[x] search      {LONG_DESCRIPTION}"
+    assert len(rows) == 4
+
+
+def test_tool_description_is_cut_on_one_line_when_narrow() -> None:
+    """A narrow terminal keeps one line per tool and ends it with an ellipsis."""
+    rows = _tool_rows(70)
+
+    assert rows[1].startswith("[x] search      Search for GitHub")
+    assert rows[1].endswith("…")
+    assert len(rows) == 4
+
+
+def test_tool_description_keeps_off_the_scrollbar() -> None:
+    """A cut description ends one column before the scrollbar."""
+    registry = ToolRegistry()
+    for index in range(40):
+        registry.register(ToolSpec(f"tool_{index}", "word " * 40), _noop)
+    engine = Engine(
+        Agent(FakeLLM([]), registry), Pipeline(), EventBus(), tools=registry
+    )
+    app = SensaiApp(engine, model="test-model")
+
+    async def run() -> None:
+        async with app.run_test(size=(70, 20)) as pilot:
+            await _send(pilot, "/tools")
+            await pilot.pause()
+            tools = app.query_one(ToolList)
+            row = tools.render_line(1).text
+            ellipsis = tools.region.x + row.index("…")
+
+            assert tools.show_vertical_scrollbar
+            assert tools.vertical_scrollbar.region.x - ellipsis >= 2
+
+    asyncio.run(run())
+
+
+class RecordingCompanion(Companion):
+    """A companion that remembers every mood it was asked to show."""
+
+    def __init__(self) -> None:
+        """Start with no recorded mood."""
+        super().__init__()
+        self.moods: list[Mood] = []
+
+    def set_mood(self, mood: Mood) -> None:
+        """Record the mood, once per change, then set it."""
+        if not self.moods or self.moods[-1] is not mood:
+            self.moods.append(mood)
+        super().set_mood(mood)
+
+    def flash(self, mood: Mood, seconds: float) -> None:
+        """Record the flashed mood, then flash it."""
+        self.moods.append(mood)
+        super().flash(mood, seconds)
+
+
+def _spy_companion(app: SensaiApp) -> RecordingCompanion:
+    companion = RecordingCompanion()
+    app.query_one("#prompt", PromptInput).companion = companion
+    return companion
+
+
+def test_companion_follows_the_turn_and_cheers_at_the_end() -> None:
+    """Thinking, tool, thinking, answering, then a happy flash once done."""
+    call = ToolCall("web_search", id="1")
+    app = _tool_app(
+        [
+            ThinkingDelta("Let me search"),
+            ToolRunStarted(call),
+            ToolRunFinished(call, ToolResult("web_search", "ok", "1")),
+            TextDelta("Found it"),
+        ]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        turn = companion.moods[companion.moods.index(Mood.THINKING) :]
+        assert turn == [
+            Mood.THINKING,
+            Mood.TOOL,
+            Mood.THINKING,
+            Mood.ANSWERING,
+            Mood.IDLE,
+            Mood.HAPPY,
+        ]
+        assert companion.mood is Mood.HAPPY
+
+    _run(app, scenario)
+
+
+def test_companion_is_dizzy_after_an_error() -> None:
+    """An engine error ends the turn on the error face."""
+    app = _app(FakeLLM([[LLMUnavailableError("Ollama is down")]]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await _wait_until_idle(pilot)
+
+        assert companion.mood is Mood.ERROR
+
+    _run(app, scenario)
+
+
+def test_companion_is_startled_by_an_interrupt() -> None:
+    """Esc shows the interrupted face, which outlives the end of the turn."""
+    app = _app(BlockingLLM())
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        companion = _spy_companion(app)
+        await _send(pilot, "Hello")
+        await pilot.pause()
+        await pilot.press("escape")
+
+        assert companion.mood is Mood.INTERRUPTED
+
+        await _wait_until_idle(pilot)
+
+        assert companion.mood is Mood.INTERRUPTED
+
+    _run(app, scenario)
+
+
+def test_companion_watches_the_user_type_in_the_border() -> None:
+    """Typing switches the face drawn in the prompt border; clearing rests it."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        prompt = app.query_one("#prompt", PromptInput)
+        assert prompt.border_title in ANIMATIONS[Mood.IDLE].frames
+
+        await pilot.press("h", "i")
+        await pilot.pause(0.3)
+
+        assert prompt.companion.mood is Mood.TYPING
+        assert prompt.border_title in ANIMATIONS[Mood.TYPING].frames
+
+        prompt.value = ""
+        await pilot.pause()
+
+        assert prompt.companion.mood is Mood.IDLE
 
     _run(app, scenario)

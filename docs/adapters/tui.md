@@ -8,7 +8,8 @@ uv run sensai --model llama3.2:3b --config config/sensai.toml
 ```
 
 Like every front-end, it only talks to the core through the `Engine` facade
-(`submit()`, `interrupt()`) and its event stream (`subscribe()`). It never
+(`submit()`, `interrupt()`, `tools()`, `mcp_servers()`…) and its event stream
+(`subscribe()`). It never
 imports the agent, the pipeline, a port or an adapter. See
 [Engine and Event Bus](../core/engine.md).
 
@@ -16,8 +17,12 @@ imports the agent, the pipeline, a port or an adapter. See
 
 | File | Role |
 | --- | --- |
-| `chat_app.py` | `SensaiApp`: layout, input handling, event rendering |
-| `widgets.py` | One widget per kind of transcript line |
+| `chat_app.py` | `SensaiApp`: layout, input handling, event rendering; the `CommandContext` of commands |
+| `commands/registry.py` | `CommandSpec`, `CommandRegistry` (completion, dispatch), `CommandContext`, `CommandHighlighter` |
+| `commands/builtin/` | One module per built-in command, and `default_registry()` |
+| `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
+| `widgets/` | One module per widget: the transcript lines, the prompt and its command menu |
+| `companion.py` | `Companion`: the animated face drawn in the prompt border, and its `Mood` frames |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
 ## Usage
@@ -27,6 +32,10 @@ imports the agent, the pipeline, a port or an adapter. See
 | `Enter` | Send the message |
 | Empty input | Shows a hint, nothing is sent |
 | `/exit`, `/quit`, `ctrl+q` | Quit |
+| `/clear` | Clear the conversation and start a new session |
+| `/effort <level>` | Set the thinking effort (`/effort` alone shows it) |
+| `/mcp` | List the MCP servers and whether they connected |
+| `/tools` | List the tools, enable or disable them |
 | `esc` | Stop the answer being generated, keeping the partial text |
 | `ctrl+t` | Expand every reasoning group, or collapse them if all are expanded |
 | Click a reasoning header | Expand or collapse that group |
@@ -35,20 +44,117 @@ The prompt is disabled while an answer is generating, because the engine
 accepts one submission at a time. The status line shows the model, the current
 state and the key hints.
 
+## Commands
+
+A line starting with `/` is a command and is never sent to the model. Commands
+follow the same pattern as tools (`core/tools/registry.py`): a `CommandSpec`
+(name, description, arguments, aliases) and an async handler are registered in a
+`CommandRegistry`. The app only calls `registry.run(text, self)`; it has no
+per-command code.
+
+The built-in commands:
+
+| Command | Effect |
+| --- | --- |
+| `/clear` | Awaits the `on_clear` hook (which saves the session and starts a new one), calls `engine.clear()` and empties the transcript |
+| `/effort <level>` | Sets `engine.thinking_effort` to `none`, `low`, `medium`, `high` or `ultra`; a bare `/effort` shows the current one |
+| `/mcp` | Opens `McpPanel` with `engine.mcp_servers()` |
+| `/tools` | Opens `ToolsPanel`, which lists `engine.tools()` and toggles them |
+| `/exit` | Quits; `/quit` is a hidden alias |
+
+An unknown command shows an "Unknown command" hint.
+
+### Panels
+
+A command that needs more than a hint opens a `Panel` with
+`context.open_panel(panel)`. The app hides the prompt and its menu, mounts the
+panel in their place (the transcript stays visible) and calls
+`panel.focus_first()`. `esc` posts `Panel.Closed`; the app removes the panel and
+gives the focus back to the prompt. Opening a panel closes any other one.
+
+`McpPanel` shows one row per configured server: `● github  connected  42 tools`,
+or `✗ notion  failed: <reason>`, each with its URL.
+
+Panels keep their title (with the counts) in the top border and their key
+hints in the bottom one, so the content keeps the room in a small window.
+
+`ToolsPanel` shows `Tools · n/m enabled`, a filter with Enable/Disable all
+buttons on the same line, then the tools grouped by source (`builtin`, then one group per MCP server, each
+header counting its enabled tools). The list takes the height the panel has
+left (`height: 1fr`, at most 20 rows) and scrolls to keep the highlight in
+view. Each tool takes one line: its description is cut with `…` at the
+panel's edge (`text-wrap: nowrap; text-overflow: ellipsis`), so it uses the
+whole width of the terminal. MCP tools are shown without their
+`<server>__` prefix. The filter keeps the focus:
+
+| Key | Effect |
+| --- | --- |
+| Typing | Narrow the list to the tools whose name or description contains the text |
+| `↑` / `↓` | Move the highlight, skipping the group headers |
+| `space`, `Enter`, click | Enable or disable the highlighted tool |
+| `ctrl+a` / `ctrl+d` | Enable / disable every tool shown (all of them when not filtered; the buttons read "Enable shown" / "Disable shown" while filtering) |
+| `esc` | Close the panel |
+
+Changes apply from the next message, and only for this run: every tool is
+enabled again at the next start.
+
+While typing, a known command name is colored with the theme accent
+(`CommandHighlighter`), and `CommandMenu` lists the completions above the
+prompt: the matching commands, then, after a command and a space, its
+arguments. While the menu is shown, `PromptInput` changes these keys:
+
+| Key | Effect |
+| --- | --- |
+| `↑` / `↓` | Move the highlight |
+| `tab` | Insert the highlighted completion |
+| `Enter` | Insert it and run it, unless the text is already complete; a command that takes an argument is only inserted, to pick the argument next |
+| `esc` | Close the menu (it does not stop generation) |
+
+When the menu is hidden, these keys work as usual.
+
+### Adding a command
+
+1. Create `commands/builtin/<name>.py` with a handler and a `register_self()`:
+
+   ```python
+   def register_self(registry: CommandRegistry) -> None:
+       registry.register(CommandSpec("/hello", "Say hello"), _hello)
+
+
+   async def _hello(context: CommandContext, argument: str) -> None:
+       await context.show_hint(f"Hello {argument or 'you'}")
+   ```
+
+2. Call it in `default_registry()` (`commands/builtin/__init__.py`). The order
+   there is the order of the menu.
+
+The handler receives the argument string (stripped, empty if none) and a
+`CommandContext`, the small surface of the front-end a command may use:
+`engine`, `show_hint()`, `clear_transcript()`, `refresh_status()`,
+`open_panel()` and `exit()`.
+`SensaiApp` implements it. A command that needs something from outside the TUI
+gets it as a `register_self()` argument, wired in `app.py`, the way `/clear`
+gets its `on_clear` hook. If a command needs a new UI action, add it to
+`CommandContext` and `SensaiApp`.
+
 ## Wiring
 
 `app.py` builds everything and hands the app a ready `Engine`:
 
 ```python
-async def _serve(config: Config) -> None:
-    async with httpx.AsyncClient(timeout=None) as client:
-        engine = build_engine(config, client)
-        await SensaiApp(engine, model=config.model).run_async()
+recorder = SessionRecorder(
+    session_repo, engine, model=config.model, session_id=session.id, saved=len(history)
+)
+commands = default_registry(on_clear=recorder.start_new)
+await SensaiApp(engine, model=config.model, commands=commands).run_async()
+await recorder.save()
 ```
 
 `run_async()` runs Textual inside the loop started by `asyncio.run()`, so the
 engine task, the HTTP client and the UI share one event loop. The HTTP client is
-closed when the app exits.
+closed when the app exits. The `on_clear` hook and the final `save()` keep
+the stored sessions in step with `/clear` (see
+[Session recording](../core/engine.md#session-recording)).
 
 ## How events are rendered
 
@@ -80,7 +186,9 @@ usual.
 | `ThoughtStep` | One think/act cycle inside a group |
 | `ToolCallLine` | One tool call, inside a group |
 | `ErrorMessage` | An error reported by the engine |
-| `HintMessage` | Hints and the "(interrupted)" marker |
+| `HintMessage` | Hints, command feedback and the "(interrupted)" marker |
+| `PromptInput` | The prompt; highlights commands and drives the menu |
+| `CommandMenu` | The completions of the command being typed |
 
 `AssistantMessage` streams through `Markdown.get_stream()`, which batches fast
 tokens instead of re-rendering the document on each one. Its method is called
@@ -109,6 +217,29 @@ What is visible is decided by CSS classes on the group (`-live`, `-full`,
 A text fragment arriving before a later tool call closes the group, so that
 tool call opens a new one.
 
+## Companion
+
+A small kaomoji face lives in the top-right corner of the prompt border (its
+right-aligned `border_title`). It takes no extra row and reacts to the turn:
+
+| Mood | Face | When |
+| --- | --- | --- |
+| idle | `(•ᴗ•)`, blinking | Nothing is happening |
+| typing | `(•ᴗ<)` | The prompt holds text |
+| thinking | `...(•_•)` | Submitted, `ThinkingGenerated`, or after the last tool returns |
+| tool | `◐(•ᴗ•)` | `ToolRunStarted` |
+| answering | `(•o•)` | `TokenGenerated` |
+| error | `(×_×)` | `ErrorEvent`, then for 3s after `Done` |
+| interrupted | `!(°□°)` | `esc`, then for 2s after `Done` |
+| happy | `♪(^ᴗ^)` | For 2s after a turn that ended well |
+| asleep | `zZz(-_-)` | Idle for 2 minutes; any keystroke wakes it |
+
+`Companion` is plain Python with an injectable clock: `SensaiApp` sets its base
+mood (`set_mood()`) or a passing one (`flash()`), and `PromptInput` redraws the
+frame every 0.2s. To change a face, edit `ANIMATIONS` in `companion.py`: keep
+the face as the last 5 cells and props on its left, so the face doesn't move,
+and only use single-width characters (`test_companion.py` checks both).
+
 ## Styling
 
 Styles follow the Textual convention:
@@ -134,5 +265,5 @@ async with app.run_test() as pilot:
 ## Adding an event
 
 When the core adds a public event (for example tool calls or thinking), add a
-`case` in `SensaiApp._render()` and, if needed, a widget in `widgets.py`.
+`case` in `SensaiApp._render()` and, if needed, a widget in `widgets/`.
 Unknown events are ignored until then.
