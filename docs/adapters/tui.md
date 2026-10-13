@@ -21,7 +21,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `commands/registry.py` | `CommandSpec`, `CommandRegistry` (completion, dispatch), `CommandContext`, `CommandHighlighter` |
 | `commands/builtin/` | One module per built-in command, and `default_registry()` |
 | `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
-| `widgets.py` | One widget per kind of transcript line, the prompt and its command menu |
+| `widgets/` | One module per widget: the transcript lines, the prompt and its command menu |
 | `companion.py` | `Companion`: the animated face drawn in the prompt border, and its `Mood` frames |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
@@ -265,5 +265,5 @@ async with app.run_test() as pilot:
 ## Adding an event
 
 When the core adds a public event (for example tool calls or thinking), add a
-`case` in `SensaiApp._render()` and, if needed, a widget in `widgets.py`.
+`case` in `SensaiApp._render()` and, if needed, a widget in `widgets/`.
 Unknown events are ignored until then.
