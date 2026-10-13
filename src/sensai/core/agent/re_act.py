@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from sensai.core.agent import Agent
 from sensai.core.agent.events import AgentEvent, TurnCompleted
 from sensai.core.agent.prompts import AgentPrompts
+from sensai.core.agent.structured import format_structured_output
 from sensai.core.models import TextDelta, ThinkingEffort, ToolCall
-from sensai.core.models.llm import Message, ThinkingDelta, ToolCallRequest
+from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta, ToolCallRequest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from sensai.core.agent.base import AgentRun
+    from sensai.core.agent.structured import (
+        JsonSchemaOutput,
+        OutputSchemaName,
+        StructuredOutputCatalog,
+    )
     from sensai.core.models import ToolSpec
     from sensai.core.ports import LLM
 
+type AgentMode = Literal["answer", "plan"]
 # Llama-style chat templates only render the tool definitions in the last
 # message when it is a user one, and only open the assistant turn after a user or
 # tool message. Every call below therefore ends with a user or tool message.
@@ -54,16 +61,27 @@ def _is_ready(thought: str) -> bool:
 class ReActAgent(Agent):
     """Agent that reasons privately, then acts or answers, in think/act cycles."""
 
-    def __init__(self, llm: LLM, prompts: AgentPrompts | None = None) -> None:
+    def __init__(
+        self,
+        llm: LLM,
+        prompts: AgentPrompts | None = None,
+        *,
+        mode: AgentMode = "answer",
+        structured_output: StructuredOutputCatalog | None = None,
+    ) -> None:
         """Initialize the agent with its chat model port and prompt texts.
 
         Args:
             llm: The chat model.
             prompts: The ReAct prompts; the code defaults when `None`.
+            mode: Selects free-form answers or structured plans.
+            structured_output: Available schemas for structured agent modes.
         """
         super().__init__(llm)
         self._prompts = prompts or AgentPrompts.defaults()
         self._thinking_effort = ThinkingEffort.MEDIUM
+        self._mode = mode
+        self._structured_output = structured_output
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -90,6 +108,8 @@ class ReActAgent(Agent):
             if not calls:
                 yield TurnCompleted(run.produced_messages)
                 return
+            # A3 will intercept confirmation-required calls here and select
+            # the `permission_decision` schema before executing any tool.
             async for event in self._run_tool_calls(run, calls, persist=False):
                 yield event
 
@@ -143,11 +163,22 @@ class ReActAgent(Agent):
         else:
             messages = [*run.messages, Message.user(self._prompts.answer)]
 
-        async for event in self._llm.chat(messages, tools=tools):
+        # Free-form answers stream directly; only plan mode needs a JSON contract.
+        output_name: OutputSchemaName | None = "plan" if self._mode == "plan" else None
+        output = self._output_for(output_name) if output_name is not None else None
+        is_structured_response = output is not None and not use_tools
+        options = (
+            ChatOptions(response_schema=output.schema)
+            if is_structured_response
+            else None
+        )
+
+        async for event in self._llm.chat(messages, tools=tools, options=options):
             match event:
                 case TextDelta(text=text):
                     text_parts.append(text)
-                    yield event
+                    if not is_structured_response:
+                        yield event
                 case ToolCallRequest(call=call):
                     calls.append(call)
 
@@ -157,4 +188,12 @@ class ReActAgent(Agent):
                 Message.assistant(text, tool_calls=tuple(calls)), persist=False
             )
         else:
+            if output is not None and output_name is not None and not use_tools:
+                parsed = output.parse(text)
+                text = format_structured_output(output_name, parsed)
+                yield TextDelta(text)
             run.add_message(Message.assistant(text), persist=True)
+
+    def _output_for(self, name: OutputSchemaName) -> JsonSchemaOutput | None:
+        """Select the structured output contract for the current agent context."""
+        return self._structured_output.select(name) if self._structured_output else None

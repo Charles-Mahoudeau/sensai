@@ -25,6 +25,7 @@ from sensai.adapters.tui import SensaiApp
 from sensai.config import Config, load_config
 from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
@@ -51,7 +52,12 @@ def build_engine(
 ) -> Engine:
     """Build an Engine using the configured Ollama adapter."""
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
-    agent = ReActAgent(llm, agent_prompts)
+    structured_output = (
+        StructuredOutputCatalog(config.structured_output.schemas)
+        if config.structured_output.enabled
+        else None
+    )
+    agent = ReActAgent(llm, agent_prompts, structured_output=structured_output)
     agent.thinking_effort = config.agent.thinking_effort
     return Engine(
         runner=agent,
