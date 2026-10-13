@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 
 class StructuredOutputError(SensaiError):
@@ -47,23 +47,9 @@ class JsonSchemaOutput:
         if "enum" in schema and value not in schema["enum"]:
             raise StructuredOutputError(f"{path} must be one of {schema['enum']!r}")
 
-        schema_type = schema.get("type")
-        if schema_type == "object":
-            self._validate_object(value, schema, path)
-        elif schema_type == "array":
-            self._validate_array(value, schema, path)
-        elif schema_type == "string" and not isinstance(value, str):
-            raise StructuredOutputError(f"{path} must be a string")
-        elif schema_type == "boolean" and not isinstance(value, bool):
-            raise StructuredOutputError(f"{path} must be a boolean")
-        elif schema_type == "integer" and (
-            not isinstance(value, int) or isinstance(value, bool)
-        ):
-            raise StructuredOutputError(f"{path} must be an integer")
-        elif schema_type == "number" and (
-            not isinstance(value, int | float) or isinstance(value, bool)
-        ):
-            raise StructuredOutputError(f"{path} must be a number")
+        validator = self._TYPE_VALIDATORS.get(schema.get("type"))
+        if validator is not None:
+            validator(self, value, schema, path)
 
         if "minimum" in schema and value < schema["minimum"]:
             raise StructuredOutputError(f"{path} must be at least {schema['minimum']}")
@@ -101,3 +87,32 @@ class JsonSchemaOutput:
         if isinstance(item_schema, dict):
             for index, item in enumerate(value):
                 self._validate_value(item, item_schema, f"{path}[{index}]")
+
+    def _validate_string(self, value: Any, schema: dict[str, Any], path: str) -> None:
+        """Validate a string value."""
+        if not isinstance(value, str):
+            raise StructuredOutputError(f"{path} must be a string")
+
+    def _validate_boolean(self, value: Any, schema: dict[str, Any], path: str) -> None:
+        """Validate a boolean value."""
+        if not isinstance(value, bool):
+            raise StructuredOutputError(f"{path} must be a boolean")
+
+    def _validate_integer(self, value: Any, schema: dict[str, Any], path: str) -> None:
+        """Validate an integer value, rejecting booleans."""
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise StructuredOutputError(f"{path} must be an integer")
+
+    def _validate_number(self, value: Any, schema: dict[str, Any], path: str) -> None:
+        """Validate a number value, rejecting booleans."""
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise StructuredOutputError(f"{path} must be a number")
+
+    _TYPE_VALIDATORS: ClassVar[dict[str, Callable[..., None]]] = {
+        "object": _validate_object,
+        "array": _validate_array,
+        "string": _validate_string,
+        "boolean": _validate_boolean,
+        "integer": _validate_integer,
+        "number": _validate_number,
+    }
