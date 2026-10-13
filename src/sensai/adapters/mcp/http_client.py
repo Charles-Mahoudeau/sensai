@@ -15,11 +15,14 @@ from sensai.core.ports import McpToolError, McpUnavailableError
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+PROTOCOL_VERSION = "2026-07-28"
+"""The MCP protocol version this client speaks; servers must answer with it."""
+
 
 class HttpMcpClient:
     """Connection to a remote MCP server over Streamable HTTP.
 
-    Implements the `McpClient` port. Targets the stateless 2026-07-28 protocol:
+    Implements the `McpClient` port. Targets the stateless `PROTOCOL_VERSION`:
     each JSON-RPC request carries its own `_meta`, and responses may come back
     either as plain JSON or as a server-sent event stream.
     """
@@ -46,7 +49,6 @@ class HttpMcpClient:
         self._auth = auth
         self._transport = transport
         self._logger = logging.getLogger(__name__)
-        self._protocol_version: str = "2026-07-28"
         self._session_id: str | None = None
         self._next_id = 0
 
@@ -77,18 +79,18 @@ class HttpMcpClient:
             raise
 
     async def _initialize(self) -> None:
-        """Discover the server and record its protocol version and session id.
+        """Discover the server, check its protocol version and record its session id.
 
         Raises:
-            McpUnavailableError: The discovery request failed or returned an error.
+            McpUnavailableError: The discovery request failed, returned an error,
+                or the server answered with an unsupported protocol version.
         """
         # Protocol 2026-07-28 is stateless: no initialize/initialized handshake,
         # `server/discover` replaces it, and every request carries its own `_meta`.
         self._logger.info(f"initializing MCP {self._name}: discover phase")
         try:
             resp, resp_json = await self._request("server/discover")
-            if "Mcp-Protocol-Version" in resp.headers:
-                self._protocol_version = resp.headers["Mcp-Protocol-Version"]
+            protocol_version = resp.headers.get("Mcp-Protocol-Version")
             if "Mcp-Session-Id" in resp.headers:
                 self._session_id = resp.headers["Mcp-Session-Id"]
             result = self._result("server/discover", resp_json)
@@ -98,10 +100,20 @@ class HttpMcpClient:
             raise McpUnavailableError(
                 f"failed to initialize MCP server at {self._url}: {e}"
             ) from e
+        # A missing header means the server accepted the version we sent.
+        if protocol_version is not None and protocol_version != PROTOCOL_VERSION:
+            self._logger.error(
+                f"MCP server at {self._url} uses unsupported protocol version "
+                f"{protocol_version} (expected {PROTOCOL_VERSION})"
+            )
+            raise McpUnavailableError(
+                f"{self._name}: unsupported protocol version {protocol_version!r}, "
+                f"expected {PROTOCOL_VERSION!r}"
+            )
         self._logger.info(
             f"initialized MCP {self._name}: "
             f"{server_info.get('name')} {server_info.get('version')} "
-            f"with protocol version {self._protocol_version} "
+            f"with protocol version {PROTOCOL_VERSION} "
             f"and session id {self._session_id}"
         )
 
@@ -194,7 +206,7 @@ class HttpMcpClient:
         """Return the protocol headers shared by every request."""
         headers = {
             "Accept": "application/json, text/event-stream",
-            "Mcp-Protocol-Version": self._protocol_version,
+            "Mcp-Protocol-Version": PROTOCOL_VERSION,
         }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
@@ -220,7 +232,7 @@ class HttpMcpClient:
             "params": {
                 **(params or {}),
                 "_meta": {
-                    "io.modelcontextprotocol/protocolVersion": self._protocol_version,
+                    "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
                     "io.modelcontextprotocol/clientCapabilities": {},
                     "io.modelcontextprotocol/clientInfo": {
                         "name": "sensai",

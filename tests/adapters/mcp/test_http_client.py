@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import pytest
 
-from sensai.adapters.mcp.http_client import HttpMcpClient
+from sensai.adapters.mcp.http_client import PROTOCOL_VERSION, HttpMcpClient
 from sensai.core.ports import McpToolError, McpUnavailableError
 
 if TYPE_CHECKING:
@@ -24,7 +24,9 @@ type Replies = dict[str, dict[str, Any]]
 
 
 def _server(
-    replies: Replies, seen: list[httpx.Request] | None = None
+    replies: Replies,
+    seen: list[httpx.Request] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> httpx.MockTransport:
     """Return a transport that answers each method with its canned reply."""
 
@@ -33,7 +35,9 @@ def _server(
             seen.append(request)
         payload = json.loads(request.content)
         reply = {"jsonrpc": "2.0", "id": payload["id"], **replies[payload["method"]]}
-        return httpx.Response(200, json=reply, headers={"Mcp-Session-Id": "sess-1"})
+        return httpx.Response(
+            200, json=reply, headers={"Mcp-Session-Id": "sess-1", **(headers or {})}
+        )
 
     return httpx.MockTransport(handler)
 
@@ -86,6 +90,25 @@ def test_connect_fails_when_discover_returns_an_error() -> None:
 
     with pytest.raises(McpUnavailableError, match="nope"):
         _run(transport, lambda client: asyncio.sleep(0))
+
+
+def test_connect_fails_on_an_unsupported_protocol_version() -> None:
+    """A server answering with another protocol version is unavailable."""
+    transport = _server(
+        _with_discover({}), headers={"Mcp-Protocol-Version": "2025-06-18"}
+    )
+
+    with pytest.raises(McpUnavailableError, match="unsupported protocol version"):
+        _run(transport, lambda client: asyncio.sleep(0))
+
+
+def test_connect_accepts_the_supported_protocol_version() -> None:
+    """A server echoing the client's protocol version connects."""
+    transport = _server(
+        _with_discover({}), headers={"Mcp-Protocol-Version": PROTOCOL_VERSION}
+    )
+
+    _run(transport, lambda client: asyncio.sleep(0))
 
 
 def test_list_tools_maps_specs_and_defaults_optional_fields() -> None:
