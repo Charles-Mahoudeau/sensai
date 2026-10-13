@@ -46,7 +46,24 @@ def test_main_starts_the_chat(monkeypatch: pytest.MonkeyPatch) -> None:
 
     cli.main()
 
-    assert calls == [("main", ("m", pathlib.Path("c.toml")), {})]
+    options = app.ChatOptions(tools_enabled=True)
+    assert calls == [("main", ("m", pathlib.Path("c.toml"), options), {})]
+
+
+def test_no_tools_starts_the_chat_with_tools_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--no-tools` tells `app.main` to start with every tool disabled."""
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(app, "main", _recorder(calls, "main"))
+    monkeypatch.setattr(
+        "sys.argv", ["sensai", "--model", "m", "--config", "c.toml", "--no-tools"]
+    )
+
+    cli.main()
+
+    options = app.ChatOptions(tools_enabled=False)
+    assert calls == [("main", ("m", pathlib.Path("c.toml"), options), {})]
 
 
 def test_chat_without_model_is_a_usage_error(
