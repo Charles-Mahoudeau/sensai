@@ -7,6 +7,7 @@ import contextlib
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import httpx
@@ -49,6 +50,18 @@ if TYPE_CHECKING:
     from sensai.core.agent import Agent
     from sensai.core.models import McpServerStatus, Message
     from sensai.core.ports import LLM, McpClient
+
+
+@dataclass(frozen=True)
+class ChatOptions:
+    """How the chat starts, as chosen on the command line.
+
+    Attributes:
+        tools_enabled: Whether the tools start enabled; they can still be
+            toggled from the TUI.
+    """
+
+    tools_enabled: bool = True
 
 
 # So this function will be call at start and the engine will be built
@@ -154,12 +167,15 @@ async def build_agent(
     return agent
 
 
-def main(model: str, config_path: pathlib.Path) -> None:
+def main(
+    model: str, config_path: pathlib.Path, options: ChatOptions | None = None
+) -> None:
     """Application entrypoint.
 
     Args:
         model: The model name.
         config_path: The path to the configuration file.
+        options: How the chat starts; the defaults when `None`.
 
     Returns:
         None
@@ -168,7 +184,7 @@ def main(model: str, config_path: pathlib.Path) -> None:
     load_dotenv()
     config = _parse_config(model, config_path)
 
-    asyncio.run(_serve(config))
+    asyncio.run(_serve(config, options or ChatOptions()))
 
 
 def _get_db() -> SqliteDatabase:
@@ -194,7 +210,7 @@ async def _get_prompt_library(db: SqliteDatabase) -> PromptLibrary:
     return library
 
 
-async def _serve(config: Config) -> None:
+async def _serve(config: Config, options: ChatOptions) -> None:
     async with (
         httpx.AsyncClient(timeout=None) as client,
         contextlib.AsyncExitStack() as stack,
@@ -214,6 +230,7 @@ async def _serve(config: Config) -> None:
         history = await session_repo.get_messages(session.id)
 
         tools, mcp_servers = await build_tools(config, stack)
+        tools.set_all_enabled(enabled=options.tools_enabled)
         agent = await build_agent(config, client, tools, agent_prompts)
         engine = await build_engine(
             config,
