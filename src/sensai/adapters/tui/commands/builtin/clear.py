@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sensai.adapters.tui.commands.registry import CommandSpec
+from sensai.core.errors import SensaiError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -30,7 +31,11 @@ def register_self(
     async def clear(context: CommandContext, argument: str) -> None:
         del argument
         if on_clear is not None:
-            await on_clear()
+            try:
+                await on_clear()
+            except SensaiError as error:
+                await context.show_hint(f"(could not clear the conversation: {error})")
+                return
         context.engine.clear()
         await context.clear_transcript()
         await context.show_hint(CLEARED_HINT)
