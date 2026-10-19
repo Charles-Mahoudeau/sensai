@@ -259,7 +259,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             session_id=session.id,
             saved=len(history),
         )
-        commands = default_registry(on_clear=recorder.start_new)
+        commands = default_registry(
+            on_clear=recorder.start_new, persona_names=engine.persona_names
+        )
         await SensaiApp(engine, model=config.model, commands=commands).run_async()
         await recorder.save()
 

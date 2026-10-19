@@ -11,18 +11,20 @@ from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import Message, ThinkingEffort
+from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.tools.registry import ToolRegistry
 from tests.adapters.tui.commands.test_registry import FakeContext
-from tests.core.test_engine import ScriptedRunner
-from tests.fakes import FakeLLM
+from tests.core.test_engine import ScriptedRunner, WaitingRunner
+from tests.fakes import FakeLLM, InMemoryPersonaSource
 
 
 def test_default_registry_lists_the_builtins_in_menu_order() -> None:
-    """The menu shows /clear, /effort, /mcp, /tools and /exit."""
+    """The menu shows /clear, /effort, /persona, /mcp, /tools and /exit."""
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
+        "/persona",
         "/mcp",
         "/tools",
         "/exit",
@@ -99,3 +101,74 @@ def test_mcp_and_tools_open_their_panels() -> None:
     asyncio.run(run())
 
     assert [type(panel) for panel in context.panels] == [McpPanel, ToolsPanel]
+
+
+def _persona(name: str) -> Persona:
+    section = PersonaSection("identity", (PersonaEntry("role", name),))
+    return Persona(name, (section,))
+
+
+def test_persona_switches_shows_and_rejects_names() -> None:
+    """A name is switched to; bare shows it; an unknown one is explained."""
+    engine = Engine(
+        ScriptedRunner(()),
+        Pipeline(),
+        EventBus(),
+        personas=InMemoryPersonaSource(_persona("sensei"), _persona("pirate")),
+    )
+    context = FakeContext(engine)
+    registry = default_registry(persona_names=engine.persona_names)
+
+    async def run() -> None:
+        await registry.run("/persona", context)
+        await registry.run("/persona pirate", context)
+        await registry.run("/persona ghost", context)
+
+    asyncio.run(run())
+
+    assert engine.persona == _persona("pirate")
+    assert context.refreshed == 1
+    assert context.hints == [
+        "Persona: none (available: pirate, sensei)",
+        "Persona: pirate (available: pirate, sensei)",
+        "Unknown persona 'ghost'",
+    ]
+
+
+def test_persona_completes_the_names_of_the_engine() -> None:
+    """The completions follow the personas the engine can switch to."""
+    source = InMemoryPersonaSource(_persona("sensei"))
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), personas=source)
+    registry = default_registry(persona_names=engine.persona_names)
+
+    source.personas["pirate"] = _persona("pirate")
+
+    assert [item.label for item in registry.complete("/persona ")] == [
+        "pirate",
+        "sensei",
+    ]
+
+
+def test_persona_is_refused_while_a_submission_runs() -> None:
+    """Switching under a running turn is explained, not raised."""
+
+    async def run() -> FakeContext:
+        engine = Engine(
+            WaitingRunner(),
+            Pipeline(),
+            EventBus(),
+            personas=InMemoryPersonaSource(_persona("sensei")),
+        )
+        context = FakeContext(engine)
+        submission_id = engine.submit("Hello")
+
+        await default_registry().run("/persona sensei", context)
+
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+        return context
+
+    context = asyncio.run(run())
+
+    assert context.hints == ["A submission is already in progress."]
+    assert context.refreshed == 0

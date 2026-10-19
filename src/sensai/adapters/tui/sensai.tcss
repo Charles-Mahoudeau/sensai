@@ -197,7 +197,7 @@ HintMessage {
     background: $background;
 }
 
-#effort {
+#persona, #effort {
     height: 1;
     background: $background;
 }
