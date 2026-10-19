@@ -28,6 +28,19 @@ class ProfileConfig:
 
 
 @dataclass(frozen=True)
+class PersonasConfig:
+    """Configuration for the personas the agent can take on.
+
+    Attributes:
+        path: The directory holding one TOML file per persona.
+        default: The persona the chat starts with; the base prompt when None.
+    """
+
+    path: Path = Path("config/personas")
+    default: str | None = None
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """Configuration for the agent."""
 
@@ -59,6 +72,7 @@ class Config:
     model: str
     ollama: OllamaConfig
     user_profile: ProfileConfig
+    personas: PersonasConfig = PersonasConfig()
     agent: AgentConfig = AgentConfig()
     structured_output: StructuredOutputConfig = field(
         default_factory=StructuredOutputConfig
@@ -114,6 +128,13 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
             "structured output schemas are selected automatically by the agent"
         )
 
+    personas = data.get("personas", {})
+    default_persona = personas.get("default")
+    if default_persona is not None and (
+        not isinstance(default_persona, str) or not default_persona
+    ):
+        raise ConfigError("personas.default must be a non-empty string")
+
     schemas: dict[str, dict[str, Any]] = {}
     if structured_output.get("enabled", False):
         for schema_name in SUPPORTED_STRUCTURED_OUTPUT_SCHEMAS:
@@ -137,6 +158,10 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
         ollama=OllamaConfig(url=data.get("ollama", {}).get("url", "")),
         user_profile=ProfileConfig(
             profile=base / Path(data.get("profile", {}).get("path", "profile.toml"))
+        ),
+        personas=PersonasConfig(
+            path=base / Path(personas.get("path", "config/personas")),
+            default=default_persona,
         ),
         agent=AgentConfig(
             thinking_effort=_parse_thinking_effort(
