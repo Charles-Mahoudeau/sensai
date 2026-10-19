@@ -13,6 +13,12 @@ from sensai.core.ports.mcp import (
     McpToolError,
     McpUnavailableError,
 )
+from sensai.core.ports.persona import (
+    PersonaError,
+    PersonaInvalidError,
+    PersonaNotFoundError,
+    PersonaSource,
+)
 from sensai.core.ports.repositories.memory import (
     DuplicateMemoryError,
     MemoryNotFoundError,
@@ -54,6 +60,10 @@ __all__ = [
     "MemoryNotFoundError",
     "MemoryRepository",
     "ModelNotFoundError",
+    "PersonaError",
+    "PersonaInvalidError",
+    "PersonaNotFoundError",
+    "PersonaSource",
     "ProfileNotFoundError",
     "PromptNotFoundError",
     "PromptRepository",
