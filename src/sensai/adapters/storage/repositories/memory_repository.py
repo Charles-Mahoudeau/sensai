@@ -6,7 +6,11 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
-from sensai.core.models.memory import MemoryRecord, memory_search_terms
+from sensai.core.models.memory import (
+    MemoryRecord,
+    fold_category,
+    memory_search_terms,
+)
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
 if TYPE_CHECKING:
@@ -21,6 +25,11 @@ def _lower(text: str | None) -> str | None:
     return None if text is None else text.lower()
 
 
+def _fold(category: str | None) -> str | None:
+    """Category without case or accents, so `preference` finds `préférence`."""
+    return None if category is None else fold_category(category)
+
+
 def _is_duplicate(error: sqlite3.IntegrityError) -> bool:
     return error.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE"
 
@@ -32,7 +41,7 @@ class SqliteMemoryRepository:
         self,
         db: SqliteDatabase,
     ) -> None:
-        """Wrap a migrated connection and register the text-search function.
+        """Wrap a migrated connection and register the text-search functions.
 
         Args:
             db: The database instance.
@@ -45,6 +54,7 @@ class SqliteMemoryRepository:
         self._columns = ", ".join(self._column_names)
 
         db.conn.create_function("sensai_lower", 1, _lower, deterministic=True)
+        db.conn.create_function("sensai_fold", 1, _fold, deterministic=True)
 
     def _to_record(self, row: Sequence[Any]) -> MemoryRecord:
         fields = dict(zip(self._column_names, row, strict=True))
@@ -104,7 +114,7 @@ class SqliteMemoryRepository:
                 return []
 
             parameters: dict[str, str | None] = {"type": type}
-            conditions = ["(:type IS NULL OR type = :type)"]
+            conditions = ["(:type IS NULL OR sensai_fold(type) = sensai_fold(:type))"]
             if terms:
                 term_conditions: list[str] = []
                 for index, term in enumerate(terms):
