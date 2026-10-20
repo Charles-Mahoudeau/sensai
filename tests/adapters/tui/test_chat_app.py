@@ -20,6 +20,7 @@ from sensai.adapters.tui.widgets import (
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    PersonaLabel,
     PromptInput,
     ReasoningGroup,
     ThoughtStep,
@@ -42,10 +43,11 @@ from sensai.core.models import (
     ToolSpec,
 )
 from sensai.core.models.llm import ThinkingDelta
+from sensai.core.models.persona import Persona
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeLLM
+from tests.fakes import FakeLLM, InMemoryPersonaSource
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -343,7 +345,14 @@ def test_completion_menu_follows_the_typed_command() -> None:
     async def scenario(pilot: Pilot[None]) -> None:
         prompt = app.query_one("#prompt", Input)
         await pilot.press("/")
-        assert _menu_labels(app) == ["/clear", "/effort", "/mcp", "/tools", "/exit"]
+        assert _menu_labels(app) == [
+            "/clear",
+            "/effort",
+            "/persona",
+            "/mcp",
+            "/tools",
+            "/exit",
+        ]
 
         await pilot.press("e")
         assert _menu_labels(app) == ["/effort", "/exit"]
@@ -923,5 +932,34 @@ def test_companion_watches_the_user_type_in_the_border() -> None:
         await pilot.pause()
 
         assert prompt.companion.mood is Mood.IDLE
+
+    _run(app, scenario)
+
+
+def test_persona_command_completes_switches_and_shows_the_persona() -> None:
+    """/persona offers the engine's personas and the status bar follows."""
+    engine = Engine(
+        ReActAgent(FakeLLM([]), ToolRegistry()),
+        Pipeline(),
+        EventBus(),
+        personas=InMemoryPersonaSource(Persona("pirate", ()), Persona("sensei", ())),
+    )
+    app = SensaiApp(engine, model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        label = app.query_one(PersonaLabel)
+        assert not label.display
+
+        await pilot.press(*"/persona ")
+        assert _menu_labels(app) == ["pirate", "sensei"]
+
+        await pilot.press("s", "enter")
+        await pilot.pause()
+        assert engine.persona == Persona("sensei", ())
+        assert label.display
+        assert label.persona_name == "sensei"
+        assert _texts(app, HintMessage) == [
+            "Persona: sensei (available: pirate, sensei)"
+        ]
 
     _run(app, scenario)

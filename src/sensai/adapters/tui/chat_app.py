@@ -18,6 +18,7 @@ from sensai.adapters.tui.widgets import (
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    PersonaLabel,
     PromptInput,
     ReasoningGroup,
     ThoughtStep,
@@ -78,12 +79,14 @@ class SensaiApp(App[None]):
             engine: The engine to submit messages to and read events from.
             model: The model name, shown in the status line.
             commands: The slash commands the prompt completes and runs; the
-                built-in ones when None.
+                built-in ones, completing the engine's personas, when None.
         """
         super().__init__()
         self._engine = engine
         self._model = model
-        self._commands = commands or default_registry()
+        self._commands = commands or default_registry(
+            persona_names=engine.persona_names
+        )
         self._events: AsyncGenerator[Event] | None = None
         self._submission: str | None = None
         self._reply: AssistantMessage | None = None
@@ -104,6 +107,7 @@ class SensaiApp(App[None]):
         )
         with Horizontal(id="statusbar"):
             yield Static(id="status", markup=False)
+            yield PersonaLabel(self._engine.persona)
             yield EffortLabel(self._engine.thinking_effort)
 
     def on_mount(self) -> None:
@@ -154,7 +158,8 @@ class SensaiApp(App[None]):
         await self.query_one("#transcript", VerticalScroll).remove_children()
 
     def refresh_status(self) -> None:
-        """Show the engine's current thinking effort in the status bar."""
+        """Show the engine's current persona and effort in the status bar."""
+        self.query_one(PersonaLabel).set_persona(self._engine.persona)
         self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
 
     async def open_panel(self, panel: Panel) -> None:

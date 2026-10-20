@@ -110,6 +110,35 @@ def test_arguments_are_completed_after_the_command() -> None:
     ]
 
 
+def test_callable_arguments_are_asked_on_every_completion() -> None:
+    """Arguments given as a callable follow values added after registration."""
+    names = ["sensei"]
+    registry = CommandRegistry()
+
+    async def handler(context: CommandContext, argument: str) -> None:
+        del context, argument
+
+    registry.register(
+        CommandSpec(
+            "/persona",
+            "Switch persona",
+            arguments=lambda: tuple(Argument(name, "") for name in names),
+        ),
+        handler,
+    )
+    assert [item.label for item in registry.complete("/persona ")] == ["sensei"]
+
+    names.append("pirate")
+
+    assert registry.complete("/p") == [
+        Completion("/persona ", "/persona", "Switch persona")
+    ]
+    assert [item.label for item in registry.complete("/persona ")] == [
+        "sensei",
+        "pirate",
+    ]
+
+
 def test_nothing_is_completed_without_a_match() -> None:
     """Plain text, unknown commands and extra words give no completion."""
     registry = _registry()

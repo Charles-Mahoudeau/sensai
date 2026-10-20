@@ -22,13 +22,17 @@ from sensai.core.events import (
 from sensai.core.events.types import ToolRunFinished, ToolRunStarted
 from sensai.core.models import Message, TextDelta, ThinkingEffort
 from sensai.core.models.llm import ThinkingDelta
+from sensai.core.persona import render_persona
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
+from sensai.core.ports import PersonaNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Sequence
 
     from sensai.core.agent.events import AgentEvent
     from sensai.core.models import McpServerStatus, ToolInfo
+    from sensai.core.models.persona import Persona
+    from sensai.core.ports import PersonaSource
     from sensai.core.tools.registry import ToolRegistry
 
 
@@ -57,6 +61,8 @@ class Engine:
         bus: EventBus,
         *,
         system_prompt: str = "",
+        profile: str = "",
+        personas: PersonaSource | None = None,
         history: Sequence[Message] = (),
         tools: ToolRegistry | None = None,
         mcp_servers: Sequence[McpServerStatus] = (),
@@ -67,7 +73,9 @@ class Engine:
             runner: Runs each turn.
             pipeline: Prepares the messages, or answers without the runner.
             bus: Carries the public events.
-            system_prompt: Prepended to the conversation on every turn.
+            system_prompt: The base of the system message sent on every turn.
+            profile: The rendered user profile, after the persona.
+            personas: Where the personas to switch to come from; none if None.
             history: Messages restored from a previous session.
             tools: The runner's tools, listed and toggled by front-ends.
             mcp_servers: The outcome of connecting to each MCP server.
@@ -76,6 +84,9 @@ class Engine:
         self._pipeline = pipeline
         self._bus = bus
         self._system_prompt = system_prompt
+        self._profile = profile
+        self._personas = personas
+        self._persona: Persona | None = None
         self._history: list[Message] = list(history)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._tools = tools
@@ -169,8 +180,9 @@ class Engine:
             await self._bus.publish(MessageStarted(submission_id))  # start
 
             messages = tuple(self._history)
-            if self._system_prompt:
-                messages = (Message.system(self._system_prompt), *messages)
+            system = self._system_message()
+            if system:
+                messages = (Message.system(system), *messages)
             result = self._pipeline.run(messages)  # pipeline
 
             if isinstance(result, ShortCircuit):  # already has a reply
@@ -216,3 +228,36 @@ class Engine:
     def history(self) -> tuple[Message, ...]:
         """The conversation so far, oldest first."""
         return tuple(self._history)
+
+    @property
+    def persona(self) -> Persona | None:
+        """The persona the agent acts as, or None for the base system prompt."""
+        return self._persona
+
+    def persona_names(self) -> tuple[str, ...]:
+        """Every persona available right now, sorted by name."""
+        return tuple(self._personas.names()) if self._personas is not None else ()
+
+    def set_persona(self, name: str) -> Persona | None:
+        """Switch to the current version of a persona, keeping the history.
+
+        The persona is read again from its source, so an edited persona is
+        picked up by switching to it. Applies from the next submission.
+
+        Raises:
+            PersonaNotFoundError: No persona is called `name`.
+            PersonaInvalidError: The persona exists but is not valid.
+            SubmissionInProgressError: A submission is still running.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        if self._personas is None:
+            raise PersonaNotFoundError(f"Unknown persona {name!r}")
+        self._persona = self._personas.load(name)
+        return self._persona
+
+    def _system_message(self) -> str:
+        """Join the base prompt, the persona and the profile, skipping empty ones."""
+        persona = render_persona(self._persona) if self._persona is not None else ""
+        parts = (self._system_prompt, persona, self._profile)
+        return "\n\n".join(part for part in parts if part)

@@ -25,6 +25,9 @@ class Argument:
     description: str
 
 
+type Arguments = tuple[Argument, ...] | Callable[[], tuple[Argument, ...]]
+
+
 @dataclass(frozen=True, slots=True)
 class CommandSpec:
     """Describe a slash command.
@@ -33,12 +36,14 @@ class CommandSpec:
         name: What the user types, slash included (`/clear`).
         description: One line shown next to the name in the completion menu.
         arguments: The values completed after the name; empty if it takes none.
+            A callable is asked again on every completion, for values that
+            change while the app runs.
         aliases: Other names that run the command, never offered as completions.
     """
 
     name: str
     description: str
-    arguments: tuple[Argument, ...] = ()
+    arguments: Arguments = ()
     aliases: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -46,6 +51,12 @@ class CommandSpec:
         for name in (self.name, *self.aliases):
             if not _is_command_name(name):
                 raise ValueError(f"Command name {name!r} must be '/' and a word")
+
+    def argument_list(self) -> tuple[Argument, ...]:
+        """The arguments to complete now, asking a callable again every time."""
+        if isinstance(self.arguments, tuple):
+            return self.arguments
+        return self.arguments()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,8 +167,8 @@ class CommandRegistry:
             return []
         return [
             Completion(f"{spec.name} {arg.name}", arg.name, arg.description)
-            for arg in spec.arguments
-            if arg.name.startswith(prefix)
+            for arg in spec.argument_list()
+            if arg.name.lower().startswith(prefix)
         ]
 
     async def run(self, text: str, context: CommandContext) -> bool:

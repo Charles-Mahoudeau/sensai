@@ -17,6 +17,7 @@ from sensai.adapters.cli import PromptCommands
 from sensai.adapters.http import BearerAuth
 from sensai.adapters.mcp.http_client import HttpMcpClient
 from sensai.adapters.ollama import OllamaChat
+from sensai.adapters.persona import TomlPersonaDir
 from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
 from sensai.adapters.storage.connection import create_connection
@@ -67,36 +68,46 @@ class ChatOptions:
 # So this function will be call at start and the engine will be built
 # and returned for the TUI or CLI to use.
 async def build_engine(
-    _config: Config,
+    config: Config,
     agent: Agent,
     system_prompt: str,
     history: Sequence[Message] = (),
     *,
+    profile: str = "",
     tools: ToolRegistry | None = None,
     mcp_servers: Sequence[McpServerStatus] = (),
 ) -> Engine:
     """Build an Engine around an already configured agent.
 
     Args:
-        _config: The application configuration (currently unused).
+        config: The application configuration, for the personas.
         agent: The agent that runs each turn, as built by `build_agent`.
-        system_prompt: The system prompt prepended to the conversation.
+        system_prompt: The base system prompt, before the persona.
         history: Messages restored from a previous session.
+        profile: The rendered user profile, after the persona.
         tools: The agent's tools, so front-ends can list and toggle them.
         mcp_servers: The outcome of connecting to each MCP server.
 
     Returns:
         The engine, ready to be driven by the TUI or CLI.
+
+    Raises:
+        PersonaError: The default persona is missing or not valid.
     """
-    return Engine(
+    engine = Engine(
         runner=agent,
         pipeline=Pipeline(),
         bus=EventBus(),
         system_prompt=system_prompt,
+        profile=profile,
+        personas=TomlPersonaDir(config.personas.path),
         history=history,
         tools=tools,
         mcp_servers=mcp_servers,
     )
+    if config.personas.default is not None:
+        engine.set_persona(config.personas.default)
+    return engine
 
 
 async def build_tools(
@@ -219,7 +230,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
 
         prompts = await _get_prompt_library(db)
         profile = await _get_profile_sys_prompt(config, db)
-        system_prompt = await prompts.system_prompt(profile)
+        system_prompt = await prompts.system_prompt()
         agent_prompts = await AgentPrompts.active(prompts)
 
         session_repo = SqliteSessionRepository(db)
@@ -237,6 +248,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             agent,
             system_prompt,
             history,
+            profile=profile,
             tools=tools,
             mcp_servers=mcp_servers,
         )
@@ -247,7 +259,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             session_id=session.id,
             saved=len(history),
         )
-        commands = default_registry(on_clear=recorder.start_new)
+        commands = default_registry(
+            on_clear=recorder.start_new, persona_names=engine.persona_names
+        )
         await SensaiApp(engine, model=config.model, commands=commands).run_async()
         await recorder.save()
 
