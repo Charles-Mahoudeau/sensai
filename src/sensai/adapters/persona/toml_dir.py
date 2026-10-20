@@ -52,14 +52,18 @@ class TomlPersonaDir:
         try:
             with path.open("rb") as file:
                 data = tomllib.load(file)
-        except tomllib.TOMLDecodeError as error:
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
             raise PersonaInvalidError(f"{path}: invalid TOML: {error}") from None
+        except OSError as error:
+            raise PersonaInvalidError(f"{path}: cannot read: {error}") from None
 
         sections: list[PersonaSection] = []
         for section, entries in data.items():
             if not isinstance(entries, dict):
                 raise PersonaInvalidError(f"{path}: {section!r} must be a [section]")
             for key, value in entries.items():
+                if not key:
+                    raise PersonaInvalidError(f"{path}: [{section}] has an empty key")
                 if not isinstance(value, str) or not value:
                     raise PersonaInvalidError(
                         f"{path}: [{section}] {key} must be a non-empty string"

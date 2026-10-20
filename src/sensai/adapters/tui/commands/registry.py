@@ -168,7 +168,7 @@ class CommandRegistry:
         return [
             Completion(f"{spec.name} {arg.name}", arg.name, arg.description)
             for arg in spec.argument_list()
-            if arg.name.startswith(prefix)
+            if arg.name.lower().startswith(prefix)
         ]
 
     async def run(self, text: str, context: CommandContext) -> bool:
