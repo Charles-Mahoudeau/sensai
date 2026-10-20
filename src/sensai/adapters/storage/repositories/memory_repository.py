@@ -6,7 +6,11 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
-from sensai.core.models.memory import MemoryRecord
+from sensai.core.models.memory import (
+    MemoryRecord,
+    fold_category,
+    memory_search_terms,
+)
 from sensai.core.ports import DuplicateMemoryError, MemoryNotFoundError
 
 if TYPE_CHECKING:
@@ -21,6 +25,11 @@ def _lower(text: str | None) -> str | None:
     return None if text is None else text.lower()
 
 
+def _fold(category: str | None) -> str | None:
+    """Category without case or accents, so `preference` finds `préférence`."""
+    return None if category is None else fold_category(category)
+
+
 def _is_duplicate(error: sqlite3.IntegrityError) -> bool:
     return error.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE"
 
@@ -32,7 +41,7 @@ class SqliteMemoryRepository:
         self,
         db: SqliteDatabase,
     ) -> None:
-        """Wrap a migrated connection and register the text-search function.
+        """Wrap a migrated connection and register the text-search functions.
 
         Args:
             db: The database instance.
@@ -45,6 +54,7 @@ class SqliteMemoryRepository:
         self._columns = ", ".join(self._column_names)
 
         db.conn.create_function("sensai_lower", 1, _lower, deterministic=True)
+        db.conn.create_function("sensai_fold", 1, _fold, deterministic=True)
 
     def _to_record(self, row: Sequence[Any]) -> MemoryRecord:
         fields = dict(zip(self._column_names, row, strict=True))
@@ -99,15 +109,29 @@ class SqliteMemoryRepository:
         """Return matching records, most recently updated first."""
 
         def find() -> list[MemoryRecord]:
+            terms = memory_search_terms(query) if query is not None else ()
+            if query is not None and not terms:
+                return []
+
+            parameters: dict[str, str | None] = {"type": type}
+            conditions = ["(:type IS NULL OR sensai_fold(type) = sensai_fold(:type))"]
+            if terms:
+                term_conditions: list[str] = []
+                for index, term in enumerate(terms):
+                    parameter = f"term_{index}"
+                    parameters[parameter] = term
+                    term_conditions.append(
+                        f"instr(sensai_lower(name), :{parameter}) > 0"
+                        f" OR instr(sensai_lower(coalesce(description, '')), "
+                        f":{parameter}) > 0"
+                    )
+                conditions.append("(" + " OR ".join(term_conditions) + ")")
+
             rows = self._db.conn.execute(
                 f"SELECT {self._columns} FROM memories"
-                " WHERE (:type IS NULL OR type = :type)"
-                " AND (:query IS NULL"
-                "      OR instr(sensai_lower(name), sensai_lower(:query)) > 0"
-                "      OR instr(sensai_lower(coalesce(description, '')),"
-                "               sensai_lower(:query)) > 0)"
+                f" WHERE {' AND '.join(conditions)}"
                 " ORDER BY updated_at DESC, id DESC",
-                {"type": type, "query": query},
+                parameters,
             ).fetchall()
             return [self._to_record(row) for row in rows]
 

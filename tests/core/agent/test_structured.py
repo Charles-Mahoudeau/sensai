@@ -30,6 +30,12 @@ async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
     return [event async for event in events]
 
 
+def _asks_for_a_thought(options: ChatOptions | None) -> bool:
+    """Tell whether a request used the schema of the structured ReAct thought."""
+    schema = options.response_schema if options is not None else None
+    return schema is not None and set(schema["properties"]) == {"thought", "ready"}
+
+
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
@@ -59,8 +65,8 @@ def test_react_agent_streams_an_ordinary_answer_without_a_schema() -> None:
     """Ordinary answers remain free-form even when structured output is enabled."""
     llm = FakeLLM(
         [
-            # ReAct first asks the model for a private readiness assessment.
-            [TextDelta("I am ready to answer."), ChatDone()],
+            # ReAct first asks the model for a private thought, in JSON.
+            [TextDelta('{"thought": "All known.", "ready": true}'), ChatDone()],
             # Once ready, it makes a second, free-form final call.
             [TextDelta("Bonjour"), ChatDone()],
         ]
@@ -74,15 +80,17 @@ def test_react_agent_streams_an_ordinary_answer_without_a_schema() -> None:
         TextDelta("Bonjour"),
         TurnCompleted([Message.assistant("Bonjour")]),
     ]
-    assert llm.options == [None, None]
+    assert _asks_for_a_thought(llm.options[0])
+    assert llm.options[1:] == [None]
 
 
 def test_react_agent_does_not_validate_a_tool_generation_reply() -> None:
-    """A reply from the unconstrained tool branch is not parsed as final JSON."""
+    """JSON from the tool branch is asked again, and that answer is free-form."""
     llm = FakeLLM(
         [
             [TextDelta("I need a tool."), ChatDone()],
             [TextDelta('{"name":"web_search"}'), ChatDone()],
+            [TextDelta('{"news": []}'), ChatDone()],
         ]
     )
     agent = ReActAgent(
@@ -91,8 +99,9 @@ def test_react_agent_does_not_validate_a_tool_generation_reply() -> None:
 
     events = asyncio.run(_collect(agent.run((Message.user("Find recent news"),))))
 
-    assert events[-1] == TurnCompleted([Message.assistant('{"name":"web_search"}')])
-    assert llm.options == [None, None]
+    assert events[-1] == TurnCompleted([Message.assistant('{"news": []}')])
+    assert _asks_for_a_thought(llm.options[0])
+    assert llm.options[1:] == [None, None]
 
 
 def test_json_schema_output_validates_nested_plan() -> None:
@@ -117,7 +126,7 @@ def test_react_agent_uses_plan_schema_in_plan_mode() -> None:
     """Plan mode selects the plan schema without any configuration choice."""
     llm = FakeLLM(
         [
-            [TextDelta("I am ready to answer."), ChatDone()],
+            [TextDelta('{"thought": "All known.", "ready": true}'), ChatDone()],
             [
                 TextDelta(
                     '{"title":"Plan the work","steps":[{"title":"Write tests",'
@@ -137,7 +146,8 @@ def test_react_agent_uses_plan_schema_in_plan_mode() -> None:
     events = asyncio.run(_collect(agent.run((Message.user("Plan the work"),))))
 
     # Mode selection happens in the agent, not in the TOML configuration.
-    assert llm.options == [None, ChatOptions(response_schema=PLAN_SCHEMA)]
+    assert _asks_for_a_thought(llm.options[0])
+    assert llm.options[1:] == [ChatOptions(response_schema=PLAN_SCHEMA)]
     assert events[-2:] == [
         TextDelta(
             "## Plan the work\n\n"

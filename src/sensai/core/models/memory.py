@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+# The categories facts are filed under: English whatever the user's language,
+# so that a search by category finds them.
+MEMORY_CATEGORIES = ("preference", "identity", "project", "habit", "goal", "other")
+
+
+def memory_search_terms(query: str) -> tuple[str, ...]:
+    """Return distinct searchable words from a natural-language memory query."""
+    return tuple(dict.fromkeys(re.findall(r"[^\W\d_]{3,}", query.lower())))
+
+
+def fold_category(category: str) -> str:
+    """Return a category without case or accents: `Préférence` is `preference`."""
+    decomposed = unicodedata.normalize("NFKD", category.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
 
 
 @dataclass(frozen=True, slots=True)

@@ -165,7 +165,7 @@ message saying what is wrong:
 
 | Prompt | Placeholders (exactly these) | Must contain |
 | --- | --- | --- |
-| `react_thought` | `{tools}` | `ready to answer` (the phrase `_is_ready()` looks for) |
+| `react_thought` | `{tools}` | `ready to answer` (it tells the model when to set `"ready"`) |
 | `react_notes` | `{thought}` | |
 
 Write literal braces in these two as `{{` and `}}`. The other prompts are sent
