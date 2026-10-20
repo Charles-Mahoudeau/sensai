@@ -9,6 +9,8 @@ from sensai.core.tools.builtin.memory.utils import (
     memory_id,
     optional_string,
     record_json,
+    reject_unknown,
+    required_string,
 )
 
 if TYPE_CHECKING:
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
     from sensai.core.ports import MemoryRepository
     from sensai.core.tools.registry import ToolHandler
 
+_FIELDS = frozenset({"memory_id", "name", "type", "description"})
+
 
 def spec() -> ToolSpec:
     """Describe a partial update of a memory record."""
@@ -24,7 +28,8 @@ def spec() -> ToolSpec:
         name="memory_update",
         description=(
             "Changes an existing memory after finding it by id. Provide only the "
-            "fields that should change; use an empty description to clear it."
+            "fields that should change; a new fact replaces the old one in "
+            "`description`."
         ),
         parameters={
             "type": "object",
@@ -45,14 +50,20 @@ def handler(memory: MemoryRepository) -> ToolHandler:
     """Build the registry handler for memory updates."""
 
     async def update(arguments: Mapping[str, Any]) -> str:
+        reject_unknown(arguments, _FIELDS)
         fields = ("name", "type", "description")
         if not any(field in arguments for field in fields):
             raise ValueError("memory_update requires at least one field to change")
+        description = (
+            required_string(arguments, "description")
+            if "description" in arguments
+            else None
+        )
         record = await memory.update(
             memory_id(arguments),
             name=optional_string(arguments, "name"),
             type=optional_string(arguments, "type"),
-            description=optional_string(arguments, "description"),
+            description=description,
         )
         return record_json(record)
 
