@@ -118,6 +118,18 @@ def test_memory_find_by_type_and_query() -> None:
     assert natural_query == ["Python", "Ada"]
 
 
+def test_memory_find_by_type_ignores_case_and_accents() -> None:
+    """`find` compares categories folded: `preference` matches `Préférence`."""
+    store = InMemoryMemoryStore()
+
+    async def run() -> list[str]:
+        await store.create(name="voiture", type="Préférence", description="BMW")
+        await store.create(name="Sensai", type="project")
+        return [r.name for r in await store.find(type="PREFERENCE")]
+
+    assert asyncio.run(run()) == ["voiture"]
+
+
 def test_memory_update_changes_only_given_fields() -> None:
     """`None` keeps a field, an empty string clears the description."""
     store = InMemoryMemoryStore()

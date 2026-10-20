@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from sensai.core.agent.events import TurnCompleted
+from sensai.core.agent.events import ToolRunStarted, TurnCompleted
+from sensai.core.agent.memory_recall import MemoryRecall
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.models import Message, TextDelta, ToolCall
 from sensai.core.models.llm import ToolCallRequest
@@ -19,21 +20,28 @@ if TYPE_CHECKING:
 
     from sensai.core.agent.events import AgentEvent
 
+READY = '{"thought": "All known.", "ready": true}'
+
 
 async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
     """Collect all events from an agent run."""
     return [event async for event in events]
 
 
-def _agent(llm: FakeLLM, store: InMemoryMemoryStore) -> ReActAgent:
+def _agent(llm: FakeLLM, store: InMemoryMemoryStore, *, limit: int = 20) -> ReActAgent:
     """Build a ReAct agent using the shared persistent-memory store."""
     registry = ToolRegistry()
     memory.register_self(registry, store)
-    return ReActAgent(llm, registry)
+    return ReActAgent(llm, registry, memory_recall=MemoryRecall(store, limit=limit))
+
+
+def _offered(llm: FakeLLM, request: int) -> set[str]:
+    """The names of the tools offered in one request."""
+    return {spec.name for spec in llm.tools[request]}
 
 
 def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
-    """A fact is created, corrected, then supplied to a new agent session."""
+    """A fact is created, corrected, then shown to a new agent session."""
 
     async def run() -> None:
         store = InMemoryMemoryStore()
@@ -53,7 +61,7 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
                         )
                     )
                 ],
-                [TextDelta("I am ready to answer.")],
+                [TextDelta(READY)],
                 [TextDelta("I will use Python in future examples.")],
             ]
         )
@@ -63,10 +71,9 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
 
         created = (await store.find(query="preferred language"))[0]
         assert created.description == "The user prefers Python."
-        assert any(
-            message.role == "tool" and '"records": []' in message.content
-            for message in create_llm.messages[0]
-        )
+        # Nothing was stored yet: no memory block, and nothing to search.
+        assert [m.role for m in create_llm.messages[0]] == ["user", "user"]
+        assert "memory_read" not in _offered(create_llm, 1)
 
         update_llm = FakeLLM(
             [
@@ -88,21 +95,21 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
                         )
                     )
                 ],
-                [TextDelta("I am ready to answer.")],
+                [TextDelta(READY)],
                 [TextDelta("I will use Rust in future examples.")],
             ]
         )
         await _collect(
             _agent(update_llm, store).run((Message.user("I now prefer Rust."),))
         )
-        assert any(
-            message.role == "tool" and "The user prefers Python." in message.content
-            for message in update_llm.messages[0]
-        )
+        system = update_llm.messages[0][0]
+        assert system.role == "system"
+        assert "- preferred language: The user prefers Python." in system.content
 
+        # A new session, as after /clear: only the stored memory knows the fact.
         recall_llm = FakeLLM(
             [
-                [TextDelta("I am ready to answer.")],
+                [TextDelta(READY)],
                 [TextDelta("Your preferred language is Rust.")],
             ]
         )
@@ -116,20 +123,152 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
         assert [(record.name, record.description) for record in memories] == [
             ("preferred language", "The user now prefers Rust.")
         ]
-        assert any(
-            message.role == "tool" and "The user now prefers Rust." in message.content
-            for request in recall_llm.messages
-            for message in request
-        )
-        initial_call = next(
-            call
-            for message in recall_llm.messages[0]
-            for call in message.tool_calls
-            if call.name == "memory_read"
-        )
-        assert initial_call.arguments["query"] == "Which language do I prefer?"
+        for request in recall_llm.messages:
+            assert "The user now prefers Rust." in request[0].content
+            assert not any(m.role == "tool" or m.tool_calls for m in request)
+        assert not any(isinstance(e, ToolRunStarted) for e in events)
         assert events[-1] == TurnCompleted(
             [Message.assistant("Your preferred language is Rust.")]
         )
+
+    asyncio.run(run())
+
+
+def test_memories_extend_the_engine_system_message() -> None:
+    """The model still gets one system message: the engine's, then the memories."""
+
+    async def run() -> None:
+        store = InMemoryMemoryStore()
+        await store.create(
+            name="voiture préférée",
+            type="préférence",
+            description="Préfère les voitures BMW.",
+        )
+        llm = FakeLLM([[TextDelta(READY)], [TextDelta("BMW.")]])
+
+        await _collect(
+            _agent(llm, store).run(
+                (Message.system("SYSTEM"), Message.user("Ma voiture préférée ?"))
+            )
+        )
+
+        for request in llm.messages:
+            (system,) = [m for m in request if m.role == "system"]
+            assert system == request[0]
+            assert system.content.startswith("SYSTEM\n\nWhat you remember")
+            assert "voiture préférée: Préfère les voitures BMW." in system.content
+
+    asyncio.run(run())
+
+
+def test_memory_read_is_offered_only_when_some_memories_are_not_shown() -> None:
+    """Past the recall limit, a search can still find what the block left out."""
+
+    async def run() -> tuple[set[str], set[str]]:
+        store = InMemoryMemoryStore()
+        await store.create(name="car", type="preference", description="BMW")
+        complete = FakeLLM([[TextDelta("Thinking.")], [TextDelta("Answer.")]])
+        await _collect(_agent(complete, store).run((Message.user("Hi"),)))
+
+        await store.create(name="language", type="preference", description="Rust")
+        partial = FakeLLM([[TextDelta("Thinking.")], [TextDelta("Answer.")]])
+        await _collect(_agent(partial, store, limit=1).run((Message.user("Hi"),)))
+        return _offered(complete, 1), _offered(partial, 1)
+
+    complete, partial = asyncio.run(run())
+
+    assert "memory_read" not in complete
+    assert {"memory_read", "memory_update"} <= partial
+
+
+def test_memories_are_not_shown_when_the_tools_are_disabled() -> None:
+    """With the tools off (`--no-tools`), memory stays out of the conversation."""
+
+    async def run() -> FakeLLM:
+        store = InMemoryMemoryStore()
+        await store.create(name="car", type="preference", description="BMW")
+        llm = FakeLLM([[TextDelta(READY)], [TextDelta("Hello.")]])
+        registry = ToolRegistry()
+        memory.register_self(registry, store)
+        registry.set_all_enabled(enabled=False)
+        agent = ReActAgent(llm, registry, memory_recall=MemoryRecall(store))
+        await _collect(agent.run((Message.user("Hi"),)))
+        return llm
+
+    llm = asyncio.run(run())
+
+    assert not any(m.role == "system" for request in llm.messages for m in request)
+
+
+def test_react_agent_shows_no_memory_when_nothing_is_stored() -> None:
+    """A public question with nothing stored gets no memory in its context."""
+
+    async def run() -> None:
+        llm = FakeLLM(
+            [
+                [TextDelta('{"thought": "Public knowledge.", "ready": true}')],
+                [TextDelta("It is a public figure.")],
+            ]
+        )
+        events = await _collect(
+            _agent(llm, InMemoryMemoryStore()).run(
+                (Message.user("Who is Sweetie Fox?"),)
+            )
+        )
+
+        assert not any(
+            message.role in ("system", "tool") or message.tool_calls
+            for request in llm.messages
+            for message in request
+        )
+        assert events[-1] == TurnCompleted(
+            [Message.assistant("It is a public figure.")]
+        )
+
+    asyncio.run(run())
+
+
+def test_react_agent_does_not_show_a_tool_call_written_as_text() -> None:
+    """A reply that is only a JSON tool call is dropped and asked again."""
+
+    async def run() -> None:
+        llm = FakeLLM(
+            [
+                [TextDelta("I need nothing.")],
+                [TextDelta('{"name": "memory_read", "parameters": {"query": "x"}}')],
+                [TextDelta("Final answer.")],
+            ]
+        )
+        events = await _collect(
+            _agent(llm, InMemoryMemoryStore()).run((Message.user("Hello"),))
+        )
+
+        shown = "".join(e.text for e in events if isinstance(e, TextDelta))
+        assert shown == "Final answer."
+        assert events[-1] == TurnCompleted([Message.assistant("Final answer.")])
+
+    asyncio.run(run())
+
+
+def test_react_agent_answers_instead_of_repeating_a_tool_call() -> None:
+    """The same call twice in a turn runs once, then the agent answers."""
+
+    async def run() -> None:
+        repeated = ToolCall("memory_read", {"query": "zzz"}, "c1")
+        llm = FakeLLM(
+            [
+                [TextDelta("Let me look.")],
+                [ToolCallRequest(repeated)],
+                [TextDelta("Let me look again.")],
+                [ToolCallRequest(ToolCall("memory_read", {"query": "zzz"}, "c2"))],
+                [TextDelta("Nothing is stored.")],
+            ]
+        )
+        events = await _collect(
+            _agent(llm, InMemoryMemoryStore()).run((Message.user("Hello"),))
+        )
+
+        assert sum(isinstance(e, ToolRunStarted) for e in events) == 1
+        assert events[-1] == TurnCompleted([Message.assistant("Nothing is stored.")])
 
     asyncio.run(run())

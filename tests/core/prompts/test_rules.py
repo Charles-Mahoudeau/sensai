@@ -54,7 +54,7 @@ def test_escaped_braces_are_allowed() -> None:
 
 
 def test_required_phrase_is_checked_ignoring_case() -> None:
-    """`_is_ready()` relies on the phrase the thought prompt asks for."""
+    """The thought prompt must say when the model is ready to answer."""
     validate(REACT_THOUGHT, "{tools} I AM READY TO ANSWER.")
     with pytest.raises(InvalidPromptError, match="ready to answer"):
         validate(REACT_THOUGHT, "{tools} Say: done.")

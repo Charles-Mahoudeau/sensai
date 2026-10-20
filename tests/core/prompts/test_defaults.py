@@ -35,7 +35,7 @@ def test_every_default_passes_its_rule(name: str) -> None:
     ("name", "start", "end"),
     [
         (SYSTEM, "You are Sensai", ".\n"),
-        (REACT_THOUGHT, "Before answering", '."\n'),
+        (REACT_THOUGHT, "Before answering", "small talk.\n"),
         (REACT_NOTES, "\n[Private notes", "user.]"),
         (REACT_ANSWER, "Answer the user's request", "short one."),
     ],
@@ -63,6 +63,6 @@ def test_memory_maintenance_rules_are_in_the_agent_prompts() -> None:
     defaults = load_defaults()
 
     assert "memory_read" in defaults[REACT_THOUGHT]
-    assert "read before writing" in defaults[REACT_THOUGHT]
-    assert "update a matching record" in defaults[REACT_THOUGHT]
+    assert "saved to memory" in defaults[REACT_THOUGHT]
     assert "memory tools" in defaults[SYSTEM]
+    assert "automatically" in defaults[SYSTEM]

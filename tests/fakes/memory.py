@@ -11,6 +11,7 @@ from sensai.core.models.memory import (
     MemoryRecord,
     Session,
     UserProfile,
+    fold_category,
     memory_search_terms,
 )
 from sensai.core.ports import (
@@ -130,7 +131,7 @@ class InMemoryMemoryStore:
         matches = [
             record
             for record in self._records.values()
-            if (type is None or record.type == type)
+            if (type is None or fold_category(record.type) == fold_category(type))
             and (
                 query is None
                 or any(

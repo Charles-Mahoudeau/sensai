@@ -61,3 +61,17 @@ def test_find_matches_terms_from_a_natural_language_query(
         assert await repo.find(query="123") == []
 
     _run(conn, scenario)
+
+
+def test_find_by_type_ignores_case_and_accents(conn: sqlite3.Connection) -> None:
+    """A model searching `preference` finds a record filed as `Préférence`."""
+
+    async def scenario(repo: SqliteMemoryRepository) -> None:
+        await repo.create(name="voiture", type="Préférence", description="BMW")
+        await repo.create(name="Sensai", type="project", description="Epitech")
+
+        found = await repo.find(type="preference", query="voiture")
+
+        assert [record.name for record in found] == ["voiture"]
+
+    _run(conn, scenario)
