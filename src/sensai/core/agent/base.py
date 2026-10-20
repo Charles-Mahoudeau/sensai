@@ -51,6 +51,18 @@ class AgentRun:
         if persist:
             self._produced_messages.append(message)
 
+    def extend_system_message(self, text: str) -> None:
+        """Append `text` to the system message of this run only, never persisted.
+
+        It joins the existing system message after a blank line, so the model
+        still receives exactly one; without one, it becomes the system message.
+        """
+        messages = self._working_messages
+        if messages and messages[0].role == "system":
+            messages[0] = Message.system(f"{messages[0].content}\n\n{text}")
+        else:
+            messages.insert(0, Message.system(text))
+
 
 # Implementation of a Runner that streams one LLM response
 class Agent:

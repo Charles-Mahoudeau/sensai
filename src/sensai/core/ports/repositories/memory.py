@@ -172,7 +172,8 @@ class MemoryRepository(Protocol):
         """Search records, most recently updated first.
 
         Args:
-            type: Only return records of this type; `None` matches every type.
+            type: Only return records of this type, ignoring case and accents;
+                `None` matches every type.
             query: Only return records whose name or description contains at
                 least one text term from this query, ignoring case; `None`
                 matches every record.

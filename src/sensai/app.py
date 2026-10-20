@@ -30,6 +30,8 @@ from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.config import Config, load_config
+from sensai.core.agent.memory_extraction import MemoryExtractor
+from sensai.core.agent.memory_recall import MemoryRecall
 from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.agent.structured import StructuredOutputCatalog
@@ -40,7 +42,7 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 from sensai.core.sessions import SessionRecorder
-from sensai.core.tools.builtin import web_search
+from sensai.core.tools.builtin import memory, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 
@@ -50,7 +52,7 @@ if TYPE_CHECKING:
 
     from sensai.core.agent import Agent
     from sensai.core.models import McpServerStatus, Message
-    from sensai.core.ports import LLM, McpClient
+    from sensai.core.ports import LLM, McpClient, MemoryRepository
 
 
 @dataclass(frozen=True)
@@ -101,7 +103,9 @@ async def build_engine(
 
 
 async def build_tools(
-    config: Config, stack: contextlib.AsyncExitStack
+    config: Config,
+    stack: contextlib.AsyncExitStack,
+    memory_repository: MemoryRepository,
 ) -> tuple[ToolRegistry, tuple[McpServerStatus, ...]]:
     """Build the tool registry: the built-in tools, then each MCP server's.
 
@@ -110,12 +114,14 @@ async def build_tools(
     Args:
         config: The application configuration.
         stack: Closes the MCP clients when the app exits.
+        memory_repository: Where the memory tools store and read records.
 
     Returns:
         The registry, and the outcome of connecting to each MCP server.
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
+    memory.register_self(tool_registry, memory_repository)
 
     clients: list[McpClient] = []
     if config.mcp.github_token:
@@ -143,6 +149,7 @@ async def build_agent(
     client: httpx.AsyncClient,
     tool_registry: ToolRegistry,
     agent_prompts: AgentPrompts | None = None,
+    memory_repository: MemoryRepository | None = None,
 ) -> ReActAgent:
     """Build the ReAct agent around its tools.
 
@@ -151,6 +158,8 @@ async def build_agent(
         client: The HTTP client used by the Ollama adapter.
         tool_registry: The tools offered to the model, as built by `build_tools`.
         agent_prompts: Prompts overriding the agent's defaults, if any.
+        memory_repository: Where the agent records what the user says about
+            themself and recalls it from; no automatic memory when `None`.
 
     Returns:
         The agent.
@@ -162,7 +171,14 @@ async def build_agent(
         else None
     )
     agent = ReActAgent(
-        llm, tool_registry, agent_prompts, structured_output=structured_output
+        llm,
+        tool_registry,
+        agent_prompts,
+        structured_output=structured_output,
+        memory_extractor=(
+            MemoryExtractor(llm, memory_repository) if memory_repository else None
+        ),
+        memory_recall=MemoryRecall(memory_repository) if memory_repository else None,
     )
     agent.thinking_effort = config.agent.thinking_effort
     return agent
@@ -231,9 +247,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
         )
         history = await session_repo.get_messages(session.id)
 
-        tools, mcp_servers = await build_tools(config, stack)
+        tools, mcp_servers = await build_tools(config, stack, memory_repo)
         tools.set_all_enabled(enabled=options.tools_enabled)
-        agent = await build_agent(config, client, tools, agent_prompts)
+        agent = await build_agent(config, client, tools, agent_prompts, memory_repo)
         engine = await build_engine(
             config,
             agent,
