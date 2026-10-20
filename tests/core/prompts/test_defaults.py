@@ -34,7 +34,7 @@ def test_every_default_passes_its_rule(name: str) -> None:
 @pytest.mark.parametrize(
     ("name", "start", "end"),
     [
-        (SYSTEM, "You are Sensai", ".\n"),
+        (SYSTEM, "You are an AI assistant", ".\n"),
         (REACT_THOUGHT, "Before answering", '."\n'),
         (REACT_NOTES, "\n[Private notes", "user.]"),
         (REACT_ANSWER, "Answer the user's request", "short one."),
