@@ -69,7 +69,9 @@ caller without a database). See [Prompt Versioning](prompts.md).
 
 The recall only runs while `memory_read` is enabled; a planned write only runs
 while its tool is enabled: with `--no-tools`, nothing is shown or recorded.
-`app.py` passes both when it has a memory repository.
+`app.py` passes both when it has a memory repository, with the active versions
+of the `memory_extraction` and `memory_recall` prompts (`MemoryPrompts`, next to
+`AgentPrompts`): like the ReAct prompts, they are versioned in the library.
 
 Why the system message and not a `memory_read` result: a small model ignored a
 tool result it never asked for, but uses the system message, as it does the

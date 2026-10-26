@@ -277,3 +277,15 @@ def test_a_statement_followed_by_a_question_keeps_its_facts() -> None:
     calls = _calls(llm, InMemoryMemoryStore(), "Je préfère Rust. Un exemple ?")
 
     assert [call.name for call in calls] == ["memory_create"]
+
+
+def test_the_extractor_uses_the_prompt_it_is_given() -> None:
+    """A versioned prompt replaces the default, with the memories filled in."""
+    store = InMemoryMemoryStore()
+    asyncio.run(store.create(name="ville", type="identity", description="Lyon"))
+    llm = FakeLLM([_facts()])
+    extractor = MemoryExtractor(llm, store, "Facts and forget of:\n{memories}")
+
+    asyncio.run(extractor.calls_for("Bonjour."))
+
+    assert llm.messages[0][0].content == "Facts and forget of:\n- ville: Lyon"

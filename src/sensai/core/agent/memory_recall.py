@@ -11,6 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sensai.core.agent.prompts import MemoryPrompts
 from sensai.core.ports import StorageError
 
 if TYPE_CHECKING:
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 # Enough for what a personal assistant knows about its user, while leaving most
 # of a small model's context to the conversation.
 _DEFAULT_LIMIT = 20
-_TITLE = "What you remember about the user from earlier conversations:"
 
 _logger = logging.getLogger("MemoryRecall")
 
@@ -46,16 +46,23 @@ class MemoryRecall:
     """Selects the stored memories to show and writes them for the model."""
 
     def __init__(
-        self, memory: MemoryRepository, *, limit: int = _DEFAULT_LIMIT
+        self,
+        memory: MemoryRepository,
+        *,
+        limit: int = _DEFAULT_LIMIT,
+        title: str | None = None,
     ) -> None:
         """Store where the memories are and how many to show at most.
 
         Args:
             memory: The stored records.
             limit: The most records shown in one turn.
+            title: The `memory_recall` prompt, written above the memories; the
+                code default when `None`.
         """
         self._memory = memory
         self._limit = limit
+        self._title = title or MemoryPrompts.defaults().recall
 
     async def recall(self, request: str) -> Recollection:
         """Return every stored memory, or the most relevant ones past `limit`.
@@ -74,17 +81,17 @@ class MemoryRecall:
         except StorageError as error:
             _logger.warning("Could not recall memories: %s", error)
             return Recollection("", complete=False)
-        return Recollection(_render(stored), complete=complete)
+        return Recollection(_render(self._title, stored), complete=complete)
 
 
-def _render(records: Sequence[MemoryRecord]) -> str:
+def _render(title: str, records: Sequence[MemoryRecord]) -> str:
     """List the records under a title.
 
     No id: the model doesn't write memory, and could repeat it to the user.
     """
     if not records:
         return ""
-    lines = [_TITLE]
+    lines = [title]
     for record in records:
         fact = record.name
         if record.description:

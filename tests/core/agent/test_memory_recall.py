@@ -71,3 +71,12 @@ def test_a_storage_failure_shows_nothing() -> None:
     recollection = asyncio.run(MemoryRecall(_BrokenStore()).recall("Hi"))
 
     assert recollection == Recollection("", complete=False)
+
+
+def test_the_title_comes_from_the_prompt_it_is_given() -> None:
+    """A versioned `memory_recall` prompt replaces the default title."""
+    store = _store(("ville", "Lyon"))
+
+    recollection = asyncio.run(MemoryRecall(store, title="Souvenirs :").recall("?"))
+
+    assert recollection.text == "Souvenirs :\n- ville: Lyon"

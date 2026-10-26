@@ -11,6 +11,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from sensai.core.agent.prompts import MemoryPrompts
 from sensai.core.agent.structured import JsonSchemaOutput, StructuredOutputError
 from sensai.core.models import TextDelta, ToolCall
 from sensai.core.models.llm import ChatOptions, Message
@@ -54,45 +55,6 @@ _FACT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_PROMPT = """\
-You maintain the long-term memory of an assistant. Read the user's message and \
-list every durable fact it states about the user: who they are, where they live, \
-their job, family and pets, what they like, prefer, support or use, their \
-projects, habits and goals, including corrections of earlier facts. Ignore \
-requests, small talk, temporary states (such as being tired today), and general \
-knowledge that is not about the user. A question never states a fact, even when \
-it is about the user: never answer it or guess.
-
-For each fact give:
-- subject: a short label for what the fact is about. When the fact is about one \
-of the existing subjects below, reuse that subject exactly.
-- category: one of preference, identity, project, habit, goal or other, always \
-in English.
-- fact: one full sentence stating it about the user, keeping names as the user \
-wrote them.
-
-In forget, list the existing subjects below that the user explicitly asks to \
-forget or delete, copied exactly. A new value for a subject is a fact, not \
-something to forget.
-
-Examples:
-"Je vis à Nantes." -> {"facts": [{"subject": "ville", "category": "identity", \
-"fact": "Vit à Nantes."}], "forget": []}
-"Je supporte l'OL." -> {"facts": [{"subject": "équipe de foot préférée", \
-"category": "preference", "fact": "Supporte l'Olympique lyonnais."}], \
-"forget": []}
-"Oublie que je supporte l'OL." -> {"facts": [], "forget": \
-["équipe de foot préférée"]}
-"Oublie où j'habite." -> {"facts": [], "forget": ["ville"]}
-"Dans quelle ville j'habite ?" -> {"facts": [], "forget": []}
-"Quelle heure est-il ?" -> {"facts": [], "forget": []}
-
-Write subject and fact in the user's language. Reply with \
-{"facts": [], "forget": []} when there is nothing to remember or forget.
-
-Existing memories:
-"""
-
 _logger = logging.getLogger("MemoryExtractor")
 _output = JsonSchemaOutput(_FACT_SCHEMA)
 
@@ -100,15 +62,20 @@ _output = JsonSchemaOutput(_FACT_SCHEMA)
 class MemoryExtractor:
     """Plans the memory tool calls that record a user's message."""
 
-    def __init__(self, llm: LLM, memory: MemoryRepository) -> None:
+    def __init__(
+        self, llm: LLM, memory: MemoryRepository, prompt: str | None = None
+    ) -> None:
         """Store the model used for extraction and the memory it compares with.
 
         Args:
             llm: The chat model asked to extract the facts.
             memory: The stored records, to tell a new fact from a changed one.
+            prompt: The `memory_extraction` prompt, filled with `{memories}`;
+                the code default when `None`.
         """
         self._llm = llm
         self._memory = memory
+        self._prompt = prompt or MemoryPrompts.defaults().extraction
 
     async def calls_for(self, user_message: str) -> list[ToolCall]:
         """Return the create, update and delete calls that record `user_message`.
@@ -181,7 +148,7 @@ class MemoryExtractor:
         """
         listing = "\n".join(f"- {r.name}: {r.description}" for r in known) or "(none)"
         messages = [
-            Message.system(_PROMPT + listing),
+            Message.system(self._prompt.format(memories=listing)),
             Message.user(user_message),
         ]
         options = ChatOptions(response_schema=_output.schema)

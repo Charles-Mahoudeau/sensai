@@ -9,6 +9,8 @@ JUDGE = "judge"
 REACT_THOUGHT = "react_thought"
 REACT_NOTES = "react_notes"
 REACT_ANSWER = "react_answer"
+MEMORY_EXTRACTION = "memory_extraction"
+MEMORY_RECALL = "memory_recall"
 
 
 def load_defaults() -> dict[str, str]:

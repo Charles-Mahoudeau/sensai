@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from string import Formatter
 
 from sensai.core.errors import SensaiError
-from sensai.core.prompts.defaults import REACT_NOTES, REACT_THOUGHT
+from sensai.core.prompts.defaults import (
+    MEMORY_EXTRACTION,
+    REACT_NOTES,
+    REACT_THOUGHT,
+)
 
 
 class InvalidPromptError(SensaiError, ValueError):
@@ -30,6 +34,8 @@ class PromptRule:
 PROMPT_RULES: dict[str, PromptRule] = {
     REACT_THOUGHT: PromptRule(frozenset({"tools"}), ("ready to answer",)),
     REACT_NOTES: PromptRule(frozenset({"thought"})),
+    # The code parses both fields of the reply.
+    MEMORY_EXTRACTION: PromptRule(frozenset({"memories"}), ('"facts"', '"forget"')),
 }
 
 

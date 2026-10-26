@@ -32,7 +32,7 @@ from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.config import Config, load_config
 from sensai.core.agent.memory_extraction import MemoryExtractor
 from sensai.core.agent.memory_recall import MemoryRecall
-from sensai.core.agent.prompts import AgentPrompts
+from sensai.core.agent.prompts import AgentPrompts, MemoryPrompts
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
@@ -150,6 +150,7 @@ async def build_agent(
     tool_registry: ToolRegistry,
     agent_prompts: AgentPrompts | None = None,
     memory_repository: MemoryRepository | None = None,
+    memory_prompts: MemoryPrompts | None = None,
 ) -> ReActAgent:
     """Build the ReAct agent around its tools.
 
@@ -160,11 +161,13 @@ async def build_agent(
         agent_prompts: Prompts overriding the agent's defaults, if any.
         memory_repository: Where the agent records what the user says about
             themself and recalls it from; no automatic memory when `None`.
+        memory_prompts: Prompts overriding the memory defaults, if any.
 
     Returns:
         The agent.
     """
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    memory_prompts = memory_prompts or MemoryPrompts.defaults()
     structured_output = (
         StructuredOutputCatalog(config.structured_output.schemas)
         if config.structured_output.enabled
@@ -176,9 +179,15 @@ async def build_agent(
         agent_prompts,
         structured_output=structured_output,
         memory_extractor=(
-            MemoryExtractor(llm, memory_repository) if memory_repository else None
+            MemoryExtractor(llm, memory_repository, memory_prompts.extraction)
+            if memory_repository
+            else None
         ),
-        memory_recall=MemoryRecall(memory_repository) if memory_repository else None,
+        memory_recall=(
+            MemoryRecall(memory_repository, title=memory_prompts.recall)
+            if memory_repository
+            else None
+        ),
     )
     agent.thinking_effort = config.agent.thinking_effort
     return agent
@@ -238,6 +247,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
         profile = await _get_profile_sys_prompt(config, db)
         system_prompt = await prompts.system_prompt(profile)
         agent_prompts = await AgentPrompts.active(prompts)
+        memory_prompts = await MemoryPrompts.active(prompts)
 
         session_repo = SqliteSessionRepository(db)
         memory_repo = SqliteMemoryRepository(db)
@@ -249,7 +259,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
 
         tools, mcp_servers = await build_tools(config, stack, memory_repo)
         tools.set_all_enabled(enabled=options.tools_enabled)
-        agent = await build_agent(config, client, tools, agent_prompts, memory_repo)
+        agent = await build_agent(
+            config, client, tools, agent_prompts, memory_repo, memory_prompts
+        )
         engine = await build_engine(
             config,
             agent,
