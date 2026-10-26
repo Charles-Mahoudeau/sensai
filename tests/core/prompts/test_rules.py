@@ -7,6 +7,7 @@ import pytest
 from sensai.core.errors import SensaiError
 from sensai.core.prompts import (
     JUDGE,
+    MEMORY_EXTRACTION,
     REACT_NOTES,
     REACT_THOUGHT,
     SYSTEM,
@@ -54,7 +55,7 @@ def test_escaped_braces_are_allowed() -> None:
 
 
 def test_required_phrase_is_checked_ignoring_case() -> None:
-    """`_is_ready()` relies on the phrase the thought prompt asks for."""
+    """The thought prompt must say when the model is ready to answer."""
     validate(REACT_THOUGHT, "{tools} I AM READY TO ANSWER.")
     with pytest.raises(InvalidPromptError, match="ready to answer"):
         validate(REACT_THOUGHT, "{tools} Say: done.")
@@ -70,3 +71,12 @@ def test_untemplated_prompts_accept_any_text() -> None:
 def test_invalid_prompt_error_is_a_sensai_error() -> None:
     """Callers that handle `SensaiError` also handle invalid prompts."""
     assert issubclass(InvalidPromptError, SensaiError)
+
+
+def test_memory_extraction_needs_its_memories_and_both_fields() -> None:
+    """The code fills `{memories}` in and parses `facts` and `forget`."""
+    validate(MEMORY_EXTRACTION, 'Reply {{"facts": [], "forget": []}}. {memories}')
+    with pytest.raises(InvalidPromptError, match=r"must contain \{memories\}"):
+        validate(MEMORY_EXTRACTION, 'Reply {{"facts": [], "forget": []}}.')
+    with pytest.raises(InvalidPromptError, match="forget"):
+        validate(MEMORY_EXTRACTION, 'Reply {{"facts": []}}. {memories}')
