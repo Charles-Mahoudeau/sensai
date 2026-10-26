@@ -101,9 +101,13 @@ whatever the user's language, and a `type` filter ignores case and accents, so
 Each thought is asked for in JSON, `{"thought": "...", "ready": true}`, with a
 response schema. `ready` decides whether the next call offers the tools, so it
 no longer depends on the model writing an exact English sentence (it reasons in
-the user's language). A reply that is not valid JSON counts as not ready. The
-thought is shown once complete: an empty `ThinkingDelta` first opens the step in
-the front-end.
+the user's language). A reply that is not valid JSON counts as not ready.
+
+The thought still streams: the schema puts `thought` first, and `ThoughtStream`
+(`core/agent/thought_stream.py`) decodes that string chunk by chunk, an escape
+cut between two chunks (`\u00e9`) waiting for the next one; `ready` is read once
+the reply is complete. An empty `ThinkingDelta` first opens the step in the
+front-end, so its clock runs while the model reads the prompt.
 
 When the tools are offered, the template pushes the model to call one. A reply
 that then opens with JSON without being a call (`{}`, sometimes followed by

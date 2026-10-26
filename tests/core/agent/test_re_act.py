@@ -120,7 +120,8 @@ def test_a_ready_thought_gets_the_answer_without_tools() -> None:
     assert llm.messages[1][-1] == HISTORY[-1]
     assert [e for e in events if isinstance(e, ThinkingDelta)] == [
         ThinkingDelta(""),
-        ThinkingDelta("Je sais déjà tout.", ready=True),
+        ThinkingDelta("Je sais déjà tout."),
+        ThinkingDelta("", ready=True),
     ]
 
 
@@ -175,3 +176,31 @@ def test_a_json_answer_without_tools_is_kept() -> None:
     events = _run(ReActAgent(llm, _tools(), PROMPTS))
 
     assert events[-1] == TurnCompleted([Message.assistant('{"a": 1}')])
+
+
+def test_the_thought_streams_as_its_json_arrives() -> None:
+    """Each chunk shows its decoded text, even with an escape cut in two."""
+    chunks = [
+        '{"thou',
+        'ght": "Je sais d\\u00',
+        'e9j\\u00e0 \\"',
+        'tout\\" \\ud83d',
+        "\\ude00",
+        '.", "ready": true}',
+    ]
+    llm = FakeLLM([[TextDelta(chunk) for chunk in chunks], [TextDelta("Python.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    deltas = [e for e in events if isinstance(e, ThinkingDelta)]
+    assert [d.text for d in deltas] == [
+        "",
+        "Je sais d",
+        'éjà "',
+        'tout" ',
+        "😀",
+        ".",
+        "",
+    ]
+    assert deltas[-1].ready
+    assert llm.tools[1] == []

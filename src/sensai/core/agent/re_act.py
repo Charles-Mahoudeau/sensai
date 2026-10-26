@@ -15,6 +15,7 @@ from sensai.core.agent.structured import (
     StructuredOutputError,
     format_structured_output,
 )
+from sensai.core.agent.thought_stream import ThoughtStream
 from sensai.core.models import TextDelta, ThinkingEffort, ToolCall
 from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta, ToolCallRequest
 
@@ -265,27 +266,32 @@ class ReActAgent(Agent):
     async def _generate_thought(
         self, run: AgentRun, tools: Sequence[ToolSpec], thoughts: list[_Thought]
     ) -> AsyncIterator[AgentEvent]:
-        """Ask for a private thought and whether it is ready; append it to `thoughts`.
+        """Stream a private thought, then append it and its readiness to `thoughts`.
 
-        The model replies in JSON, so the thought is shown once complete; an
-        empty delta first opens it in the front-end, which then shows its clock.
+        The model replies in JSON: the `thought` text streams as `ThoughtStream`
+        decodes it, and `ready` is read once the reply is complete. An empty
+        delta first opens the thought in the front-end, which shows its clock
+        while the model reads the prompt.
         """
         yield ThinkingDelta(text="")
         prompt = self._prompts.thought.format(tools=_describe_tools(tools))
         options = ChatOptions(response_schema=_THOUGHT_OUTPUT.schema)
-        text = "".join(
-            [
-                event.text
-                async for event in self._llm.chat(
-                    [*run.messages, Message.user(prompt)], options=options
-                )
-                if isinstance(event, TextDelta)
-            ]
-        )
+        stream = ThoughtStream()
+        text_parts: list[str] = []
+        shown = False
+        async for event in self._llm.chat(
+            [*run.messages, Message.user(prompt)], options=options
+        ):
+            if isinstance(event, TextDelta):
+                text_parts.append(event.text)
+                if fragment := stream.feed(event.text):
+                    shown = True
+                    yield ThinkingDelta(text=fragment)
 
-        thought = _parse_thought(text)
+        thought = _parse_thought("".join(text_parts))
         thoughts.append(thought)
-        yield ThinkingDelta(text=thought.text, ready=thought.ready)
+        # A reply that was not JSON streamed nothing: show it whole.
+        yield ThinkingDelta(text="" if shown else thought.text, ready=thought.ready)
 
     async def _act(
         self,
