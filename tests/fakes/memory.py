@@ -25,7 +25,7 @@ from sensai.core.ports import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from sensai.core.models.llm import Message
+    from sensai.core.models.llm import Message, UsageTotals
     from sensai.core.ports import (
         MemoryRepository,
         SessionRepository,
@@ -82,6 +82,11 @@ class InMemorySessionStore:
         """Return the messages of a session, oldest first."""
         await self.get_session(session_id)
         return list(self._messages[session_id])
+
+    async def add_usage(self, session_id: int, usage: UsageTotals) -> None:
+        """Add usage to the session's totals."""
+        session = await self.get_session(session_id)
+        self._sessions[session_id] = replace(session, usage=session.usage + usage)
 
     async def delete_session(self, session_id: int) -> None:
         """Delete a session and its messages."""

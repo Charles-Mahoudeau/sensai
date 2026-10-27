@@ -9,7 +9,7 @@ from sensai.core.errors import SensaiError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sensai.core.models.llm import Message
+    from sensai.core.models.llm import Message, UsageTotals
     from sensai.core.models.memory import MemoryRecord, Session, UserProfile
 
 
@@ -125,6 +125,15 @@ class SessionRepository(Protocol):
         Raises:
             SessionNotFoundError: No session has this id.
             StorageError: The store failed to read.
+        """
+        ...
+
+    async def add_usage(self, session_id: int, usage: UsageTotals) -> None:
+        """Add token usage to the totals saved for a session.
+
+        Raises:
+            SessionNotFoundError: No session has this id.
+            StorageError: The store failed to write.
         """
         ...
 

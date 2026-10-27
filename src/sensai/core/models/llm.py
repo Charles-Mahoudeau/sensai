@@ -232,3 +232,56 @@ class LoadedModel:
     def fully_on_gpu(self) -> bool:
         """Tell whether the whole model fits in video memory."""
         return self.ram_bytes == 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UsageTotals:
+    """Token usage added up over several model responses, e.g. a whole session.
+
+    `generation_time` adds up the time spent generating completion tokens, so
+    it gives an average generation speed.
+    """
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    calls: int = 0
+    generation_time: timedelta = timedelta(0)
+
+    def __post_init__(self) -> None:
+        """Reject negative totals."""
+        for name in ("prompt_tokens", "completion_tokens", "calls"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if self.generation_time < timedelta(0):
+            raise ValueError("generation_time must be non-negative")
+
+    def __add__(self, other: UsageTotals) -> UsageTotals:
+        """Return the sum of two totals."""
+        return UsageTotals(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            calls=self.calls + other.calls,
+            generation_time=self.generation_time + other.generation_time,
+        )
+
+    def add(self, done: ChatDone) -> UsageTotals:
+        """Return these totals with one more model response counted."""
+        return self + UsageTotals(
+            prompt_tokens=done.usage.prompt_tokens,
+            completion_tokens=done.usage.completion_tokens,
+            calls=1,
+            generation_time=done.timings.eval if done.timings else timedelta(0),
+        )
+
+    @property
+    def total_tokens(self) -> int:
+        """Return the sum of prompt and completion tokens."""
+        return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def completion_tokens_per_second(self) -> float | None:
+        """Return the average generation speed, or `None` if it is unknown."""
+        seconds = self.generation_time.total_seconds()
+        if seconds > 0:
+            return self.completion_tokens / seconds
+        return None
