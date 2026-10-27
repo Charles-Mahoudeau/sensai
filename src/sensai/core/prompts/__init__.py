@@ -3,6 +3,8 @@
 from sensai.core.prompts.comparison import ComparisonReport, PromptComparison
 from sensai.core.prompts.defaults import (
     JUDGE,
+    MEMORY_EXTRACTION,
+    MEMORY_RECALL,
     REACT_ANSWER,
     REACT_NOTES,
     REACT_THOUGHT,
@@ -14,6 +16,8 @@ from sensai.core.prompts.rules import InvalidPromptError, validate
 
 __all__ = [
     "JUDGE",
+    "MEMORY_EXTRACTION",
+    "MEMORY_RECALL",
     "REACT_ANSWER",
     "REACT_NOTES",
     "REACT_THOUGHT",

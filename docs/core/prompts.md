@@ -22,6 +22,8 @@ Prompts in use today:
 | `react_notes` | ReAct agent: wraps that thought for the acting call (`{thought}` is filled in) |
 | `react_answer` | ReAct agent: asks for the final answer after tool results |
 | `judge` | `sensai prompts compare`: judges which of two answers is better |
+| `memory_extraction` | Memory: asks for the facts and subjects to forget of a message (`{memories}` is filled in) |
+| `memory_recall` | Memory: the title above the memories appended to the system message |
 
 `system` and the `react_*` defaults are the prompts written in the ReAct agent
 PR (#106), moved to files unchanged.
@@ -159,16 +161,17 @@ while a rollback to an older version is not undone by the next restart.
 
 ## Validation
 
-Two prompts are templates the code fills in with `str.format`. A version that
+Three prompts are templates the code fills in with `str.format`. A version that
 breaks them is refused by `new` (and a broken default fails at startup), with a
 message saying what is wrong:
 
 | Prompt | Placeholders (exactly these) | Must contain |
 | --- | --- | --- |
-| `react_thought` | `{tools}` | `ready to answer` (the phrase `_is_ready()` looks for) |
+| `react_thought` | `{tools}` | `ready to answer` (it tells the model when to set `"ready"`) |
 | `react_notes` | `{thought}` | |
+| `memory_extraction` | `{memories}` | `"facts"` and `"forget"` (the fields the code parses) |
 
-Write literal braces in these two as `{{` and `}}`. The other prompts are sent
+Write literal braces in these three as `{{` and `}}`. The other prompts are sent
 as they are, so any text is valid. The rules live in `core/prompts/rules.py`
 (`PROMPT_RULES`).
 

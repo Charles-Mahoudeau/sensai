@@ -156,7 +156,7 @@ def test_model_receives_exactly_one_system_message(
         [
             [TextDelta("I need data.")],
             [ToolCallRequest(ToolCall("web_search", {"query": "q"}, id="c1"))],
-            [TextDelta("I am ready to answer.")],
+            [TextDelta('{"thought": "All known.", "ready": true}')],
             [TextDelta("Done.")],
         ]
     )
