@@ -27,12 +27,18 @@ from sensai.core.models import (
     ThinkingEffort,
     ToolCall,
 )
-from sensai.core.models.llm import LoadedModel, ThinkingDelta, ToolCallRequest
+from sensai.core.models.llm import (
+    LoadedModel,
+    ThinkingDelta,
+    ToolCallRequest,
+    UsageTotals,
+)
 from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import PersonaNotFoundError
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
+from sensai.core.usage import UsageMeter
 from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
 
 if TYPE_CHECKING:
@@ -289,6 +295,15 @@ def test_engine_without_model_memory_reports_nothing() -> None:
     engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
 
     assert asyncio.run(engine.loaded_model()) is None
+
+
+def test_engine_reports_the_session_usage() -> None:
+    """The engine reads the session's usage from its meter, zero without one."""
+    meter = UsageMeter(UsageTotals(prompt_tokens=7, calls=1))
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), usage_meter=meter)
+
+    assert engine.usage() == UsageTotals(prompt_tokens=7, calls=1)
+    assert Engine(ScriptedRunner(()), Pipeline(), EventBus()).usage() == UsageTotals()
 
 
 class RecordingRunner:

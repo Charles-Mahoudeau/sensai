@@ -6,7 +6,13 @@ from datetime import timedelta
 
 import pytest
 
-from sensai.core.models.llm import ChatDone, LoadedModel, Timings, Usage
+from sensai.core.models.llm import (
+    ChatDone,
+    LoadedModel,
+    Timings,
+    Usage,
+    UsageTotals,
+)
 
 
 def _timings(prompt_eval: timedelta, eval_: timedelta) -> Timings:
@@ -79,3 +85,38 @@ def test_negative_size_is_rejected() -> None:
     """A model cannot use a negative amount of memory."""
     with pytest.raises(ValueError, match="vram_bytes must be non-negative"):
         LoadedModel(name="m", size_bytes=10, vram_bytes=-1)
+
+
+def test_usage_totals_add_one_response() -> None:
+    """A response adds its tokens, one call, and its generation time."""
+    done = ChatDone(
+        Usage(completion_tokens=50, prompt_tokens=400),
+        "stop",
+        _timings(timedelta(milliseconds=500), timedelta(seconds=2)),
+    )
+
+    totals = UsageTotals(prompt_tokens=100, calls=1).add(done)
+
+    assert totals == UsageTotals(
+        prompt_tokens=500,
+        completion_tokens=50,
+        calls=2,
+        generation_time=timedelta(seconds=2),
+    )
+    assert totals.total_tokens == 550
+    assert totals.completion_tokens_per_second == 25
+
+
+def test_usage_totals_without_timings_have_no_speed() -> None:
+    """A response without durations is counted, with no generation time."""
+    totals = UsageTotals().add(ChatDone(Usage(completion_tokens=5, prompt_tokens=1)))
+
+    assert totals.calls == 1
+    assert totals.generation_time == timedelta(0)
+    assert totals.completion_tokens_per_second is None
+
+
+def test_usage_totals_reject_negative_counts() -> None:
+    """A total cannot go below zero."""
+    with pytest.raises(ValueError, match="calls must be non-negative"):
+        UsageTotals(calls=-1)
