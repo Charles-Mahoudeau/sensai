@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from sensai.adapters.cli import PromptCommands
 from sensai.adapters.http import BearerAuth
 from sensai.adapters.mcp.http_client import HttpMcpClient
-from sensai.adapters.ollama import OllamaChat
+from sensai.adapters.ollama import OllamaChat, OllamaMonitor
 from sensai.adapters.persona import TomlPersonaDir
 from sensai.adapters.profile import read_profile_file
 from sensai.adapters.storage import sqlite_migrator
@@ -39,6 +39,7 @@ from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
 from sensai.core.events import EventBus
+from sensai.core.model_memory import ModelMemory
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
 
     from sensai.core.agent import Agent
     from sensai.core.models import McpServerStatus, Message
-    from sensai.core.ports import LLM, McpClient, MemoryRepository
+    from sensai.core.ports import LLM, McpClient, MemoryRepository, ModelMonitor
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ async def build_engine(
     profile: str = "",
     tools: ToolRegistry | None = None,
     mcp_servers: Sequence[McpServerStatus] = (),
+    monitor: ModelMonitor | None = None,
 ) -> Engine:
     """Build an Engine around an already configured agent.
 
@@ -90,6 +92,7 @@ async def build_engine(
         profile: The rendered user profile, after the persona.
         tools: The agent's tools, so front-ends can list and toggle them.
         mcp_servers: The outcome of connecting to each MCP server.
+        monitor: Reports the memory used by the configured model, if any.
 
     Returns:
         The engine, ready to be driven by the TUI or CLI.
@@ -107,6 +110,7 @@ async def build_engine(
         history=history,
         tools=tools,
         mcp_servers=mcp_servers,
+        model_memory=ModelMemory(monitor, config.model) if monitor else None,
     )
     if config.personas.default is not None:
         engine.set_persona(config.personas.default)
@@ -281,6 +285,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             profile=profile,
             tools=tools,
             mcp_servers=mcp_servers,
+            monitor=OllamaMonitor(client, config.ollama.url),
         )
         recorder = SessionRecorder(
             session_repo,

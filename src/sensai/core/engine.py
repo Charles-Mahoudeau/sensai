@@ -30,7 +30,9 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Sequence
 
     from sensai.core.agent.events import AgentEvent
+    from sensai.core.model_memory import ModelMemory
     from sensai.core.models import McpServerStatus, ToolInfo
+    from sensai.core.models.llm import LoadedModel
     from sensai.core.models.persona import Persona
     from sensai.core.ports import PersonaSource
     from sensai.core.tools.registry import ToolRegistry
@@ -66,6 +68,7 @@ class Engine:
         history: Sequence[Message] = (),
         tools: ToolRegistry | None = None,
         mcp_servers: Sequence[McpServerStatus] = (),
+        model_memory: ModelMemory | None = None,
     ) -> None:
         """Initialize the engine with its processing dependencies.
 
@@ -79,6 +82,7 @@ class Engine:
             history: Messages restored from a previous session.
             tools: The runner's tools, listed and toggled by front-ends.
             mcp_servers: The outcome of connecting to each MCP server.
+            model_memory: Reads the model's memory footprint; none if None.
         """
         self._runner = runner
         self._pipeline = pipeline
@@ -91,6 +95,7 @@ class Engine:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._tools = tools
         self._mcp_servers = tuple(mcp_servers)
+        self._model_memory = model_memory
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -142,6 +147,16 @@ class Engine:
     def mcp_servers(self) -> tuple[McpServerStatus, ...]:
         """The MCP servers configured at startup, connected or not."""
         return self._mcp_servers
+
+    async def loaded_model(self) -> LoadedModel | None:
+        """The memory the model uses, or None if unknown or not loaded right now.
+
+        Raises:
+            LLMError: The model server cannot be reached or misbehaves.
+        """
+        if self._model_memory is None:
+            return None
+        return await self._model_memory.current()
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
