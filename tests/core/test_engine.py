@@ -19,6 +19,7 @@ from sensai.core.events import (
     ThinkingGenerated,
     TokenGenerated,
 )
+from sensai.core.model_memory import ModelMemory
 from sensai.core.models import (
     McpServerStatus,
     Message,
@@ -26,13 +27,13 @@ from sensai.core.models import (
     ThinkingEffort,
     ToolCall,
 )
-from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
+from sensai.core.models.llm import LoadedModel, ThinkingDelta, ToolCallRequest
 from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import PersonaNotFoundError
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeLLM, InMemoryPersonaSource
+from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -272,6 +273,22 @@ def test_engine_without_tools_lists_none() -> None:
         engine.set_tool_enabled("web_search", enabled=False)
     with pytest.raises(KeyError):
         engine.set_tools_enabled(enabled=False, names=["web_search"])
+
+
+def test_engine_reports_the_loaded_model() -> None:
+    """The engine reads the model's memory through its ModelMemory."""
+    model = LoadedModel(name="qwen3:8b", size_bytes=10, vram_bytes=8)
+    memory = ModelMemory(FakeModelMonitor(model), "qwen3:8b")
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), model_memory=memory)
+
+    assert asyncio.run(engine.loaded_model()) == model
+
+
+def test_engine_without_model_memory_reports_nothing() -> None:
+    """With no monitor the footprint is unknown."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert asyncio.run(engine.loaded_model()) is None
 
 
 class RecordingRunner:

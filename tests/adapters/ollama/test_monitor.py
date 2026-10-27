@@ -18,10 +18,13 @@ if TYPE_CHECKING:
 type Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def _loaded_models(handler: Handler) -> Sequence[LoadedModel]:
+def _loaded_models(handler: Handler, **kwargs: float) -> Sequence[LoadedModel]:
     async def run() -> Sequence[LoadedModel]:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await OllamaMonitor(client, "http://ollama:11434/").loaded_models()
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), timeout=None
+        ) as client:
+            monitor = OllamaMonitor(client, "http://ollama:11434/", **kwargs)
+            return await monitor.loaded_models()
 
     return asyncio.run(run())
 
@@ -73,6 +76,29 @@ def test_connection_refused_is_unavailable() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(LLMUnavailableError, match="cannot reach Ollama"):
+        _loaded_models(handler)
+
+
+def test_request_has_its_own_timeout() -> None:
+    """`/api/ps` gets a timeout even when the client has none."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"models": []})
+
+    _loaded_models(handler, timeout=2.0)
+
+    assert seen[0].extensions["timeout"]["read"] == 2.0
+
+
+def test_timeout_is_unavailable() -> None:
+    """A server that does not answer in time is reported as unavailable."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("too slow", request=request)
 
     with pytest.raises(LLMUnavailableError, match="cannot reach Ollama"):
         _loaded_models(handler)
