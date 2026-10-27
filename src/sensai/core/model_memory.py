@@ -39,4 +39,5 @@ class ModelMemory:
 
 def _with_tag(name: str) -> str:
     """Add the tag a server assumes when none is given (`qwen3` → `qwen3:latest`)."""
+    name = name.casefold()
     return name if ":" in name else f"{name}:{_DEFAULT_TAG}"

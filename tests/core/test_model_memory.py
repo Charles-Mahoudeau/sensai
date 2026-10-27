@@ -38,3 +38,10 @@ def test_another_tag_is_another_model() -> None:
 def test_a_model_that_is_not_loaded_gives_none() -> None:
     """The server may have unloaded an idle model."""
     assert _current(FakeModelMonitor(), "qwen3:8b") is None
+
+
+def test_names_are_compared_without_case() -> None:
+    """`llama3.2:3B` finds `llama3.2:3b`, as Ollama ignores the case too."""
+    monitor = FakeModelMonitor(_loaded("llama3.2:3b"))
+
+    assert _current(monitor, "llama3.2:3B") == _loaded("llama3.2:3b")
