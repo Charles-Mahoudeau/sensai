@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from sensai.adapters.ollama import _wire
-from sensai.core.ports import LLMResponseError, LLMUnavailableError
+from sensai.core.ports import LLMResponseError, LLMUnavailableError, ModelNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -19,7 +19,7 @@ DEFAULT_TIMEOUT = 5.0
 
 
 class OllamaMonitor:
-    """Reads the models an Ollama server has loaded, through `/api/ps`."""
+    """Reads what an Ollama server has loaded (`/api/ps`) and model details."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class OllamaMonitor:
         Args:
             client: The HTTP client used for every request.
             base_url: The Ollama server URL, e.g. `http://localhost:11434`.
-            timeout: Seconds to wait for `/api/ps`. It overrides the client's
+            timeout: Seconds to wait for each request. It overrides the client's
                 timeout, which is often disabled for slow chat answers.
         """
         self._client = client
@@ -42,22 +42,33 @@ class OllamaMonitor:
 
     async def loaded_models(self) -> Sequence[LoadedModel]:
         """List the models currently loaded, with their memory footprint."""
+        body = await self._request("GET", "/api/ps")
+        return _wire.loaded_models_from_body(body)
+
+    async def max_context_length(self, model: str) -> int | None:
+        """Read the model's trained context window from `/api/show`."""
+        body = await self._request("POST", "/api/show", {"model": model})
+        return _wire.max_context_from_show(body)
+
+    async def _request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None
+    ) -> Any:
         try:
-            response = await self._client.get(
-                f"{self._url}/api/ps", timeout=self._timeout
+            response = await self._client.request(
+                method, f"{self._url}{path}", json=payload, timeout=self._timeout
             )
         except httpx.TransportError as e:
             raise LLMUnavailableError(f"cannot reach Ollama at {self._url}: {e}") from e
 
         if response.is_error:
-            raise LLMResponseError(
-                _wire.error_message(response.status_code, response.content)
-            )
+            message = _wire.error_message(response.status_code, response.content)
+            if response.status_code == httpx.codes.NOT_FOUND:
+                raise ModelNotFoundError(message)
+            raise LLMResponseError(message)
         try:
-            body = response.json()
+            return response.json()
         except ValueError as e:
-            raise LLMResponseError("Ollama returned invalid JSON for /api/ps") from e
-        return _wire.loaded_models_from_body(body)
+            raise LLMResponseError(f"Ollama returned invalid JSON for {path}") from e
 
 
 if TYPE_CHECKING:

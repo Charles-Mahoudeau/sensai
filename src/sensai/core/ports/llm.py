@@ -76,3 +76,16 @@ class ModelMonitor(Protocol):
             LLMResponseError: The server's response cannot be understood.
         """
         ...
+
+    async def max_context_length(self, model: str) -> int | None:
+        """Return the largest context window a model supports.
+
+        This is what the model was trained for, not the window it is loaded
+        with; `None` if the server does not say.
+
+        Raises:
+            LLMUnavailableError: The model server cannot be reached.
+            ModelNotFoundError: The model does not exist on the server.
+            LLMResponseError: The server's response cannot be understood.
+        """
+        ...

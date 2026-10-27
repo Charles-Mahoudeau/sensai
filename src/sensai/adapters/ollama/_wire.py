@@ -257,3 +257,24 @@ def _loaded_model_from_wire(raw: Any) -> LoadedModel:
         )
     except (TypeError, ValueError) as e:
         raise LLMResponseError(f"malformed model in /api/ps: {raw!r}") from e
+
+
+def max_context_from_show(body: Any) -> int | None:
+    """Read the trained context window from a `/api/show` response.
+
+    Ollama files it under the model's architecture, e.g. `llama.context_length`.
+    Returns `None` when the response does not give it.
+
+    Raises:
+        LLMResponseError: The body is not a JSON object.
+    """
+    if not isinstance(body, dict):
+        raise LLMResponseError(f"unexpected /api/show response from Ollama: {body!r}")
+    info = body.get("model_info")
+    if not isinstance(info, dict):
+        return None
+    value = info.get(f"{info.get('general.architecture')}.context_length")
+    # bool is an int in Python, but never a context length
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
