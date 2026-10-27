@@ -65,3 +65,28 @@ def test_github_token_is_none_when_unset_or_empty(
     else:
         monkeypatch.setenv("GITHUB_TOKEN", value)
     assert load_config(_write(tmp_path, "")).mcp.github_token is None
+
+
+def test_personas_default_to_the_config_directory(tmp_path: Path) -> None:
+    """Without a `[personas]` table they live in config/personas, none active."""
+    config = load_config(_write(tmp_path, ""))
+
+    assert config.personas.path == tmp_path / "config" / "personas"
+    assert config.personas.default is None
+
+
+def test_personas_are_read_from_the_file(tmp_path: Path) -> None:
+    """The directory is relative to the project and the default is kept."""
+    config = load_config(
+        _write(tmp_path, '[personas]\npath = "my/personas"\ndefault = "sensei"\n')
+    )
+
+    assert config.personas.path == tmp_path / "my" / "personas"
+    assert config.personas.default == "sensei"
+
+
+@pytest.mark.parametrize("value", ['""', "3"])
+def test_invalid_default_persona_is_rejected(tmp_path: Path, value: str) -> None:
+    """The default persona must be a non-empty name."""
+    with pytest.raises(ConfigError, match=r"personas\.default"):
+        load_config(_write(tmp_path, f"[personas]\ndefault = {value}\n"))

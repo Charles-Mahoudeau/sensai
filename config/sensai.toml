@@ -4,6 +4,10 @@ url = "http://localhost:11434"
 [profile]
 path = "config/profile.toml"
 
+[personas]
+path = "config/personas"
+default = "sensei"
+
 [structured_output]
 enabled = false
 

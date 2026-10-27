@@ -27,10 +27,12 @@ from sensai.core.models import (
     ToolCall,
 )
 from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
+from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.ports import PersonaNotFoundError
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeLLM
+from tests.fakes import FakeLLM, InMemoryPersonaSource
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -270,3 +272,131 @@ def test_engine_without_tools_lists_none() -> None:
         engine.set_tool_enabled("web_search", enabled=False)
     with pytest.raises(KeyError):
         engine.set_tools_enabled(enabled=False, names=["web_search"])
+
+
+class RecordingRunner:
+    """Answer every turn with "ok" and record the messages it was sent."""
+
+    def __init__(self) -> None:
+        """Start with no recorded turn."""
+        self.turns: list[tuple[Message, ...]] = []
+
+    async def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
+        """Record the messages, then complete the turn."""
+        self.turns.append(messages)
+        yield TurnCompleted([Message.assistant("ok")])
+
+
+def _persona(name: str, role: str) -> Persona:
+    section = PersonaSection("identity", (PersonaEntry("role", role),))
+    return Persona(name, (section,))
+
+
+async def _submit_and_wait(engine: Engine, text: str) -> None:
+    events = engine.subscribe()
+    engine.submit(text)
+    async for event in events:
+        if isinstance(event, Done):
+            break
+    await events.aclose()
+
+
+def test_switching_persona_keeps_the_history() -> None:
+    """A new persona replaces the old one in the system message only."""
+    runner = RecordingRunner()
+    engine = Engine(
+        runner,
+        Pipeline(),
+        EventBus(),
+        system_prompt="BASE",
+        profile="PROFILE",
+        personas=InMemoryPersonaSource(
+            _persona("sensei", "mentor"), _persona("pirate", "pirate")
+        ),
+    )
+
+    async def run() -> None:
+        engine.set_persona("sensei")
+        await _submit_and_wait(engine, "Hello")
+        engine.set_persona("pirate")
+        await _submit_and_wait(engine, "Again")
+
+    asyncio.run(run())
+
+    first, second = runner.turns
+    assert first[0] == Message.system("BASE\n\nIdentity:\n- role: mentor\n\nPROFILE")
+    assert second[0] == Message.system("BASE\n\nIdentity:\n- role: pirate\n\nPROFILE")
+    assert second[1:] == (
+        Message.user("Hello"),
+        Message.assistant("ok"),
+        Message.user("Again"),
+    )
+    assert engine.persona == _persona("pirate", "pirate")
+
+
+def test_set_persona_reads_the_current_version() -> None:
+    """Switching to a persona again picks up its edits."""
+    source = InMemoryPersonaSource(_persona("sensei", "mentor"))
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), personas=source)
+    engine.set_persona("sensei")
+
+    source.personas["sensei"] = _persona("sensei", "strict mentor")
+
+    assert engine.set_persona("sensei") == _persona("sensei", "strict mentor")
+
+
+def test_persona_names_come_from_the_source() -> None:
+    """The names are read from the source each time they are asked for."""
+    source = InMemoryPersonaSource(_persona("sensei", "mentor"))
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), personas=source)
+
+    source.personas["pirate"] = _persona("pirate", "pirate")
+
+    assert engine.persona_names() == ("pirate", "sensei")
+
+
+def test_unknown_persona_keeps_the_current_one() -> None:
+    """A failed switch leaves the active persona as it was."""
+    engine = Engine(
+        ScriptedRunner(()),
+        Pipeline(),
+        EventBus(),
+        personas=InMemoryPersonaSource(_persona("sensei", "mentor")),
+    )
+    engine.set_persona("sensei")
+
+    with pytest.raises(PersonaNotFoundError):
+        engine.set_persona("ghost")
+
+    assert engine.persona == _persona("sensei", "mentor")
+
+
+def test_engine_without_personas_has_none() -> None:
+    """With no source there is nothing to list, and switching fails."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert engine.persona is None
+    assert engine.persona_names() == ()
+    with pytest.raises(PersonaNotFoundError):
+        engine.set_persona("sensei")
+
+
+def test_set_persona_is_refused_while_a_submission_runs() -> None:
+    """The persona can't change under a running turn."""
+
+    async def run() -> None:
+        engine = Engine(
+            WaitingRunner(),
+            Pipeline(),
+            EventBus(),
+            personas=InMemoryPersonaSource(_persona("sensei", "mentor")),
+        )
+        submission_id = engine.submit("Hello")
+
+        with pytest.raises(SubmissionInProgressError):
+            engine.set_persona("sensei")
+
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
