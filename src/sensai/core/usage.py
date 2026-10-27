@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
-from sensai.core.models.llm import ChatDone, UsageTotals
+from sensai.core.models.llm import ChatDone, UsageReport, UsageTotals
+from sensai.core.ports import LLMError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
+    from sensai.core.model_memory import ModelMemory
     from sensai.core.models.llm import ChatEvent, ChatOptions, Message
     from sensai.core.models.tools import ToolSpec
     from sensai.core.ports import LLM
@@ -96,6 +99,46 @@ class MeteredLLM:
             if isinstance(event, ChatDone):
                 self._meter.record(event)
             yield event
+
+
+async def usage_report(
+    meter: UsageMeter | None, model_memory: ModelMemory | None
+) -> UsageReport:
+    """Gather the session usage, the context fill and the model's memory.
+
+    A model server that cannot be reached only leaves the memory out: the
+    report still has the token usage, and says why the memory is missing.
+
+    The context fill comes from the latest model call, so it is unknown right
+    after a restart, until the first message. That call may be the memory
+    extraction rather than the answer; its prompt holds the conversation too.
+
+    Args:
+        meter: Counts the session's tokens; no usage if None.
+        model_memory: Reads the model's memory footprint and context window;
+            neither if None.
+    """
+    loaded_model = None
+    context_max = None
+    monitor_error = None
+    if model_memory is not None:
+        try:
+            loaded_model = await model_memory.current()
+        except LLMError as e:
+            monitor_error = str(e)
+        else:
+            # Only asked when the server answered, so a down server costs one
+            # timeout, not two. Without it the report just lacks the maximum.
+            with contextlib.suppress(LLMError):
+                context_max = await model_memory.max_context()
+    last = meter.last if meter is not None else None
+    return UsageReport(
+        session=meter.total if meter is not None else UsageTotals(),
+        loaded_model=loaded_model,
+        context_used=last.usage.total_tokens if last is not None else None,
+        context_max=context_max,
+        monitor_error=monitor_error,
+    )
 
 
 if TYPE_CHECKING:

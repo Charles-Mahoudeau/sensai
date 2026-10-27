@@ -285,3 +285,40 @@ class UsageTotals:
         if seconds > 0:
             return self.completion_tokens / seconds
         return None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UsageReport:
+    """Everything known about a session's resource use, at one moment.
+
+    Attributes:
+        session: The token usage of the whole session.
+        loaded_model: The model's memory footprint; `None` if it is not loaded
+            or could not be read.
+        context_used: The tokens the latest model call held in its context;
+            `None` before the first call.
+        context_max: The largest context window the model supports, which may
+            be more than the one it is loaded with; `None` if unknown.
+        monitor_error: Why the memory footprint could not be read, if it failed.
+    """
+
+    session: UsageTotals = field(default_factory=UsageTotals)
+    loaded_model: LoadedModel | None = None
+    context_used: int | None = None
+    context_max: int | None = None
+    monitor_error: str | None = None
+
+    @property
+    def context_limit(self) -> int | None:
+        """Return the model's context window, or `None` if it is unknown."""
+        if self.loaded_model is None:
+            return None
+        return self.loaded_model.context_length
+
+    @property
+    def context_ratio(self) -> float | None:
+        """Return how full the context is (0 to 1), or `None` if it is unknown."""
+        limit = self.context_limit
+        if self.context_used is None or not limit:
+            return None
+        return self.context_used / limit

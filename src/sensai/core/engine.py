@@ -25,6 +25,7 @@ from sensai.core.models.llm import ThinkingDelta, UsageTotals
 from sensai.core.persona import render_persona
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 from sensai.core.ports import PersonaNotFoundError
+from sensai.core.usage import usage_report
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Sequence
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from sensai.core.agent.events import AgentEvent
     from sensai.core.model_memory import ModelMemory
     from sensai.core.models import McpServerStatus, ToolInfo
-    from sensai.core.models.llm import LoadedModel
+    from sensai.core.models.llm import LoadedModel, UsageReport
     from sensai.core.models.persona import Persona
     from sensai.core.ports import PersonaSource
     from sensai.core.tools.registry import ToolRegistry
@@ -167,6 +168,14 @@ class Engine:
         if self._usage_meter is None:
             return UsageTotals()
         return self._usage_meter.total
+
+    async def usage_report(self) -> UsageReport:
+        """The session usage, the context fill and the model's memory, at once.
+
+        It never fails: a model server that cannot be reached is reported in
+        the result. See `usage_report` for when the context fill is unknown.
+        """
+        return await usage_report(self._usage_meter, self._model_memory)
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
