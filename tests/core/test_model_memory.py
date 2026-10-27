@@ -45,3 +45,15 @@ def test_names_are_compared_without_case() -> None:
     monitor = FakeModelMonitor(_loaded("llama3.2:3b"))
 
     assert _current(monitor, "llama3.2:3B") == _loaded("llama3.2:3b")
+
+
+def test_max_context_is_read_once() -> None:
+    """The model's maximum never changes, so the server is asked only once."""
+    monitor = FakeModelMonitor(max_context=131_072)
+    memory = ModelMemory(monitor, "llama3.2:3b")
+
+    async def read_twice() -> list[int | None]:
+        return [await memory.max_context(), await memory.max_context()]
+
+    assert asyncio.run(read_twice()) == [131_072, 131_072]
+    assert monitor.show_calls == 1

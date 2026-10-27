@@ -11,6 +11,7 @@ from sensai.core.models.llm import (
     LoadedModel,
     Timings,
     Usage,
+    UsageReport,
     UsageTotals,
 )
 
@@ -120,3 +121,23 @@ def test_usage_totals_reject_negative_counts() -> None:
     """A total cannot go below zero."""
     with pytest.raises(ValueError, match="calls must be non-negative"):
         UsageTotals(calls=-1)
+
+
+def test_context_ratio_is_the_used_part_of_the_window() -> None:
+    """The ratio compares the latest call's tokens to the model's window."""
+    model = LoadedModel(name="m", size_bytes=1, vram_bytes=1, context_length=1_000)
+
+    report = UsageReport(loaded_model=model, context_used=250)
+
+    assert report.context_limit == 1_000
+    assert report.context_ratio == 0.25
+
+
+def test_context_ratio_is_unknown_without_a_window() -> None:
+    """No loaded model, no reported window or a zero window gives no ratio."""
+    unknown = LoadedModel(name="m", size_bytes=1, vram_bytes=1)
+    empty = LoadedModel(name="m", size_bytes=1, vram_bytes=1, context_length=0)
+
+    assert UsageReport(context_used=250).context_ratio is None
+    assert UsageReport(loaded_model=unknown, context_used=250).context_ratio is None
+    assert UsageReport(loaded_model=empty, context_used=250).context_ratio is None

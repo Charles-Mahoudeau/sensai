@@ -318,3 +318,32 @@ def test_load_payload_has_no_prompt() -> None:
         "keep_alive": -1,
     }
     assert _wire.load_payload("m", None) == {"model": "m", "stream": False}
+
+
+def test_max_context_is_read_under_the_architecture() -> None:
+    """Ollama files the trained window as `<architecture>.context_length`."""
+    body = {
+        "model_info": {
+            "general.architecture": "llama",
+            "llama.context_length": 131_072,
+        }
+    }
+
+    assert _wire.max_context_from_show(body) == 131_072
+
+
+def test_missing_or_odd_max_context_is_unknown() -> None:
+    """No model info, another architecture's key or a bad value give None."""
+    bodies = [
+        {},
+        {"model_info": None},
+        {"model_info": {"general.architecture": "llama"}},
+        {"model_info": {"general.architecture": "qwen", "llama.context_length": 9}},
+        {"model_info": {"general.architecture": "llama", "llama.context_length": 0}},
+        {"model_info": {"general.architecture": "llama", "llama.context_length": "x"}},
+    ]
+    for body in bodies:
+        assert _wire.max_context_from_show(body) is None
+
+    with pytest.raises(LLMResponseError):
+        _wire.max_context_from_show([])

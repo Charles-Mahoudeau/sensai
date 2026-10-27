@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING
 
 import httpx
@@ -10,7 +11,11 @@ import pytest
 
 from sensai.adapters.ollama import OllamaMonitor
 from sensai.core.models.llm import LoadedModel
-from sensai.core.ports import LLMResponseError, LLMUnavailableError
+from sensai.core.ports import (
+    LLMResponseError,
+    LLMUnavailableError,
+    ModelNotFoundError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -116,3 +121,44 @@ def test_invalid_json_is_a_response_error() -> None:
 
     with pytest.raises(LLMResponseError, match="invalid JSON"):
         _loaded_models(handler)
+
+
+def _max_context(handler: Handler) -> int | None:
+    async def run() -> int | None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), timeout=None
+        ) as client:
+            monitor = OllamaMonitor(client, "http://ollama:11434")
+            return await monitor.max_context_length("llama3.2:3B")
+
+    return asyncio.run(run())
+
+
+def test_max_context_comes_from_api_show() -> None:
+    """The model name is posted to `/api/show`, with the monitor's timeout."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "model_info": {
+                    "general.architecture": "llama",
+                    "llama.context_length": 131_072,
+                }
+            },
+        )
+
+    assert _max_context(handler) == 131_072
+    (request,) = seen
+    assert request.method == "POST"
+    assert request.url == "http://ollama:11434/api/show"
+    assert json.loads(request.content) == {"model": "llama3.2:3B"}
+    assert request.extensions["timeout"]["read"] == 5.0
+
+
+def test_unknown_model_is_model_not_found() -> None:
+    """HTTP 404 from `/api/show` becomes ModelNotFoundError."""
+    with pytest.raises(ModelNotFoundError, match="not found"):
+        _max_context(_json({"error": "model 'x' not found"}, status=404))
