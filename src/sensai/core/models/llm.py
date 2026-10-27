@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -148,11 +149,53 @@ class ThinkingDelta:
 
 
 @dataclass(frozen=True, slots=True)
+class Timings:
+    """Represent the time spent in various phases of a model response."""
+
+    total: timedelta
+    load: timedelta
+    prompt_eval: timedelta
+    eval: timedelta
+
+    def __post_init__(self) -> None:
+        """Reject negative durations."""
+        for name in ("total", "load", "prompt_eval", "eval"):
+            if getattr(self, name) < timedelta(0):
+                raise ValueError(f"{name} must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
 class ChatDone:
-    """Represent the completion of a chat session."""
+    """Represent the completion of a chat session.
+
+    `timings` is `None` when the model server does not report durations.
+    """
 
     usage: Usage = field(default_factory=lambda: Usage(0, 0))
     done_reason: str | None = None
+    timings: Timings | None = None
+
+    @property
+    def prompt_tokens_per_second(self) -> float | None:
+        """Return the prompt processing speed, or `None` if it is unknown."""
+        if self.timings is None:
+            return None
+        seconds = self.timings.prompt_eval.total_seconds()
+        if seconds > 0:
+            return self.usage.prompt_tokens / seconds
+        else:
+            return None
+
+    @property
+    def completion_tokens_per_second(self) -> float | None:
+        """Return the generation speed, or `None` if it is unknown."""
+        if self.timings is None:
+            return None
+        seconds = self.timings.eval.total_seconds()
+        if seconds > 0:
+            return self.usage.completion_tokens / seconds
+        else:
+            return None
 
 
 type ChatEvent = TextDelta | ThinkingDelta | ToolCallRequest | ChatDone

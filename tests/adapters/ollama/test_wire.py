@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 
@@ -13,6 +14,7 @@ from sensai.core.models.llm import (
     Message,
     TextDelta,
     ThinkingDelta,
+    Timings,
     ToolCallRequest,
     Usage,
 )
@@ -176,6 +178,37 @@ def test_empty_content_produces_no_event() -> None:
 def test_done_without_counts_gives_zero_usage() -> None:
     """A final line that reports no token counts still yields a ChatDone."""
     assert _wire.events_from_chunk({"done": True}) == [ChatDone(Usage(0, 0), None)]
+
+
+def test_done_durations_become_timings() -> None:
+    """Ollama durations, in nanoseconds, are read into the ChatDone timings."""
+    chunk = {
+        "done": True,
+        "total_duration": 3_000_000_000,
+        "load_duration": 500_000,
+        "prompt_eval_duration": 250_000_000,
+        "eval_duration": 2_000_000_000,
+    }
+
+    [done] = _wire.events_from_chunk(chunk)
+
+    assert isinstance(done, ChatDone)
+    assert done.timings == Timings(
+        total=timedelta(seconds=3),
+        load=timedelta(microseconds=500),
+        prompt_eval=timedelta(milliseconds=250),
+        eval=timedelta(seconds=2),
+    )
+
+
+def test_missing_duration_is_read_as_zero() -> None:
+    """A final line with only some durations still gives timings."""
+    [done] = _wire.events_from_chunk({"done": True, "eval_duration": 1_000_000_000})
+
+    assert isinstance(done, ChatDone)
+    assert done.timings is not None
+    assert done.timings.eval == timedelta(seconds=1)
+    assert done.timings.total == timedelta(0)
 
 
 def test_tool_call_keeps_the_id_from_ollama() -> None:

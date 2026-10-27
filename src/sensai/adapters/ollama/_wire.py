@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sensai.core.models.llm import (
     ChatDone,
     TextDelta,
     ThinkingDelta,
+    Timings,
     ToolCallRequest,
     Usage,
 )
@@ -170,9 +172,41 @@ def events_from_chunk(
         for raw in message.get("tool_calls") or ()
     )
     if chunk.get("done"):
-        usage = Usage(
-            completion_tokens=chunk.get("eval_count") or 0,
-            prompt_tokens=chunk.get("prompt_eval_count") or 0,
+        events.append(
+            ChatDone(
+                _usage_from_chunk(chunk),
+                chunk.get("done_reason"),
+                _timings_from_chunk(chunk),
+            )
         )
-        events.append(ChatDone(usage, chunk.get("done_reason")))
     return events
+
+
+def _usage_from_chunk(chunk: Mapping[str, Any]) -> Usage:
+    """Read the token counts of a final stream line; missing counts are zero."""
+    return Usage(
+        completion_tokens=chunk.get("eval_count") or 0,
+        prompt_tokens=chunk.get("prompt_eval_count") or 0,
+    )
+
+
+_DURATION_KEYS = (
+    "total_duration",
+    "load_duration",
+    "prompt_eval_duration",
+    "eval_duration",
+)
+
+
+def _timings_from_chunk(chunk: Mapping[str, Any]) -> Timings | None:
+    """Read the durations of a final stream line, which Ollama gives in ns.
+
+    Returns `None` when the line reports no duration at all; a single missing
+    duration is read as zero.
+    """
+    if not any(key in chunk for key in _DURATION_KEYS):
+        return None
+    total, load, prompt_eval, eval_ = (
+        timedelta(microseconds=(chunk.get(key) or 0) / 1000) for key in _DURATION_KEYS
+    )
+    return Timings(total=total, load=load, prompt_eval=prompt_eval, eval=eval_)
