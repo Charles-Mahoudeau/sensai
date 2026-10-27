@@ -1,5 +1,7 @@
 [ollama]
 url = "http://localhost:11434"
+# how long the model stays loaded after a request: "30m", "2h", or seconds
+keep_alive = "30m"
 
 [profile]
 path = "config/profile.toml"

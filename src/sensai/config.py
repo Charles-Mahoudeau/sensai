@@ -11,13 +11,22 @@ from sensai.core.models import ThinkingEffort
 from sensai.exceptions import ConfigError
 
 SUPPORTED_STRUCTURED_OUTPUT_SCHEMAS = frozenset({"permission_decision", "plan"})
+DEFAULT_KEEP_ALIVE = "30m"
 
 
 @dataclass(frozen=True)
 class OllamaConfig:
-    """Configuration for Ollama."""
+    """Configuration for Ollama.
+
+    Attributes:
+        url: The Ollama server URL.
+        keep_alive: How long Ollama keeps the model loaded after a request: a
+            duration such as `"30m"`, or seconds (`-1` keeps it until Ollama
+            stops). Ollama's own default is 5 minutes.
+    """
 
     url: str
+    keep_alive: str | int = DEFAULT_KEEP_ALIVE
 
 
 @dataclass(frozen=True)
@@ -95,6 +104,16 @@ def _parse_thinking_effort(value: object) -> ThinkingEffort:
         ) from None
 
 
+def _parse_keep_alive(value: object) -> str | int:
+    # bool is an int in Python, but `keep_alive = true` means nothing to Ollama
+    if isinstance(value, bool) or not isinstance(value, str | int):
+        raise ConfigError(
+            f"ollama.keep_alive must be a duration like '30m' or a number of "
+            f"seconds, got {type(value).__name__} {value!r}"
+        )
+    return value
+
+
 def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
     """Loads the configuration from the given path and overrides.
 
@@ -155,7 +174,12 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
 
     config = Config(
         model=data.get("model", ""),
-        ollama=OllamaConfig(url=data.get("ollama", {}).get("url", "")),
+        ollama=OllamaConfig(
+            url=data.get("ollama", {}).get("url", ""),
+            keep_alive=_parse_keep_alive(
+                data.get("ollama", {}).get("keep_alive", DEFAULT_KEEP_ALIVE)
+            ),
+        ),
         user_profile=ProfileConfig(
             profile=base / Path(data.get("profile", {}).get("path", "profile.toml"))
         ),

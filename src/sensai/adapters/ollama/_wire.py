@@ -86,14 +86,22 @@ def chat_payload(
     messages: Sequence[Message],
     tools: Sequence[ToolSpec],
     options: ChatOptions | None,
+    *,
+    keep_alive: str | int | None = None,
 ) -> dict[str, Any]:
-    """Build the JSON body of a streaming `/api/chat` request."""
+    """Build the JSON body of a streaming `/api/chat` request.
+
+    `keep_alive` is how long Ollama keeps the model loaded afterwards; Ollama's
+    default applies when it is `None`.
+    """
     payload: dict[str, Any] = {
         "model": model,
         "messages": [message_to_wire(message) for message in messages],
         "stream": True,
         "think": False,
     }
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
     if tools:
         payload["tools"] = [tool_to_wire(spec) for spec in tools]
     if options is None:
@@ -113,6 +121,17 @@ def chat_payload(
         payload["format"] = dict(options.response_schema)
     if options.think is not None:
         payload["think"] = options.think
+    return payload
+
+
+def load_payload(model: str, keep_alive: str | int | None) -> dict[str, Any]:
+    """Build the JSON body of a `/api/generate` request that only loads a model.
+
+    Without a prompt, Ollama loads the model into memory and answers at once.
+    """
+    payload: dict[str, Any] = {"model": model, "stream": False}
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
     return payload
 
 

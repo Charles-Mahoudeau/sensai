@@ -187,7 +187,7 @@ async def build_agent(
     Returns:
         The agent.
     """
-    llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    llm: LLM = _ollama_chat(config, client)
     if usage_meter is not None:
         llm = MeteredLLM(llm, usage_meter)
     memory_prompts = memory_prompts or MemoryPrompts.defaults()
@@ -214,6 +214,29 @@ async def build_agent(
     )
     agent.thinking_effort = config.agent.thinking_effort
     return agent
+
+
+def _ollama_chat(config: Config, client: httpx.AsyncClient) -> OllamaChat:
+    return OllamaChat(
+        client,
+        config.ollama.url,
+        config.model,
+        keep_alive=config.ollama.keep_alive,
+    )
+
+
+async def _preload(chat: OllamaChat) -> None:
+    """Load the model; if it fails, the first answer only loads it instead."""
+    try:
+        await chat.load()
+    except SensaiError as e:
+        logging.getLogger(__name__).warning("could not preload the model: %s", e)
+
+
+async def _cancel(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 def main(
@@ -264,6 +287,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
         httpx.AsyncClient(timeout=None) as client,
         contextlib.AsyncExitStack() as stack,
     ):
+        # Load the model while the rest starts up; stopped before the client closes.
+        preload = asyncio.create_task(_preload(_ollama_chat(config, client)))
+        stack.push_async_callback(_cancel, preload)
         db = _get_db()
 
         prompts = await _get_prompt_library(db)
@@ -401,7 +427,7 @@ def prompts_compare(
         # Fail fast if Ollama can't be reached; a slow answer may take minutes.
         timeout = httpx.Timeout(None, connect=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            llm = OllamaChat(client, config.ollama.url, config.model)
+            llm = _ollama_chat(config, client)
             await commands.compare(
                 PromptComparison(llm, time.perf_counter),
                 name,
