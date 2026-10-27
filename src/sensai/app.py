@@ -47,6 +47,7 @@ from sensai.core.sessions import SessionRecorder
 from sensai.core.tools.builtin import memory, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
+from sensai.core.usage import MeteredLLM, UsageMeter
 
 if TYPE_CHECKING:
     import pathlib
@@ -81,6 +82,7 @@ async def build_engine(
     tools: ToolRegistry | None = None,
     mcp_servers: Sequence[McpServerStatus] = (),
     monitor: ModelMonitor | None = None,
+    usage_meter: UsageMeter | None = None,
 ) -> Engine:
     """Build an Engine around an already configured agent.
 
@@ -93,6 +95,7 @@ async def build_engine(
         tools: The agent's tools, so front-ends can list and toggle them.
         mcp_servers: The outcome of connecting to each MCP server.
         monitor: Reports the memory used by the configured model, if any.
+        usage_meter: The meter the agent's model counts into, if any.
 
     Returns:
         The engine, ready to be driven by the TUI or CLI.
@@ -111,6 +114,7 @@ async def build_engine(
         tools=tools,
         mcp_servers=mcp_servers,
         model_memory=ModelMemory(monitor, config.model) if monitor else None,
+        usage_meter=usage_meter,
     )
     if config.personas.default is not None:
         engine.set_persona(config.personas.default)
@@ -166,6 +170,7 @@ async def build_agent(
     agent_prompts: AgentPrompts | None = None,
     memory_repository: MemoryRepository | None = None,
     memory_prompts: MemoryPrompts | None = None,
+    usage_meter: UsageMeter | None = None,
 ) -> ReActAgent:
     """Build the ReAct agent around its tools.
 
@@ -177,11 +182,14 @@ async def build_agent(
         memory_repository: Where the agent records what the user says about
             themself and recalls it from; no automatic memory when `None`.
         memory_prompts: Prompts overriding the memory defaults, if any.
+        usage_meter: Counts the tokens of every model call; none if `None`.
 
     Returns:
         The agent.
     """
     llm: LLM = OllamaChat(client, config.ollama.url, config.model)
+    if usage_meter is not None:
+        llm = MeteredLLM(llm, usage_meter)
     memory_prompts = memory_prompts or MemoryPrompts.defaults()
     structured_output = (
         StructuredOutputCatalog(config.structured_output.schemas)
@@ -271,11 +279,18 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             last[0] if last else await session_repo.create_session(model=config.model)
         )
         history = await session_repo.get_messages(session.id)
+        usage_meter = UsageMeter(session.usage)
 
         tools, mcp_servers = await build_tools(config, stack, memory_repo)
         tools.set_all_enabled(enabled=options.tools_enabled)
         agent = await build_agent(
-            config, client, tools, agent_prompts, memory_repo, memory_prompts
+            config,
+            client,
+            tools,
+            agent_prompts,
+            memory_repo,
+            memory_prompts,
+            usage_meter=usage_meter,
         )
         engine = await build_engine(
             config,
@@ -286,6 +301,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             tools=tools,
             mcp_servers=mcp_servers,
             monitor=OllamaMonitor(client, config.ollama.url),
+            usage_meter=usage_meter,
         )
         recorder = SessionRecorder(
             session_repo,
@@ -293,6 +309,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             model=config.model,
             session_id=session.id,
             saved=len(history),
+            meter=usage_meter,
         )
         commands = default_registry(
             on_clear=recorder.start_new, persona_names=engine.persona_names

@@ -21,7 +21,7 @@ from sensai.core.events import (
 )
 from sensai.core.events.types import ToolRunFinished, ToolRunStarted
 from sensai.core.models import Message, TextDelta, ThinkingEffort
-from sensai.core.models.llm import ThinkingDelta
+from sensai.core.models.llm import ThinkingDelta, UsageTotals
 from sensai.core.persona import render_persona
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 from sensai.core.ports import PersonaNotFoundError
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from sensai.core.models.persona import Persona
     from sensai.core.ports import PersonaSource
     from sensai.core.tools.registry import ToolRegistry
+    from sensai.core.usage import UsageMeter
 
 
 class Runner(Protocol):
@@ -69,6 +70,7 @@ class Engine:
         tools: ToolRegistry | None = None,
         mcp_servers: Sequence[McpServerStatus] = (),
         model_memory: ModelMemory | None = None,
+        usage_meter: UsageMeter | None = None,
     ) -> None:
         """Initialize the engine with its processing dependencies.
 
@@ -83,6 +85,7 @@ class Engine:
             tools: The runner's tools, listed and toggled by front-ends.
             mcp_servers: The outcome of connecting to each MCP server.
             model_memory: Reads the model's memory footprint; none if None.
+            usage_meter: Counts the session's token usage; none if None.
         """
         self._runner = runner
         self._pipeline = pipeline
@@ -96,6 +99,7 @@ class Engine:
         self._tools = tools
         self._mcp_servers = tuple(mcp_servers)
         self._model_memory = model_memory
+        self._usage_meter = usage_meter
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -157,6 +161,12 @@ class Engine:
         if self._model_memory is None:
             return None
         return await self._model_memory.current()
+
+    def usage(self) -> UsageTotals:
+        """The token usage of the whole session, zero if it is not counted."""
+        if self._usage_meter is None:
+            return UsageTotals()
+        return self._usage_meter.total
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
