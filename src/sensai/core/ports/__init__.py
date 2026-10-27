@@ -5,6 +5,7 @@ from sensai.core.ports.llm import (
     LLMError,
     LLMResponseError,
     LLMUnavailableError,
+    ModelMonitor,
     ModelNotFoundError,
 )
 from sensai.core.ports.mcp import (
@@ -59,6 +60,7 @@ __all__ = [
     "McpUnavailableError",
     "MemoryNotFoundError",
     "MemoryRepository",
+    "ModelMonitor",
     "ModelNotFoundError",
     "PersonaError",
     "PersonaInvalidError",

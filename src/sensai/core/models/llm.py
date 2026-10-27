@@ -199,3 +199,36 @@ class ChatDone:
 
 
 type ChatEvent = TextDelta | ThinkingDelta | ToolCallRequest | ChatDone
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LoadedModel:
+    """A model currently loaded in memory by the model server.
+
+    `context_length` is the context window the model was loaded with, or `None`
+    when the server does not report it.
+    """
+
+    name: str
+    size_bytes: int
+    vram_bytes: int
+    context_length: int | None = None
+
+    def __post_init__(self) -> None:
+        """Reject negative sizes and context lengths."""
+        if self.size_bytes < 0:
+            raise ValueError("size_bytes must be non-negative")
+        if self.vram_bytes < 0:
+            raise ValueError("vram_bytes must be non-negative")
+        if self.context_length is not None and self.context_length < 0:
+            raise ValueError("context_length must be non-negative")
+
+    @property
+    def ram_bytes(self) -> int:
+        """Return the part of the model that spilled over to system memory."""
+        return max(self.size_bytes - self.vram_bytes, 0)
+
+    @property
+    def fully_on_gpu(self) -> bool:
+        """Tell whether the whole model fits in video memory."""
+        return self.ram_bytes == 0

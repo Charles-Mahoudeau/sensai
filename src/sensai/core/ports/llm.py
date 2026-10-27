@@ -9,7 +9,12 @@ from sensai.core.errors import SensaiError
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from sensai.core.models.llm import ChatEvent, ChatOptions, Message
+    from sensai.core.models.llm import (
+        ChatEvent,
+        ChatOptions,
+        LoadedModel,
+        Message,
+    )
     from sensai.core.models.tools import ToolSpec
 
 
@@ -52,6 +57,22 @@ class LLM(Protocol):
         Raises:
             LLMUnavailableError: The model server cannot be reached.
             ModelNotFoundError: The requested model does not exist.
+            LLMResponseError: The server's response cannot be understood.
+        """
+        ...
+
+
+class ModelMonitor(Protocol):
+    """Reports the memory used by the models a model server has loaded."""
+
+    async def loaded_models(self) -> Sequence[LoadedModel]:
+        """List the models currently loaded, with their memory footprint.
+
+        A model that is not in use may have been unloaded by the server, so an
+        empty list is a normal answer.
+
+        Raises:
+            LLMUnavailableError: The model server cannot be reached.
             LLMResponseError: The server's response cannot be understood.
         """
         ...

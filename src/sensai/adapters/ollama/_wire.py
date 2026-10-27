@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from sensai.core.models.llm import (
     ChatDone,
+    LoadedModel,
     TextDelta,
     ThinkingDelta,
     Timings,
@@ -210,3 +211,30 @@ def _timings_from_chunk(chunk: Mapping[str, Any]) -> Timings | None:
         timedelta(microseconds=(chunk.get(key) or 0) / 1000) for key in _DURATION_KEYS
     )
     return Timings(total=total, load=load, prompt_eval=prompt_eval, eval=eval_)
+
+
+def loaded_models_from_body(body: Any) -> list[LoadedModel]:
+    """Read the models listed by `/api/ps`.
+
+    Raises:
+        LLMResponseError: The body does not have the expected shape.
+    """
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list):
+        raise LLMResponseError(f"unexpected /api/ps response from Ollama: {body!r}")
+    return [_loaded_model_from_wire(raw) for raw in models]
+
+
+def _loaded_model_from_wire(raw: Any) -> LoadedModel:
+    if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+        raise LLMResponseError(f"malformed model in /api/ps: {raw!r}")
+    context_length = raw.get("context_length")
+    try:
+        return LoadedModel(
+            name=raw["name"],
+            size_bytes=int(raw.get("size") or 0),
+            vram_bytes=int(raw.get("size_vram") or 0),
+            context_length=None if context_length is None else int(context_length),
+        )
+    except (TypeError, ValueError) as e:
+        raise LLMResponseError(f"malformed model in /api/ps: {raw!r}") from e
