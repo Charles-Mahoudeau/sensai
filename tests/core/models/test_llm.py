@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from sensai.core.models.llm import ChatDone, Timings, Usage
+from sensai.core.models.llm import ChatDone, LoadedModel, Timings, Usage
 
 
 def _timings(prompt_eval: timedelta, eval_: timedelta) -> Timings:
@@ -57,3 +57,25 @@ def test_speed_is_unknown_for_a_zero_duration() -> None:
     )
 
     assert done.completion_tokens_per_second is None
+
+
+def test_ram_is_the_part_not_in_vram() -> None:
+    """A model too big for the GPU spills the rest to system memory."""
+    model = LoadedModel(name="m", size_bytes=10, vram_bytes=6)
+
+    assert model.ram_bytes == 4
+    assert not model.fully_on_gpu
+
+
+def test_model_entirely_in_vram_uses_no_ram() -> None:
+    """A model that fits on the GPU has nothing in system memory."""
+    model = LoadedModel(name="m", size_bytes=10, vram_bytes=10)
+
+    assert model.ram_bytes == 0
+    assert model.fully_on_gpu
+
+
+def test_negative_size_is_rejected() -> None:
+    """A model cannot use a negative amount of memory."""
+    with pytest.raises(ValueError, match="vram_bytes must be non-negative"):
+        LoadedModel(name="m", size_bytes=10, vram_bytes=-1)

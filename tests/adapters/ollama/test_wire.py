@@ -11,6 +11,7 @@ from sensai.adapters.ollama import _wire
 from sensai.core.models.llm import (
     ChatDone,
     ChatOptions,
+    LoadedModel,
     Message,
     TextDelta,
     ThinkingDelta,
@@ -275,3 +276,26 @@ def test_error_message_prefers_the_json_error_field() -> None:
     )
     assert _wire.error_message(502, b"Bad gateway") == "Bad gateway"
     assert _wire.error_message(500, b"") == "HTTP 500"
+
+
+def test_missing_sizes_and_context_are_defaulted() -> None:
+    """Sizes default to zero and an unreported context length to None."""
+    assert _wire.loaded_models_from_body({"models": [{"name": "m"}]}) == [
+        LoadedModel(name="m", size_bytes=0, vram_bytes=0)
+    ]
+
+
+def test_malformed_api_ps_bodies_are_response_errors() -> None:
+    """A wrong shape anywhere in `/api/ps` is reported, not ignored."""
+    bad_bodies = [
+        [],
+        {},
+        {"models": None},
+        {"models": ["m"]},
+        {"models": [{"size": 1}]},
+        {"models": [{"name": "m", "size": "big"}]},
+        {"models": [{"name": "m", "size": -1}]},
+    ]
+    for body in bad_bodies:
+        with pytest.raises(LLMResponseError):
+            _wire.loaded_models_from_body(body)
