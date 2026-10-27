@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
-from sensai.app import build_agent, build_engine
+from sensai.adapters.ollama import OllamaChat
+from sensai.app import _preload, build_agent, build_engine
 from sensai.config import Config, OllamaConfig, ProfileConfig
 from sensai.core.engine import Engine
 from sensai.core.models.llm import LoadedModel
 from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeModelMonitor
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_build_engine_wires_the_configured_ollama_client() -> None:
@@ -52,3 +57,18 @@ def test_build_engine_reads_the_configured_model_from_the_monitor() -> None:
             return await engine.loaded_model()
 
     assert asyncio.run(run()) == model
+
+
+def test_preload_failure_is_only_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """Startup goes on when the model cannot be preloaded."""
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(refused)) as client:
+            await _preload(OllamaChat(client, "http://ollama", "m"))
+
+    asyncio.run(run())
+
+    assert "could not preload the model" in caplog.text

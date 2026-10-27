@@ -237,3 +237,68 @@ def test_stream_without_done_is_a_response_error() -> None:
     """The port promises a final ChatDone, so its absence is an error."""
     with pytest.raises(LLMResponseError, match="without a final 'done'"):
         _collect(_reply(_ndjson(_text("Hi"))))
+
+
+def _load(handler: Handler, *, keep_alive: str | None = "30m") -> None:
+    async def run() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            chat = OllamaChat(
+                client, "http://ollama:11434", "llama3", keep_alive=keep_alive
+            )
+            await chat.load()
+
+    asyncio.run(run())
+
+
+def test_chat_sends_the_keep_alive() -> None:
+    """Every chat request tells Ollama how long to keep the model."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=_ndjson(DONE))
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            chat = OllamaChat(client, "http://ollama:11434", "llama3", keep_alive="1h")
+            async for _ in chat.chat(HISTORY):
+                pass
+
+    asyncio.run(run())
+
+    assert json.loads(seen[0].content)["keep_alive"] == "1h"
+
+
+def test_load_posts_an_empty_generate_request() -> None:
+    """Loading asks `/api/generate` for the model, with its keep_alive."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"done": True, "done_reason": "load"})
+
+    _load(handler)
+
+    (request,) = seen
+    assert request.method == "POST"
+    assert request.url == "http://ollama:11434/api/generate"
+    assert json.loads(request.content) == {
+        "model": "llama3",
+        "stream": False,
+        "keep_alive": "30m",
+    }
+
+
+def test_load_reports_failures_like_chat() -> None:
+    """An unreachable server, an unknown model or another error are reported."""
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(LLMUnavailableError, match="cannot reach Ollama"):
+        _load(refused)
+    with pytest.raises(ModelNotFoundError, match="not found"):
+        _load(lambda _r: httpx.Response(404, json={"error": "model not found"}))
+    with pytest.raises(LLMResponseError, match="out of memory"):
+        _load(lambda _r: httpx.Response(500, json={"error": "out of memory"}))

@@ -299,3 +299,22 @@ def test_malformed_api_ps_bodies_are_response_errors() -> None:
     for body in bad_bodies:
         with pytest.raises(LLMResponseError):
             _wire.loaded_models_from_body(body)
+
+
+def test_keep_alive_is_sent_only_when_set() -> None:
+    """A set keep_alive is added to the chat payload; None leaves Ollama's default."""
+    with_it = _wire.chat_payload("m", [], (), None, keep_alive="30m")
+    without = _wire.chat_payload("m", [], (), None)
+
+    assert with_it["keep_alive"] == "30m"
+    assert "keep_alive" not in without
+
+
+def test_load_payload_has_no_prompt() -> None:
+    """Loading a model is a generate request without a prompt."""
+    assert _wire.load_payload("m", -1) == {
+        "model": "m",
+        "stream": False,
+        "keep_alive": -1,
+    }
+    assert _wire.load_payload("m", None) == {"model": "m", "stream": False}
