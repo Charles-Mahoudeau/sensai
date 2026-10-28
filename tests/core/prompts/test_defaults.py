@@ -45,7 +45,7 @@ def test_every_default_passes_its_rule(name: str) -> None:
     ("name", "start", "end"),
     [
         (SYSTEM, "You are an AI assistant", ".\n"),
-        (REACT_THOUGHT, "Before answering", "small talk.\n"),
+        (REACT_THOUGHT, "Before answering", "to false.\n"),
         (REACT_NOTES, "\n[Private notes", "user.]"),
         (REACT_ANSWER, "Answer the user's request", "short one."),
         (MEMORY_EXTRACTION, "You maintain the long-term memory", ":\n{memories}"),

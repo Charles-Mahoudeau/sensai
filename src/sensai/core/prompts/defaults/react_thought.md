@@ -25,4 +25,6 @@ stop calling it and say that you could not verify, never pretend you did.
 
 Reply in JSON: {{"thought": "your sentences", "ready": true or false}}.
 Set "ready" to true only if you are ready to answer: the conversation already
-contains everything needed, or the request is simple small talk.
+contains everything needed, or the request is simple small talk. A calculation
+never counts as known: until `calculator` has returned its result, set "ready"
+to false.
