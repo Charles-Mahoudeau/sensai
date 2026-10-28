@@ -44,7 +44,7 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 from sensai.core.sessions import SessionRecorder
-from sensai.core.tools.builtin import memory, web_search
+from sensai.core.tools.builtin import calculator, memory, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import MeteredLLM, UsageMeter
@@ -140,6 +140,7 @@ async def build_tools(
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
+    calculator.register_self(tool_registry)
     memory.register_self(tool_registry, memory_repository)
 
     clients: list[McpClient] = []
