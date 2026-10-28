@@ -544,6 +544,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mathparse"
+version = "0.2.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/2f/9a6bfa25dd322e6896e13c2e951553074855db6394c39ca23a41a1779ca4/mathparse-0.2.9.tar.gz", hash = "sha256:39076aaedce5219942df6204f67548f4a05529f7c478c0d1a65b50e16694712c", size = 32104, upload-time = "2026-08-25T11:34:19.748Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/d2/bfde28a4128ab9c6f237d27c0ea876fbc239acfd8ccb70ff1b0427cc1f1c/mathparse-0.2.9-py3-none-any.whl", hash = "sha256:d267f51a5557ddde198da515922942b9060347046409d3ed1cc697e057c37da3", size = 22835, upload-time = "2026-08-25T11:34:18.821Z" },
+]
+
+[[package]]
 name = "mdit-py-plugins"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1078,6 +1087,7 @@ source = { editable = "." }
 dependencies = [
     { name = "ddgs" },
     { name = "httpx" },
+    { name = "mathparse" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "textual" },
@@ -1098,6 +1108,7 @@ dev = [
 requires-dist = [
     { name = "ddgs", specifier = ">=9.16.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "mathparse", specifier = ">=0.2.9" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "textual", specifier = ">=8.2.8" },
