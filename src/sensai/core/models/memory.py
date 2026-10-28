@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from sensai.core.models.llm import UsageTotals
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -28,13 +30,14 @@ def fold_category(category: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Session:
-    """A saved conversation."""
+    """A saved conversation, with the token usage of every model call it made."""
 
     id: int
     model: str
     created_at: datetime
     updated_at: datetime
     title: str | None = None
+    usage: UsageTotals = field(default_factory=UsageTotals)
 
     def __post_init__(self) -> None:
         """Validate the model name."""

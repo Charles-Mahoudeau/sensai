@@ -32,6 +32,7 @@ class OllamaChat:
         base_url: str,
         model: str,
         *,
+        keep_alive: str | int | None = None,
         new_call_id: Callable[[], str] = _wire.new_call_id,
     ) -> None:
         """Store the HTTP client, the server URL and the model name.
@@ -40,12 +41,38 @@ class OllamaChat:
             client: The HTTP client used for every request.
             base_url: The Ollama server URL, e.g. `http://localhost:11434`.
             model: The model to chat with.
+            keep_alive: How long Ollama keeps the model loaded after each
+                request, e.g. `"30m"`; Ollama's default (5 minutes) if None.
             new_call_id: Makes an id for tool calls that Ollama did not identify.
         """
         self._client = client
         self._url = base_url.rstrip("/")
         self._model = model
+        self._keep_alive = keep_alive
         self._new_call_id = new_call_id
+
+    async def load(self) -> None:
+        """Load the model into memory now, so the first answer starts sooner.
+
+        Ollama otherwise loads it on the first chat request.
+
+        Raises:
+            LLMUnavailableError: The model server cannot be reached.
+            ModelNotFoundError: The model does not exist on the server.
+            LLMResponseError: The server refused to load the model.
+        """
+        try:
+            response = await self._client.post(
+                f"{self._url}/api/generate",
+                json=_wire.load_payload(self._model, self._keep_alive),
+            )
+        except httpx.TransportError as e:
+            raise LLMUnavailableError(f"cannot reach Ollama at {self._url}: {e}") from e
+        if response.is_error:
+            message = _wire.error_message(response.status_code, response.content)
+            if response.status_code == httpx.codes.NOT_FOUND:
+                raise ModelNotFoundError(message)
+            raise LLMResponseError(message)
 
     async def chat(
         self,
@@ -55,7 +82,9 @@ class OllamaChat:
         options: ChatOptions | None = None,
     ) -> AsyncIterator[ChatEvent]:
         """Stream the model's answer to a conversation."""
-        payload = _wire.chat_payload(self._model, messages, tools, options)
+        payload = _wire.chat_payload(
+            self._model, messages, tools, options, keep_alive=self._keep_alive
+        )
         try:
             logging.info("Chat payload: %s", payload)
             text_parts: list[str] = []

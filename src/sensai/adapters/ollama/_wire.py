@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sensai.core.models.llm import (
     ChatDone,
+    LoadedModel,
     TextDelta,
     ThinkingDelta,
+    Timings,
     ToolCallRequest,
     Usage,
 )
@@ -83,14 +86,22 @@ def chat_payload(
     messages: Sequence[Message],
     tools: Sequence[ToolSpec],
     options: ChatOptions | None,
+    *,
+    keep_alive: str | int | None = None,
 ) -> dict[str, Any]:
-    """Build the JSON body of a streaming `/api/chat` request."""
+    """Build the JSON body of a streaming `/api/chat` request.
+
+    `keep_alive` is how long Ollama keeps the model loaded afterwards; Ollama's
+    default applies when it is `None`.
+    """
     payload: dict[str, Any] = {
         "model": model,
         "messages": [message_to_wire(message) for message in messages],
         "stream": True,
         "think": False,
     }
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
     if tools:
         payload["tools"] = [tool_to_wire(spec) for spec in tools]
     if options is None:
@@ -110,6 +121,17 @@ def chat_payload(
         payload["format"] = dict(options.response_schema)
     if options.think is not None:
         payload["think"] = options.think
+    return payload
+
+
+def load_payload(model: str, keep_alive: str | int | None) -> dict[str, Any]:
+    """Build the JSON body of a `/api/generate` request that only loads a model.
+
+    Without a prompt, Ollama loads the model into memory and answers at once.
+    """
+    payload: dict[str, Any] = {"model": model, "stream": False}
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
     return payload
 
 
@@ -170,9 +192,89 @@ def events_from_chunk(
         for raw in message.get("tool_calls") or ()
     )
     if chunk.get("done"):
-        usage = Usage(
-            completion_tokens=chunk.get("eval_count") or 0,
-            prompt_tokens=chunk.get("prompt_eval_count") or 0,
+        events.append(
+            ChatDone(
+                _usage_from_chunk(chunk),
+                chunk.get("done_reason"),
+                _timings_from_chunk(chunk),
+            )
         )
-        events.append(ChatDone(usage, chunk.get("done_reason")))
     return events
+
+
+def _usage_from_chunk(chunk: Mapping[str, Any]) -> Usage:
+    """Read the token counts of a final stream line; missing counts are zero."""
+    return Usage(
+        completion_tokens=chunk.get("eval_count") or 0,
+        prompt_tokens=chunk.get("prompt_eval_count") or 0,
+    )
+
+
+_DURATION_KEYS = (
+    "total_duration",
+    "load_duration",
+    "prompt_eval_duration",
+    "eval_duration",
+)
+
+
+def _timings_from_chunk(chunk: Mapping[str, Any]) -> Timings | None:
+    """Read the durations of a final stream line, which Ollama gives in ns.
+
+    Returns `None` when the line reports no duration at all; a single missing
+    duration is read as zero.
+    """
+    if not any(key in chunk for key in _DURATION_KEYS):
+        return None
+    total, load, prompt_eval, eval_ = (
+        timedelta(microseconds=(chunk.get(key) or 0) / 1000) for key in _DURATION_KEYS
+    )
+    return Timings(total=total, load=load, prompt_eval=prompt_eval, eval=eval_)
+
+
+def loaded_models_from_body(body: Any) -> list[LoadedModel]:
+    """Read the models listed by `/api/ps`.
+
+    Raises:
+        LLMResponseError: The body does not have the expected shape.
+    """
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list):
+        raise LLMResponseError(f"unexpected /api/ps response from Ollama: {body!r}")
+    return [_loaded_model_from_wire(raw) for raw in models]
+
+
+def _loaded_model_from_wire(raw: Any) -> LoadedModel:
+    if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+        raise LLMResponseError(f"malformed model in /api/ps: {raw!r}")
+    context_length = raw.get("context_length")
+    try:
+        return LoadedModel(
+            name=raw["name"],
+            size_bytes=int(raw.get("size") or 0),
+            vram_bytes=int(raw.get("size_vram") or 0),
+            context_length=None if context_length is None else int(context_length),
+        )
+    except (TypeError, ValueError) as e:
+        raise LLMResponseError(f"malformed model in /api/ps: {raw!r}") from e
+
+
+def max_context_from_show(body: Any) -> int | None:
+    """Read the trained context window from a `/api/show` response.
+
+    Ollama files it under the model's architecture, e.g. `llama.context_length`.
+    Returns `None` when the response does not give it.
+
+    Raises:
+        LLMResponseError: The body is not a JSON object.
+    """
+    if not isinstance(body, dict):
+        raise LLMResponseError(f"unexpected /api/show response from Ollama: {body!r}")
+    info = body.get("model_info")
+    if not isinstance(info, dict):
+        return None
+    value = info.get(f"{info.get('general.architecture')}.context_length")
+    # bool is an int in Python, but never a context length
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value

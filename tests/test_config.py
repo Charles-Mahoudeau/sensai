@@ -90,3 +90,25 @@ def test_invalid_default_persona_is_rejected(tmp_path: Path, value: str) -> None
     """The default persona must be a non-empty name."""
     with pytest.raises(ConfigError, match=r"personas\.default"):
         load_config(_write(tmp_path, f"[personas]\ndefault = {value}\n"))
+
+
+def test_keep_alive_defaults_to_thirty_minutes(tmp_path: Path) -> None:
+    """Without a value, the model stays loaded longer than Ollama's 5 minutes."""
+    config = load_config(_write(tmp_path, '[ollama]\nurl = "http://o"\n'))
+
+    assert config.ollama.keep_alive == "30m"
+
+
+@pytest.mark.parametrize("value", ['"2h"', "-1", "600"])
+def test_keep_alive_accepts_durations_and_seconds(tmp_path: Path, value: str) -> None:
+    """A duration string or a number of seconds is passed on as written."""
+    config = load_config(_write(tmp_path, f"[ollama]\nkeep_alive = {value}\n"))
+
+    assert str(config.ollama.keep_alive) == value.strip('"')
+
+
+@pytest.mark.parametrize("value", ["true", "1.5", "[1]"])
+def test_invalid_keep_alive_is_rejected(tmp_path: Path, value: str) -> None:
+    """Anything but a string or a whole number of seconds is refused."""
+    with pytest.raises(ConfigError, match=r"ollama\.keep_alive"):
+        load_config(_write(tmp_path, f"[ollama]\nkeep_alive = {value}\n"))

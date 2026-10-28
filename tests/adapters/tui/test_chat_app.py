@@ -12,7 +12,7 @@ from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
 from sensai.adapters.tui.companion import ANIMATIONS, Companion, Mood
-from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel
+from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel, UsagePanel
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
@@ -32,6 +32,7 @@ from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnComple
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
+from sensai.core.model_memory import ModelMemory
 from sensai.core.models import (
     ChatDone,
     McpServerStatus,
@@ -42,12 +43,18 @@ from sensai.core.models import (
     ToolResult,
     ToolSpec,
 )
-from sensai.core.models.llm import ThinkingDelta
+from sensai.core.models.llm import (
+    LoadedModel,
+    ThinkingDelta,
+    Usage,
+    UsageTotals,
+)
 from sensai.core.models.persona import Persona
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeLLM, InMemoryPersonaSource
+from sensai.core.usage import UsageMeter
+from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -351,6 +358,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
             "/persona",
             "/mcp",
             "/tools",
+            "/usage",
             "/exit",
         ]
 
@@ -713,6 +721,76 @@ def test_mcp_panel_lists_connected_and_failed_servers() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not app.query(Panel)
+
+    _run(app, scenario)
+
+
+def test_usage_panel_shows_tokens_context_and_memory() -> None:
+    """/usage shows the session totals, the context fill and the memory split."""
+    gib = 1024**3
+    meter = UsageMeter(UsageTotals(prompt_tokens=10_000, completion_tokens=500))
+    meter.record(ChatDone(Usage(completion_tokens=100, prompt_tokens=2_000)))
+    model = LoadedModel(
+        name="qwen3:8b",
+        size_bytes=6 * gib,
+        vram_bytes=4 * gib,
+        context_length=4_096,
+    )
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()),
+        Pipeline(),
+        EventBus(),
+        model_memory=ModelMemory(
+            FakeModelMonitor(model, max_context=131_072), "qwen3:8b"
+        ),
+        usage_meter=meter,
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/usage")
+        await pilot.pause()
+
+        panel = app.query_one(UsagePanel)
+        rows = [str(row.render()) for row in panel.query(".usage-row")]
+        assert rows == [
+            "Tokens    12,600 total   12,000 prompt · 600 completion",
+            "Calls     1 call to the model",
+            "Used      2,100 / 4,096   51%",
+            "Window    4,096 loaded   131,072 max",
+            "Model     qwen3:8b",
+            "VRAM      4.0 GiB",
+            "RAM       2.0 GiB   spilled from the GPU, slower",
+        ]
+
+    _run(app, scenario)
+
+
+def test_usage_panel_still_shows_tokens_when_ollama_is_down() -> None:
+    """A failed memory read is explained, and the context waits for an answer."""
+
+    class _DownMonitor(FakeModelMonitor):
+        async def loaded_models(self) -> Sequence[LoadedModel]:
+            raise LLMUnavailableError("cannot reach Ollama")
+
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()),
+        Pipeline(),
+        EventBus(),
+        model_memory=ModelMemory(_DownMonitor(), "qwen3:8b"),
+        usage_meter=UsageMeter(),
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/usage")
+        await pilot.pause()
+
+        rows = [str(row.render()) for row in app.query(".usage-row")]
+        assert rows[2:] == [
+            "Used      unknown until the next answer",
+            "Status    unavailable: cannot reach Ollama",
+        ]
 
     _run(app, scenario)
 

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sensai.adapters.storage.sqlite import SqliteDatabase, from_db_time
-from sensai.core.models.llm import Message
+from sensai.core.models.llm import Message, UsageTotals
 from sensai.core.models.memory import Session
 from sensai.core.models.tools import ToolCall
 from sensai.core.ports import SessionNotFoundError
@@ -69,6 +70,12 @@ class SqliteSessionRepository:
             from_db_time(fields["created_at"]),
             from_db_time(fields["updated_at"]),
             fields["title"],
+            UsageTotals(
+                prompt_tokens=fields["prompt_tokens"],
+                completion_tokens=fields["completion_tokens"],
+                calls=fields["llm_calls"],
+                generation_time=timedelta(milliseconds=fields["generation_ms"]),
+            ),
         )
 
     def _to_message(self, row: Sequence[Any]) -> Message:
@@ -160,6 +167,30 @@ class SqliteSessionRepository:
             return [self._to_message(row) for row in rows]
 
         return await self._db.run(get)
+
+    async def add_usage(self, session_id: int, usage: UsageTotals) -> None:
+        """Increment the session's usage columns, without reading them first."""
+
+        def add() -> None:
+            with self._db.write() as conn:
+                touched = conn.execute(
+                    "UPDATE sessions SET prompt_tokens = prompt_tokens + ?,"
+                    " completion_tokens = completion_tokens + ?,"
+                    " llm_calls = llm_calls + ?,"
+                    " generation_ms = generation_ms + ?"
+                    " WHERE id = ?",
+                    (
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                        usage.calls,
+                        round(usage.generation_time / timedelta(milliseconds=1)),
+                        session_id,
+                    ),
+                ).rowcount
+                if not touched:
+                    raise SessionNotFoundError(session_id)
+
+        await self._db.run(add)
 
     async def delete_session(self, session_id: int) -> None:
         """Delete a session; its messages go with it (`ON DELETE CASCADE`)."""

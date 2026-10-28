@@ -228,6 +228,18 @@ HintMessage {
     }
 }
 
+#usage-panel {
+    .usage-title {
+        margin: 1 0 0 0;
+    }
+    .usage-title:first-of-type {
+        margin: 0;
+    }
+    .usage-row {
+        padding: 0 0 0 2;
+    }
+}
+
 #tools-panel {
     #tools-header {
         height: 1;

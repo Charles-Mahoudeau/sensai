@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -148,11 +149,176 @@ class ThinkingDelta:
 
 
 @dataclass(frozen=True, slots=True)
+class Timings:
+    """Represent the time spent in various phases of a model response."""
+
+    total: timedelta
+    load: timedelta
+    prompt_eval: timedelta
+    eval: timedelta
+
+    def __post_init__(self) -> None:
+        """Reject negative durations."""
+        for name in ("total", "load", "prompt_eval", "eval"):
+            if getattr(self, name) < timedelta(0):
+                raise ValueError(f"{name} must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
 class ChatDone:
-    """Represent the completion of a chat session."""
+    """Represent the completion of a chat session.
+
+    `timings` is `None` when the model server does not report durations.
+    """
 
     usage: Usage = field(default_factory=lambda: Usage(0, 0))
     done_reason: str | None = None
+    timings: Timings | None = None
+
+    @property
+    def prompt_tokens_per_second(self) -> float | None:
+        """Return the prompt processing speed, or `None` if it is unknown."""
+        if self.timings is None:
+            return None
+        seconds = self.timings.prompt_eval.total_seconds()
+        if seconds > 0:
+            return self.usage.prompt_tokens / seconds
+        else:
+            return None
+
+    @property
+    def completion_tokens_per_second(self) -> float | None:
+        """Return the generation speed, or `None` if it is unknown."""
+        if self.timings is None:
+            return None
+        seconds = self.timings.eval.total_seconds()
+        if seconds > 0:
+            return self.usage.completion_tokens / seconds
+        else:
+            return None
 
 
 type ChatEvent = TextDelta | ThinkingDelta | ToolCallRequest | ChatDone
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LoadedModel:
+    """A model currently loaded in memory by the model server.
+
+    `context_length` is the context window the model was loaded with, or `None`
+    when the server does not report it.
+    """
+
+    name: str
+    size_bytes: int
+    vram_bytes: int
+    context_length: int | None = None
+
+    def __post_init__(self) -> None:
+        """Reject negative sizes and context lengths."""
+        if self.size_bytes < 0:
+            raise ValueError("size_bytes must be non-negative")
+        if self.vram_bytes < 0:
+            raise ValueError("vram_bytes must be non-negative")
+        if self.context_length is not None and self.context_length < 0:
+            raise ValueError("context_length must be non-negative")
+
+    @property
+    def ram_bytes(self) -> int:
+        """Return the part of the model that spilled over to system memory."""
+        return max(self.size_bytes - self.vram_bytes, 0)
+
+    @property
+    def fully_on_gpu(self) -> bool:
+        """Tell whether the whole model fits in video memory."""
+        return self.ram_bytes == 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UsageTotals:
+    """Token usage added up over several model responses, e.g. a whole session.
+
+    `generation_time` adds up the time spent generating completion tokens, so
+    it gives an average generation speed.
+    """
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    calls: int = 0
+    generation_time: timedelta = timedelta(0)
+
+    def __post_init__(self) -> None:
+        """Reject negative totals."""
+        for name in ("prompt_tokens", "completion_tokens", "calls"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if self.generation_time < timedelta(0):
+            raise ValueError("generation_time must be non-negative")
+
+    def __add__(self, other: UsageTotals) -> UsageTotals:
+        """Return the sum of two totals."""
+        return UsageTotals(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            calls=self.calls + other.calls,
+            generation_time=self.generation_time + other.generation_time,
+        )
+
+    def add(self, done: ChatDone) -> UsageTotals:
+        """Return these totals with one more model response counted."""
+        return self + UsageTotals(
+            prompt_tokens=done.usage.prompt_tokens,
+            completion_tokens=done.usage.completion_tokens,
+            calls=1,
+            generation_time=done.timings.eval if done.timings else timedelta(0),
+        )
+
+    @property
+    def total_tokens(self) -> int:
+        """Return the sum of prompt and completion tokens."""
+        return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def completion_tokens_per_second(self) -> float | None:
+        """Return the average generation speed, or `None` if it is unknown."""
+        seconds = self.generation_time.total_seconds()
+        if seconds > 0:
+            return self.completion_tokens / seconds
+        return None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UsageReport:
+    """Everything known about a session's resource use, at one moment.
+
+    Attributes:
+        session: The token usage of the whole session.
+        loaded_model: The model's memory footprint; `None` if it is not loaded
+            or could not be read.
+        context_used: The tokens the latest model call held in its context;
+            `None` before the first call.
+        context_max: The largest context window the model supports, which may
+            be more than the one it is loaded with; `None` if unknown.
+        monitor_error: Why the memory footprint could not be read, if it failed.
+    """
+
+    session: UsageTotals = field(default_factory=UsageTotals)
+    loaded_model: LoadedModel | None = None
+    context_used: int | None = None
+    context_max: int | None = None
+    monitor_error: str | None = None
+
+    @property
+    def context_limit(self) -> int | None:
+        """Return the model's context window, or `None` if it is unknown."""
+        if self.loaded_model is None:
+            return None
+        return self.loaded_model.context_length
+
+    @property
+    def context_ratio(self) -> float | None:
+        """Return how full the context is (0 to 1), or `None` if it is unknown."""
+        limit = self.context_limit
+        if self.context_used is None or not limit:
+            return None
+        return self.context_used / limit

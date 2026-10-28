@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 
@@ -10,9 +11,11 @@ from sensai.adapters.ollama import _wire
 from sensai.core.models.llm import (
     ChatDone,
     ChatOptions,
+    LoadedModel,
     Message,
     TextDelta,
     ThinkingDelta,
+    Timings,
     ToolCallRequest,
     Usage,
 )
@@ -178,6 +181,37 @@ def test_done_without_counts_gives_zero_usage() -> None:
     assert _wire.events_from_chunk({"done": True}) == [ChatDone(Usage(0, 0), None)]
 
 
+def test_done_durations_become_timings() -> None:
+    """Ollama durations, in nanoseconds, are read into the ChatDone timings."""
+    chunk = {
+        "done": True,
+        "total_duration": 3_000_000_000,
+        "load_duration": 500_000,
+        "prompt_eval_duration": 250_000_000,
+        "eval_duration": 2_000_000_000,
+    }
+
+    [done] = _wire.events_from_chunk(chunk)
+
+    assert isinstance(done, ChatDone)
+    assert done.timings == Timings(
+        total=timedelta(seconds=3),
+        load=timedelta(microseconds=500),
+        prompt_eval=timedelta(milliseconds=250),
+        eval=timedelta(seconds=2),
+    )
+
+
+def test_missing_duration_is_read_as_zero() -> None:
+    """A final line with only some durations still gives timings."""
+    [done] = _wire.events_from_chunk({"done": True, "eval_duration": 1_000_000_000})
+
+    assert isinstance(done, ChatDone)
+    assert done.timings is not None
+    assert done.timings.eval == timedelta(seconds=1)
+    assert done.timings.total == timedelta(0)
+
+
 def test_tool_call_keeps_the_id_from_ollama() -> None:
     """When Ollama identifies a call, its id is used as is."""
     chunk = {
@@ -242,3 +276,74 @@ def test_error_message_prefers_the_json_error_field() -> None:
     )
     assert _wire.error_message(502, b"Bad gateway") == "Bad gateway"
     assert _wire.error_message(500, b"") == "HTTP 500"
+
+
+def test_missing_sizes_and_context_are_defaulted() -> None:
+    """Sizes default to zero and an unreported context length to None."""
+    assert _wire.loaded_models_from_body({"models": [{"name": "m"}]}) == [
+        LoadedModel(name="m", size_bytes=0, vram_bytes=0)
+    ]
+
+
+def test_malformed_api_ps_bodies_are_response_errors() -> None:
+    """A wrong shape anywhere in `/api/ps` is reported, not ignored."""
+    bad_bodies = [
+        [],
+        {},
+        {"models": None},
+        {"models": ["m"]},
+        {"models": [{"size": 1}]},
+        {"models": [{"name": "m", "size": "big"}]},
+        {"models": [{"name": "m", "size": -1}]},
+    ]
+    for body in bad_bodies:
+        with pytest.raises(LLMResponseError):
+            _wire.loaded_models_from_body(body)
+
+
+def test_keep_alive_is_sent_only_when_set() -> None:
+    """A set keep_alive is added to the chat payload; None leaves Ollama's default."""
+    with_it = _wire.chat_payload("m", [], (), None, keep_alive="30m")
+    without = _wire.chat_payload("m", [], (), None)
+
+    assert with_it["keep_alive"] == "30m"
+    assert "keep_alive" not in without
+
+
+def test_load_payload_has_no_prompt() -> None:
+    """Loading a model is a generate request without a prompt."""
+    assert _wire.load_payload("m", -1) == {
+        "model": "m",
+        "stream": False,
+        "keep_alive": -1,
+    }
+    assert _wire.load_payload("m", None) == {"model": "m", "stream": False}
+
+
+def test_max_context_is_read_under_the_architecture() -> None:
+    """Ollama files the trained window as `<architecture>.context_length`."""
+    body = {
+        "model_info": {
+            "general.architecture": "llama",
+            "llama.context_length": 131_072,
+        }
+    }
+
+    assert _wire.max_context_from_show(body) == 131_072
+
+
+def test_missing_or_odd_max_context_is_unknown() -> None:
+    """No model info, another architecture's key or a bad value give None."""
+    bodies = [
+        {},
+        {"model_info": None},
+        {"model_info": {"general.architecture": "llama"}},
+        {"model_info": {"general.architecture": "qwen", "llama.context_length": 9}},
+        {"model_info": {"general.architecture": "llama", "llama.context_length": 0}},
+        {"model_info": {"general.architecture": "llama", "llama.context_length": "x"}},
+    ]
+    for body in bodies:
+        assert _wire.max_context_from_show(body) is None
+
+    with pytest.raises(LLMResponseError):
+        _wire.max_context_from_show([])
