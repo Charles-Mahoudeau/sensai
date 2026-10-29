@@ -81,8 +81,8 @@ def test_start_new_saves_then_records_into_a_new_session() -> None:
     asyncio.run(run())
 
 
-def test_clearing_then_quitting_leaves_an_empty_latest_session() -> None:
-    """A restart after a clear resumes an empty session, not the cleared one."""
+def test_clearing_then_quitting_stores_no_empty_session() -> None:
+    """A cleared conversation that stays empty does not create a session."""
 
     async def run() -> None:
         repo = InMemorySessionStore()
@@ -96,9 +96,7 @@ def test_clearing_then_quitting_leaves_an_empty_latest_session() -> None:
         engine.clear()
         await recorder.save()
 
-        latest = await repo.list_sessions(limit=1)
-        assert latest[0].id != session.id
-        assert await repo.get_messages(latest[0].id) == []
+        assert [s.id for s in await repo.list_sessions()] == [session.id]
         assert await repo.get_messages(session.id) == [Message.user("first")]
 
     asyncio.run(run())

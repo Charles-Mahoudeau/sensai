@@ -14,7 +14,8 @@ class SessionRecorder:
     """Save the messages and token usage of an engine, and switch sessions.
 
     Without a session to start from, one is created when the first message is
-    saved. Clearing the conversation creates the next session right away.
+    saved. Clearing the conversation leaves the next session to be created the
+    same way, so a session never starts empty.
     """
 
     def __init__(
@@ -75,21 +76,19 @@ class SessionRecorder:
             raise
 
     async def start_new(self) -> None:
-        """Save the current session, then record into a new, empty one.
+        """Save the current session, then record into a new one.
 
-        The new session is created right away, so it is the latest one and a
-        restart resumes it rather than the cleared conversation. A current
-        session that is still empty is kept instead of creating another one.
-        Call it right before clearing the engine history.
+        The new session is created when its first message is saved, so empty
+        sessions are never stored. Call it right before clearing the engine
+        history.
 
         Raises:
             StorageError: The store failed to write.
         """
         await self.save()
-        if self._session_id is not None and self._saved == 0:
+        if self._session_id is None:
             return
-        session = await self._repo.create_session(model=self._model)
-        self._session_id = session.id
+        self._session_id = None
         self._saved = 0
         if self._meter is not None:
             self._meter.reset()

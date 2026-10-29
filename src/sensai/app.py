@@ -300,12 +300,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
 
         session_repo = SqliteSessionRepository(db)
         memory_repo = SqliteMemoryRepository(db)
-        last = await session_repo.list_sessions(limit=1)
-        session = (
-            last[0] if last else await session_repo.create_session(model=config.model)
-        )
-        history = await session_repo.get_messages(session.id)
-        usage_meter = UsageMeter(session.usage)
+        usage_meter = UsageMeter()
 
         tools, mcp_servers = await build_tools(config, stack, memory_repo)
         tools.set_all_enabled(enabled=options.tools_enabled)
@@ -322,7 +317,6 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             config,
             agent,
             system_prompt,
-            history,
             profile=profile,
             tools=tools,
             mcp_servers=mcp_servers,
@@ -333,8 +327,8 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             session_repo,
             engine,
             model=config.model,
-            session_id=session.id,
-            saved=len(history),
+            session_id=None,
+            saved=0,
             meter=usage_meter,
         )
         commands = default_registry(
