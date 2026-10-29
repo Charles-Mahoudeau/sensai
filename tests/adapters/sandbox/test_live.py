@@ -135,3 +135,36 @@ def test_normal_runs_get_no_memory_note(tmp_path: Path) -> None:
     run = _run(tmp_path, "raise ValueError('boom')")
 
     assert "memory limit" not in run.stderr
+
+
+def test_there_is_no_network(tmp_path: Path) -> None:
+    """The container cannot reach the outside."""
+    run = _run(
+        tmp_path,
+        "import socket\nsocket.create_connection(('1.1.1.1', 53), timeout=3)",
+    )
+
+    assert not run.ok
+    assert "OSError" in run.stderr
+
+
+def test_the_image_is_read_only(tmp_path: Path) -> None:
+    """Scripts can't change the image; only /work (and a small /tmp) are writable."""
+    run = _run(tmp_path, "open('/usr/evil.txt', 'w').write('x')")
+
+    assert not run.ok
+    assert "Read-only file system" in run.stderr or "Permission denied" in run.stderr
+
+
+def test_the_script_runs_without_privileges(tmp_path: Path) -> None:
+    """The script runs as a non-root user with no capability."""
+    run = _run(
+        tmp_path,
+        "import os\nprint(os.getuid())\n"
+        "print(open('/proc/self/status').read().split('CapEff:')[1].split()[0])",
+    )
+
+    assert run.ok, run.stderr
+    uid, capabilities = run.stdout.split()
+    assert uid != "0"
+    assert int(capabilities, 16) == 0
