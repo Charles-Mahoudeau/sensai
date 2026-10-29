@@ -208,7 +208,7 @@ def test_sessions_reports_a_store_failure_as_a_hint() -> None:
     """A store that cannot be read gives a hint, not a crash or a panel."""
 
     class _BrokenStore(InMemorySessionStore):
-        async def list_sessions(self, *, limit: int = 50) -> list[Session]:
+        async def list_sessions(self, *, limit: int | None = 50) -> list[Session]:
             raise StorageError("disk gone")
 
     context = FakeContext(

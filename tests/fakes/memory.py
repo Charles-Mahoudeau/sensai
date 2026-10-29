@@ -65,7 +65,7 @@ class InMemorySessionStore:
         except KeyError:
             raise SessionNotFoundError(session_id) from None
 
-    async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
+    async def list_sessions(self, *, limit: int | None = 50) -> Sequence[Session]:
         """Return the most recently updated sessions first."""
         ordered = sorted(
             self._sessions.values(), key=lambda s: s.updated_at, reverse=True

@@ -189,7 +189,7 @@ class Engine:
         """
         if self._sessions is None:
             return ()
-        return await self._sessions.list_sessions()
+        return await self._sessions.list_sessions(limit=None)
 
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""

@@ -99,11 +99,11 @@ class SessionRepository(Protocol):
         """
         ...
 
-    async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
+    async def list_sessions(self, *, limit: int | None = 50) -> Sequence[Session]:
         """Return the most recently updated sessions, newest first.
 
         Args:
-            limit: The maximum number of sessions to return.
+            limit: The maximum number of sessions to return; every one if None.
 
         Raises:
             StorageError: The store failed to read.
