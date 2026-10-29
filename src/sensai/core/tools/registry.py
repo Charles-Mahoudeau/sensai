@@ -4,10 +4,10 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from sensai.core.models import ToolCall, ToolInfo, ToolResult, ToolSpec
+from sensai.core.models import ToolCall, ToolInfo, ToolOutput, ToolResult, ToolSpec
 from sensai.core.tools.permissions import AllowAll, PermissionPolicy
 
-type ToolHandler = Callable[[Mapping[str, Any]], Awaitable[str]]
+type ToolHandler = Callable[[Mapping[str, Any]], Awaitable[str | ToolOutput]]
 
 BUILTIN_SOURCE = "builtin"
 
@@ -109,10 +109,18 @@ class ToolRegistry:
     @staticmethod
     async def _call_handler(handler: ToolHandler, call: ToolCall) -> ToolResult:
         try:
-            content = await handler(call.arguments)
+            output = await handler(call.arguments)
         except Exception as exc:
             return ToolRegistry._error(call, f"{type(exc).__name__}: {exc}")
-        return ToolResult(call.name, content, call_id=call.id or "")
+        if isinstance(output, str):
+            return ToolResult(call.name, output, call_id=call.id or "")
+        return ToolResult(
+            call.name,
+            output.content,
+            call_id=call.id or "",
+            is_error=output.is_error,
+            attachments=output.attachments,
+        )
 
     @staticmethod
     def _error(call: ToolCall, message: str) -> ToolResult:

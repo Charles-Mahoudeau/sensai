@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from sensai.core.models import ToolCall, ToolInfo, ToolSpec
+from sensai.core.models import Attachment, ToolCall, ToolInfo, ToolOutput, ToolSpec
 from sensai.core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -94,3 +95,27 @@ def test_short_name_drops_the_source_prefix() -> None:
 
     assert ToolInfo(spec, "github", enabled=True).short_name == "get_me"
     assert ToolInfo(spec, "builtin", enabled=True).short_name == "github__get_me"
+
+
+def test_tool_output_passes_attachments_and_error_through() -> None:
+    """A handler returning `ToolOutput` gives its files and failure to the result."""
+    plot = Attachment(Path("plot.png"), "image/png")
+
+    async def run(arguments: Mapping[str, Any]) -> ToolOutput:
+        del arguments
+        return ToolOutput("exit 1", attachments=(plot,), is_error=True)
+
+    registry = ToolRegistry()
+    registry.register(ToolSpec("run", "Run code"), run)
+
+    result = asyncio.run(registry.call(ToolCall("run", id="c1")))
+
+    assert (result.content, result.is_error, result.call_id) == ("exit 1", True, "c1")
+    assert result.attachments == (plot,)
+
+
+def test_text_handlers_still_give_plain_results() -> None:
+    """A handler returning text gives a successful result with no files."""
+    result = asyncio.run(_registry().call(ToolCall("search", {"q": "x"})))
+
+    assert (result.is_error, result.attachments) == (False, ())
