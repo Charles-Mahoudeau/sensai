@@ -26,19 +26,16 @@ MOTDS = (
     "Now with 100% more tokens!",
     "Runs on your machine, thinks on its own.",
     "Ask me anything. Except the meaning of life.",
-    "Try /tools to see what I can do.",
-    "Try /sessions to pick up where you left off.",
-    "Press ctrl+t to peek at my thoughts.",
     "No cloud was harmed in the making of this answer.",
     "Local models, global ambitions.",
     "I remember things. Ask me to forget.",
     "Powered by matrix multiplication.",
-    "Also try /effort!",
     "Hallucinations are a feature, sometimes.",
     "Have you tried turning it off and on again?",
-    "Is this thing on?",
     "Sensai says: drink some water.",
     "It works on my GPU.",
+    "Y'a plein de couleurs, on dirait My Little Pony !",
+    "En vrai les IDs c'est vraiment cool.",
 )
 
 
