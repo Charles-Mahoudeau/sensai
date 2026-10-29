@@ -24,3 +24,7 @@ thinking_effort = "medium"
 [mcp.servers.github]
 url = "https://api.githubcopilot.com/mcp/"
 token_env = "GITHUB_TOKEN"
+
+# Local fake server for manual testing: uv run python scripts/fake_mcp_server.py
+[mcp.servers.fake]
+url = "http://127.0.0.1:8765/mcp/"
