@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 SCRIPT = "main.py"
 """The script's file name inside the run folder."""
 
+_OOM_NOTE = "Killed: the script exceeded the memory limit."
+
 
 @dataclass(frozen=True, slots=True)
 class SandboxLimits:
@@ -106,12 +108,18 @@ class DockerCodeRunner:
                 timed_out = True
             out = await asyncio.to_thread(container.logs, stdout=True, stderr=False)
             err = await asyncio.to_thread(container.logs, stdout=False, stderr=True)
+            await asyncio.to_thread(container.reload)
+            state = (container.attrs or {}).get("State", {})
+            oom_killed = bool(state.get("OOMKilled"))
         finally:
             await asyncio.to_thread(container.remove, force=True)
+        stderr = err.decode(errors="replace")
+        if oom_killed:
+            stderr = f"{stderr}\n{_OOM_NOTE}".lstrip()
         return (
             int(status["StatusCode"]),
             out.decode(errors="replace"),
-            err.decode(errors="replace"),
+            stderr,
             timed_out,
         )
 

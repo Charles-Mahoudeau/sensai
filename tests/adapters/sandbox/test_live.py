@@ -118,3 +118,20 @@ def test_an_infinite_loop_is_stopped_at_the_time_limit(tmp_path: Path) -> None:
     assert run.stdout.strip() == "started"
     assert 3 <= run.duration < 15
     assert _sandbox_containers() == before
+
+
+def test_too_much_memory_is_killed_and_explained(tmp_path: Path) -> None:
+    """Going past the memory limit kills the script, and stderr says why."""
+    run = _run(
+        tmp_path, "x = bytearray(400 * 1024 * 1024)", SandboxLimits(memory="128m")
+    )
+
+    assert not run.ok
+    assert "exceeded the memory limit" in run.stderr
+
+
+def test_normal_runs_get_no_memory_note(tmp_path: Path) -> None:
+    """The note only appears when the memory limit actually killed the run."""
+    run = _run(tmp_path, "raise ValueError('boom')")
+
+    assert "memory limit" not in run.stderr
