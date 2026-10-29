@@ -25,12 +25,10 @@ from sensai.core.models import (
     Message,
     TextDelta,
     ThinkingEffort,
-    ToolCall,
 )
 from sensai.core.models.llm import (
     LoadedModel,
     ThinkingDelta,
-    ToolCallRequest,
     UsageTotals,
 )
 from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
@@ -161,9 +159,13 @@ def test_model_receives_exactly_one_system_message(
     monkeypatch.setattr(web_search, "_web_search", search)
     llm = FakeLLM(
         [
-            [TextDelta("I need data.")],
-            [ToolCallRequest(ToolCall("web_search", {"query": "q"}, id="c1"))],
-            [TextDelta('{"thought": "All known.", "ready": true}')],
+            [
+                TextDelta(
+                    '{"thought": "I need data.", "action": "web_search", '
+                    '"arguments": {"query": "q"}}'
+                )
+            ],
+            [TextDelta('{"thought": "All known.", "action": "answer"}')],
             [TextDelta("Done.")],
         ]
     )
@@ -183,7 +185,7 @@ def test_model_receives_exactly_one_system_message(
 
     asyncio.run(run())
 
-    assert len(llm.messages) == 4
+    assert len(llm.messages) == 3
     for request in llm.messages:
         assert [m.content for m in request if m.role == "system"] == ["SYSTEM"]
         assert request[0].role == "system"

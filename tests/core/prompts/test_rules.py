@@ -15,7 +15,7 @@ from sensai.core.prompts import (
     validate,
 )
 
-THOUGHT = "Tools: {tools}\nIf done, write: I am ready to answer."
+THOUGHT = 'Tools: {tools}\nWhen done, choose "answer".'
 
 
 def test_valid_templates_pass() -> None:
@@ -27,7 +27,7 @@ def test_valid_templates_pass() -> None:
 def test_missing_placeholder_is_rejected() -> None:
     """The code fills `{tools}` in; a version without it would lose the tools."""
     with pytest.raises(InvalidPromptError, match=r"must contain \{tools\}"):
-        validate(REACT_THOUGHT, "Think. I am ready to answer.")
+        validate(REACT_THOUGHT, 'Think. Choose "answer".')
 
 
 def test_unknown_placeholder_is_rejected() -> None:
@@ -55,9 +55,9 @@ def test_escaped_braces_are_allowed() -> None:
 
 
 def test_required_phrase_is_checked_ignoring_case() -> None:
-    """The thought prompt must say when the model is ready to answer."""
-    validate(REACT_THOUGHT, "{tools} I AM READY TO ANSWER.")
-    with pytest.raises(InvalidPromptError, match="ready to answer"):
+    """The thought prompt must name the action that ends the thoughts."""
+    validate(REACT_THOUGHT, '{tools} Choose "ANSWER".')
+    with pytest.raises(InvalidPromptError, match='"answer"'):
         validate(REACT_THOUGHT, "{tools} Say: done.")
 
 

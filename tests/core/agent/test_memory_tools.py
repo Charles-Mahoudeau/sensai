@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 from sensai.core.agent.events import ToolRunStarted, TurnCompleted
 from sensai.core.agent.memory_recall import MemoryRecall
 from sensai.core.agent.re_act import ReActAgent
-from sensai.core.models import Message, TextDelta, ToolCall
-from sensai.core.models.llm import ToolCallRequest
+from sensai.core.models import Message, TextDelta
 from sensai.core.tools.builtin import memory
 from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from sensai.core.agent.events import AgentEvent
 
-READY = '{"thought": "All known.", "ready": true}'
+READY = '{"thought": "All known.", "action": "answer"}'
 
 
 async def _collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
@@ -35,9 +35,30 @@ def _agent(llm: FakeLLM, store: InMemoryMemoryStore, *, limit: int = 20) -> ReAc
     return ReActAgent(llm, registry, memory_recall=MemoryRecall(store, limit=limit))
 
 
+def _step(thought: str, action: str, **arguments: Any) -> list[TextDelta]:
+    """Script a step calling a tool, as the model writes it under the schema."""
+    data = {"thought": thought, "action": action, "arguments": arguments}
+    return [TextDelta(json.dumps(data))]
+
+
+async def _partly_shown_store() -> InMemoryMemoryStore:
+    """A store with more memories than a recall limit of 1 shows."""
+    store = InMemoryMemoryStore()
+    await store.create(name="car", type="preference", description="BMW")
+    await store.create(name="language", type="preference", description="Rust")
+    return store
+
+
 def _offered(llm: FakeLLM, request: int) -> set[str]:
-    """The names of the tools offered in one request."""
-    return {spec.name for spec in llm.tools[request]}
+    """The tools a step request lets the model call."""
+    options = llm.options[request]
+    assert options is not None
+    assert options.response_schema is not None
+    actions = {
+        branch["properties"]["action"]["const"]
+        for branch in options.response_schema["anyOf"]
+    }
+    return actions - {"answer"}
 
 
 def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
@@ -47,20 +68,13 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
         store = InMemoryMemoryStore()
         create_llm = FakeLLM(
             [
-                [TextDelta("I should store this durable preference.")],
-                [
-                    ToolCallRequest(
-                        ToolCall(
-                            "memory_create",
-                            {
-                                "name": "preferred language",
-                                "type": "preference",
-                                "description": "The user prefers Python.",
-                            },
-                            "create-1",
-                        )
-                    )
-                ],
+                _step(
+                    "I should store this durable preference.",
+                    "memory_create",
+                    name="preferred language",
+                    type="preference",
+                    description="The user prefers Python.",
+                ),
                 [TextDelta(READY)],
                 [TextDelta("I will use Python in future examples.")],
             ]
@@ -73,28 +87,16 @@ def test_react_agent_maintains_and_recalls_memory_across_sessions() -> None:
         assert created.description == "The user prefers Python."
         # Nothing was stored yet: no memory block, and nothing to search.
         assert [m.role for m in create_llm.messages[0]] == ["user", "user"]
-        assert "memory_read" not in _offered(create_llm, 1)
+        assert "memory_read" not in _offered(create_llm, 0)
 
         update_llm = FakeLLM(
             [
-                [
-                    TextDelta(
-                        "The existing preference is contradicted, "
-                        "so I should update it."
-                    )
-                ],
-                [
-                    ToolCallRequest(
-                        ToolCall(
-                            "memory_update",
-                            {
-                                "memory_id": created.id,
-                                "description": "The user now prefers Rust.",
-                            },
-                            "update-1",
-                        )
-                    )
-                ],
+                _step(
+                    "The existing preference is contradicted, so I should update it.",
+                    "memory_update",
+                    memory_id=created.id,
+                    description="The user now prefers Rust.",
+                ),
                 [TextDelta(READY)],
                 [TextDelta("I will use Rust in future examples.")],
             ]
@@ -173,7 +175,7 @@ def test_memory_read_is_offered_only_when_some_memories_are_not_shown() -> None:
         await store.create(name="language", type="preference", description="Rust")
         partial = FakeLLM([[TextDelta("Thinking.")], [TextDelta("Answer.")]])
         await _collect(_agent(partial, store, limit=1).run((Message.user("Hi"),)))
-        return _offered(complete, 1), _offered(partial, 1)
+        return _offered(complete, 0), _offered(partial, 0)
 
     complete, partial = asyncio.run(run())
 
@@ -206,7 +208,7 @@ def test_react_agent_shows_no_memory_when_nothing_is_stored() -> None:
     async def run() -> None:
         llm = FakeLLM(
             [
-                [TextDelta('{"thought": "Public knowledge.", "ready": true}')],
+                [TextDelta('{"thought": "Public knowledge.", "action": "answer"}')],
                 [TextDelta("It is a public figure.")],
             ]
         )
@@ -228,19 +230,21 @@ def test_react_agent_shows_no_memory_when_nothing_is_stored() -> None:
     asyncio.run(run())
 
 
-def test_react_agent_does_not_show_a_tool_call_written_as_text() -> None:
-    """A reply that is only a JSON tool call is dropped and asked again."""
+def test_react_agent_only_shows_the_answer_as_text() -> None:
+    """Thoughts and calls never reach the answer: only the last reply does."""
 
     async def run() -> None:
         llm = FakeLLM(
             [
-                [TextDelta("I need nothing.")],
-                [TextDelta('{"name": "memory_read", "parameters": {"query": "x"}}')],
+                _step("Let me look.", "memory_read", query="x"),
+                [TextDelta(READY)],
                 [TextDelta("Final answer.")],
             ]
         )
         events = await _collect(
-            _agent(llm, InMemoryMemoryStore()).run((Message.user("Hello"),))
+            _agent(llm, await _partly_shown_store(), limit=1).run(
+                (Message.user("Hello"),)
+            )
         )
 
         shown = "".join(e.text for e in events if isinstance(e, TextDelta))
@@ -254,18 +258,17 @@ def test_react_agent_answers_instead_of_repeating_a_tool_call() -> None:
     """The same call twice in a turn runs once, then the agent answers."""
 
     async def run() -> None:
-        repeated = ToolCall("memory_read", {"query": "zzz"}, "c1")
         llm = FakeLLM(
             [
-                [TextDelta("Let me look.")],
-                [ToolCallRequest(repeated)],
-                [TextDelta("Let me look again.")],
-                [ToolCallRequest(ToolCall("memory_read", {"query": "zzz"}, "c2"))],
+                _step("Let me look.", "memory_read", query="zzz"),
+                _step("Let me look again.", "memory_read", query="zzz"),
                 [TextDelta("Nothing is stored.")],
             ]
         )
         events = await _collect(
-            _agent(llm, InMemoryMemoryStore()).run((Message.user("Hello"),))
+            _agent(llm, await _partly_shown_store(), limit=1).run(
+                (Message.user("Hello"),)
+            )
         )
 
         assert sum(isinstance(e, ToolRunStarted) for e in events) == 1
