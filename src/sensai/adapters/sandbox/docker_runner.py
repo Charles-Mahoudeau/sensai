@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import shutil
+import tempfile
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import docker
+from docker.errors import DockerException
 
 from sensai.core.models import Attachment
+from sensai.core.models.sandbox import CodeRun
+from sensai.core.ports import SandboxError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SCRIPT = "main.py"
 """The script's file name inside the run folder."""
@@ -32,12 +44,64 @@ class DockerCodeRunner:
     """
 
     def __init__(
-        self, image: str, artifacts_dir: Path, limits: SandboxLimits | None = None
+        self,
+        image: str,
+        artifacts_dir: Path,
+        limits: SandboxLimits | None = None,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        now: Callable[[], datetime] = datetime.now,
     ) -> None:
         """Use `image`, saving the files each run creates under `artifacts_dir`."""
         self._image = image
         self._artifacts_dir = artifacts_dir
         self._limits = limits or SandboxLimits()
+        self._clock = clock
+        self._now = now
+        self._client: docker.DockerClient | None = None
+
+    async def run(self, code: str) -> CodeRun:
+        """Run `code` in a new container and collect its output and files."""
+        work_root = self._artifacts_dir.resolve() / ".work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="run-", dir=work_root) as tmp:
+            workdir = Path(tmp)
+            (workdir / SCRIPT).write_text(code, encoding="utf-8")
+            start = self._clock()
+            try:
+                exit_code, out, err = await asyncio.to_thread(self._execute, workdir)
+            except DockerException as error:
+                raise SandboxError(f"Docker could not run the code: {error}") from error
+            duration = self._clock() - start
+            now = self._now()
+            run_id = f"{now:%H%M%S}-{workdir.name[-6:]}"
+            run_dir = self._artifacts_dir / f"{now:%Y-%m-%d}" / run_id
+            artifacts, script = collect_artifacts(workdir, run_dir)
+        return CodeRun(
+            out, err, exit_code, duration, artifacts=artifacts, script=script
+        )
+
+    def _execute(self, workdir: Path) -> tuple[int, str, str]:
+        """Run the script in a container, blocking; always remove the container."""
+        container = self._docker().containers.run(
+            self._image, ["python", SCRIPT], **self.run_options(workdir)
+        )
+        try:
+            status = container.wait()
+            out = container.logs(stdout=True, stderr=False)
+            err = container.logs(stdout=False, stderr=True)
+        finally:
+            container.remove(force=True)
+        return (
+            int(status["StatusCode"]),
+            out.decode(errors="replace"),
+            err.decode(errors="replace"),
+        )
+
+    def _docker(self) -> docker.DockerClient:
+        if self._client is None:
+            self._client = docker.from_env()
+        return self._client
 
     def run_options(self, workdir: Path) -> dict[str, Any]:
         """The options of `containers.run` for one run in `workdir`.
@@ -91,3 +155,11 @@ def collect_artifacts(
         media_type = mimetypes.guess_type(target.name)[0]
         artifacts.append(Attachment(target, media_type or "application/octet-stream"))
     return tuple(artifacts), script
+
+
+if TYPE_CHECKING:
+    from sensai.core.ports import CodeRunner
+
+    # Static check: fails `ty` if this class stops matching the port.
+    def _conforms(runner: DockerCodeRunner) -> CodeRunner:
+        return runner
