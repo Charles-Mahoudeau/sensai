@@ -243,7 +243,7 @@ HintMessage {
 #sessions-panel {
     #sessions-list {
         height: auto;
-        max-height: 20;
+        max-height: 100%;
         text-wrap: nowrap;
         text-overflow: ellipsis;
         padding: 0;

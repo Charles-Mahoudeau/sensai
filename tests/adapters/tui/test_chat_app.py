@@ -1103,6 +1103,35 @@ def test_sessions_panel_says_when_there_are_no_sessions() -> None:
     _run(app, scenario)
 
 
+def test_sessions_panel_keeps_the_highlight_visible_in_a_short_terminal() -> None:
+    """Scrolling down through many sessions never leaves the cursor off-screen."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def run() -> None:
+        async with app.run_test(size=(80, 20)) as pilot:
+            for index in range(30):
+                await store.create_session(model="m", title=f"Session {index}")
+            await _send(pilot, "/sessions")
+            await pilot.pause()
+
+            panel = app.query_one(SessionsPanel)
+            sessions = panel.query_one(OptionList)
+            for _ in range(29):
+                await pilot.press("down")
+                await pilot.pause()
+                # one line per option, so the option index is its line
+                top = sessions.scroll_offset.y
+                assert sessions.highlighted is not None
+                assert top <= sessions.highlighted < top + sessions.size.height
+                assert sessions.region.bottom <= panel.content_region.bottom
+
+    asyncio.run(run())
+
+
 def test_a_new_app_opens_on_the_banner() -> None:
     """The transcript starts with the big title and a new-session subtitle."""
     app = _app(FakeLLM([]))
