@@ -84,6 +84,7 @@ class ToolResult:
     content: str
     call_id: str
     is_error: bool = False
+    attachments: tuple[Attachment, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate the tool name."""
