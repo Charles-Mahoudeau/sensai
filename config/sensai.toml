@@ -8,7 +8,7 @@ path = "config/profile.toml"
 
 [personas]
 path = "config/personas"
-default = "sensei"
+default = "sensai"
 
 [structured_output]
 enabled = false
@@ -25,3 +25,15 @@ timeout = 30                # seconds
 memory = "512m"
 cpus = 1
 artifacts_dir = "artifacts"
+
+# Each [mcp.servers.<name>] table declares one HTTP MCP server. The name is the tool
+# namespace prefix (<name>__<tool>). Secrets stay in the environment: token_env names
+# the variable holding the bearer token.
+
+[mcp.servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+token_env = "GITHUB_TOKEN"
+
+# Local fake server for manual testing: uv run python scripts/fake_mcp_server.py
+[mcp.servers.fake]
+url = "http://127.0.0.1:8765/mcp/"

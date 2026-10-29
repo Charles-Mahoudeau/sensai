@@ -158,7 +158,7 @@ def test_new_version_that_breaks_its_rule_is_rejected() -> None:
     """A thought prompt without `{tools}` is refused and nothing is stored."""
 
     async def scenario(library: PromptLibrary) -> None:
-        await library.new_version("react_thought", "{tools} ready to answer")
+        await library.new_version("react_thought", '{tools} "answer"')
 
         with pytest.raises(InvalidPromptError):
             await library.new_version("react_thought", "Just think.")
@@ -246,7 +246,7 @@ def test_compare_refuses_prompts_not_used_as_system_message() -> None:
     """A ReAct prompt sent as the system message would give misleading results."""
 
     async def scenario(library: PromptLibrary) -> None:
-        await library.new_version("react_thought", "{tools} ready to answer")
+        await library.new_version("react_thought", '{tools} "answer"')
 
         with pytest.raises(ComparisonError, match="can't be compared"):
             await library.compare(

@@ -18,8 +18,8 @@ Prompts in use today:
 | Prompt | Used by |
 | --- | --- |
 | `system` | The chat: sent as the system message, followed by the rendered user profile |
-| `react_thought` | ReAct agent: asks for a private thought before acting (`{tools}` is filled in) |
-| `react_notes` | ReAct agent: wraps that thought for the acting call (`{thought}` is filled in) |
+| `react_thought` | ReAct agent: asks for a private thought and its action, a tool or the answer (`{tools}` is filled in) |
+| `react_notes` | ReAct agent: wraps the turn's previous thoughts for the next thought and the answer (`{thought}` is filled in) |
 | `react_answer` | ReAct agent: asks for the final answer after tool results |
 | `judge` | `sensai prompts compare`: judges which of two answers is better |
 | `memory_extraction` | Memory: asks for the facts and subjects to forget of a message (`{memories}` is filled in) |
@@ -167,7 +167,7 @@ message saying what is wrong:
 
 | Prompt | Placeholders (exactly these) | Must contain |
 | --- | --- | --- |
-| `react_thought` | `{tools}` | `ready to answer` (it tells the model when to set `"ready"`) |
+| `react_thought` | `{tools}` | `"answer"` (the action that ends the thoughts) |
 | `react_notes` | `{thought}` | |
 | `memory_extraction` | `{memories}` | `"facts"` and `"forget"` (the fields the code parses) |
 

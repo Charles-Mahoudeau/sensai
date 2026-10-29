@@ -1,18 +1,21 @@
-"""Tests for the ReAct agent's use of its prompts."""
+"""Tests for the ReAct agent's steps, prompts and answer."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING
 
 import pytest
 
-from sensai.core.agent.events import TurnCompleted
+from sensai.core.agent import AgentError
+from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
 from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
-from sensai.core.models import Message, TextDelta, ToolCall
-from sensai.core.models.llm import ThinkingDelta, ToolCallRequest
+from sensai.core.models import Message, TextDelta, ThinkingEffort
+from sensai.core.models.llm import ChatOptions, ThinkingDelta
 from sensai.core.models.sandbox import CodeRun
+from sensai.core.ports import LLMResponseError
 from sensai.core.tools.builtin import python, web_search
 from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeCodeRunner, FakeLLM
@@ -24,30 +27,40 @@ if TYPE_CHECKING:
     from sensai.core.agent.events import AgentEvent
 
 PROMPTS = AgentPrompts(
-    thought="THINK with {tools}. Say I am ready to answer.",
+    thought='THINK with {tools}. Say "answer" when done.',
     notes=" NOTES: {thought}",
     answer="ANSWER NOW",
 )
 HISTORY = (Message.system("SYSTEM"), Message.user("Latest Python?"))
 
-# Thought, tool call, "ready" thought, final answer: uses all three prompts.
+
+def _step(thought: str, action: str = "answer", **arguments: Any) -> list[TextDelta]:
+    """Script one step reply, as the model writes it under the step schema."""
+    data: dict[str, Any] = {"thought": thought, "action": action}
+    if action != "answer":
+        data["arguments"] = arguments
+    return [TextDelta(json.dumps(data, ensure_ascii=False))]
+
+
+# Search, then answer: one tool step, one answer step, the answer.
 TOOL_TURN = [
-    [TextDelta('{"thought": "I need fresh data.", "ready": false}')],
-    [ToolCallRequest(ToolCall("web_search", {"query": "python"}, id="c1"))],
-    [TextDelta('{"thought": "All known.", "ready": true}')],
+    _step("I need fresh data.", "web_search", query="python"),
+    _step("All known."),
     [TextDelta("Python 3.14.")],
 ]
 
 
-@pytest.fixture(autouse=True)
-def offline_search(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace the web search handler, so no test hits the network."""
+@pytest.fixture
+def searches(monkeypatch: pytest.MonkeyPatch) -> list[Mapping[str, Any]]:
+    """Replace the web search handler: no network, and every search is recorded."""
+    calls: list[Mapping[str, Any]] = []
 
     async def search(args: Mapping[str, Any]) -> str:
-        del args
+        calls.append(args)
         return "1. Python 3.14 - https://python.org - released"
 
     monkeypatch.setattr(web_search, "_web_search", search)
+    return calls
 
 
 def _tools() -> ToolRegistry:
@@ -63,26 +76,36 @@ def _run(agent: ReActAgent) -> list[AgentEvent]:
     return asyncio.run(collect())
 
 
-def _agent(llm: FakeLLM, prompts: AgentPrompts | None = None) -> ReActAgent:
-    """Build a ReAct agent with the web tool used by these prompt tests."""
-    registry = ToolRegistry()
-    web_search.register_self(registry)
-    return ReActAgent(llm, registry, prompts=prompts)
+def _schema(options: ChatOptions | None) -> Mapping[str, Any]:
+    assert options is not None
+    assert options.response_schema is not None
+    return options.response_schema
 
 
+def _actions(options: ChatOptions | None) -> list[str]:
+    """The actions a step request allows, from its schema."""
+    return [
+        branch["properties"]["action"]["const"] for branch in _schema(options)["anyOf"]
+    ]
+
+
+@pytest.mark.usefixtures("searches")
 def test_injected_prompts_build_every_request() -> None:
-    """Thought, notes and answer requests use the injected texts."""
+    """Thoughts carry the notes so far; the answer request carries them all."""
     llm = FakeLLM(TOOL_TURN)
 
     _run(ReActAgent(llm, _tools(), PROMPTS))
 
-    thought, act, ready_thought, answer = llm.messages
-    assert thought[-1].content.startswith("THINK with - web_search: ")
-    assert act[-1] == Message.user("Latest Python? NOTES: I need fresh data.")
-    assert ready_thought[-1].content.startswith("THINK with")
-    assert answer[-1] == Message.user("ANSWER NOW")
+    first, second, answer = llm.messages
+    assert first[-1].content.startswith("THINK with - web_search: ")
+    assert "  arguments: query (string, required)" in first[-1].content
+    assert second[-1].content.endswith(" NOTES: I need fresh data.")
+    assert answer[-1] == Message.user(
+        "ANSWER NOW NOTES: 1. I need fresh data.\n2. All known."
+    )
 
 
+@pytest.mark.usefixtures("searches")
 def test_agent_adds_no_system_message() -> None:
     """Every request starts with the caller's system message, and only that."""
     llm = FakeLLM(TOOL_TURN)
@@ -93,6 +116,7 @@ def test_agent_adds_no_system_message() -> None:
         assert [m for m in request if m.role == "system"] == [HISTORY[0]]
 
 
+@pytest.mark.usefixtures("searches")
 def test_defaults_are_used_without_prompts() -> None:
     """Without injected prompts, the agent uses the shipped defaults."""
     llm = FakeLLM(TOOL_TURN)
@@ -101,78 +125,254 @@ def test_defaults_are_used_without_prompts() -> None:
     _run(ReActAgent(llm, _tools()))
 
     assert llm.messages[0][-1].content.startswith(defaults.thought[:40])
-    assert llm.messages[3][-1] == Message.user(defaults.answer)
+    assert llm.messages[2][-1].content.startswith(defaults.answer)
 
 
-def test_a_ready_thought_gets_the_answer_without_tools() -> None:
-    """`"ready": true` in the JSON thought skips the tools, whatever its language."""
+def test_a_tool_step_runs_its_call_and_records_it(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """The chosen call runs; the next requests see it as a call and its result."""
+    llm = FakeLLM(TOOL_TURN)
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == [{"query": "python"}]
+    (started,) = [e for e in events if isinstance(e, ToolRunStarted)]
+    assert started.call.name == "web_search"
+    call, result = llm.messages[2][2:4]
+    assert call.tool_calls == (started.call,)
+    assert result.role == "tool"
+    assert result.content.startswith("1. Python 3.14")
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
+
+
+@pytest.mark.usefixtures("searches")
+def test_the_model_is_never_offered_native_tools() -> None:
+    """Steps choose tools through their schema; the answer has no tools at all."""
+    llm = FakeLLM(TOOL_TURN)
+
+    _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert llm.tools == [[], [], []]
+    assert _actions(llm.options[0]) == ["web_search", "answer"]
+    assert llm.options[2] is None
+
+
+def test_an_answer_step_hands_its_thought_to_the_answer() -> None:
+    """The thought is the answer's notes, and the step is shown as ready."""
+    llm = FakeLLM([_step("Je sais déjà tout."), [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    notes = "Latest Python? NOTES: Je sais déjà tout."
+    assert llm.messages[1][-1] == Message.user(notes)
+    assert [e for e in events if isinstance(e, ThinkingDelta)] == [
+        ThinkingDelta(""),
+        ThinkingDelta("Je sais déjà tout."),
+        ThinkingDelta("", ready=True),
+    ]
+    shown = [e for e in events if isinstance(e, TextDelta)]
+    assert shown == [TextDelta("Python 3.14.")]
+
+
+def test_a_reply_that_is_not_a_step_is_shown_whole_then_answered() -> None:
+    """A reply cut short, or not JSON, ends the thoughts instead of looping."""
+    llm = FakeLLM([[TextDelta("I am ready")], [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert ThinkingDelta("I am ready", ready=True) in events
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
+
+
+CUT = "Pour être précis sur l'origine du terme"
+
+
+def test_an_answer_forced_by_a_cut_thought_thinks_again() -> None:
+    """The cut thought becomes a note, is not tagged ready, and a step follows."""
+    llm = FakeLLM([_step(CUT), _step("All known."), [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    closing = [e for e in events if isinstance(e, ThinkingDelta) and not e.text]
+    assert [e.ready for e in closing] == [False, False, False, True]
+    assert llm.messages[1][-1].content.endswith(f" NOTES: {CUT}")
+    assert llm.options[2] is None
+
+
+def test_a_cut_answer_is_thought_again_once_per_turn() -> None:
+    """A model that never ends its sentences answers after one more step."""
+    llm = FakeLLM([_step(CUT), _step(CUT), [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert llm.options[2] is None
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
+
+
+def test_a_cut_thought_calling_a_tool_runs_it(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A call has concrete arguments: the model chose it, cut or not."""
     llm = FakeLLM(
         [
-            [TextDelta('{"thought": "Je sais déjà tout.", "ready": true}')],
+            _step(CUT, "web_search", query="hyperpop"),
+            _step("All known."),
+            [TextDelta("Hyperpop.")],
+        ]
+    )
+
+    _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == [{"query": "hyperpop"}]
+
+
+def test_invalid_arguments_are_not_run(searches: list[Mapping[str, Any]]) -> None:
+    """Arguments that break the tool's parameters come back as an error result."""
+    llm = FakeLLM(
+        [
+            _step("Search.", "web_search", query=3),
+            _step("Could not search."),
+            [TextDelta("Sorry.")],
+        ]
+    )
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == []
+    (finished,) = [e for e in events if isinstance(e, ToolRunFinished)]
+    assert finished.result.is_error
+    assert "arguments.query must be a string" in finished.result.content
+    assert llm.messages[1][3] == Message.tool(
+        finished.result.content, "web_search", finished.call.id or ""
+    )
+
+
+def test_a_tool_failing_twice_is_no_longer_offered(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """After two errors in a turn, the step schema leaves the tool out."""
+    llm = FakeLLM(
+        [
+            _step("Search.", "web_search", query=1),
+            _step("Search again.", "web_search", query=2),
+            _step("I can't search."),
+            [TextDelta("Sorry.")],
+        ]
+    )
+
+    _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == []
+    assert _actions(llm.options[1]) == ["web_search", "answer"]
+    assert _actions(llm.options[2]) == ["answer"]
+    assert "(none)" in llm.messages[2][-1].content
+
+
+def test_a_search_repeated_with_other_options_answers(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """Only the required arguments make a call new: a repeat goes to the answer."""
+    llm = FakeLLM(
+        [
+            _step("Search.", "web_search", query="python", max_results=1),
+            _step("Search more.", "web_search", query="python", max_results=5),
             [TextDelta("Python 3.14.")],
         ]
     )
 
     events = _run(ReActAgent(llm, _tools(), PROMPTS))
 
-    assert llm.options[0] is not None
-    assert llm.options[0].response_schema is not None
-    assert llm.tools[1] == []
-    assert llm.messages[1][-1] == HISTORY[-1]
-    assert [e for e in events if isinstance(e, ThinkingDelta)] == [
-        ThinkingDelta(""),
-        ThinkingDelta("Je sais déjà tout."),
-        ThinkingDelta("", ready=True),
-    ]
+    assert len(searches) == 1
+    assert llm.options[2] is None
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
 
 
-def test_a_thought_that_is_not_json_is_not_ready() -> None:
-    """The old "I am ready to answer." sentence alone no longer ends the search."""
-    llm = FakeLLM([[TextDelta("I am ready to answer.")], [TextDelta("Python 3.14.")]])
-
-    events = _run(ReActAgent(llm, _tools(), PROMPTS))
-
-    assert [spec.name for spec in llm.tools[1]] == ["web_search"]
-    assert ThinkingDelta("I am ready to answer.") in events
-
-
-def test_a_json_only_reply_to_the_tools_is_asked_again_without_them() -> None:
-    """Pushed to call a tool, a small model may write `{}`: it is never shown."""
+def test_a_call_rejected_for_its_arguments_can_be_retried(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A call that didn't run is not a repeat: its correction is run."""
     llm = FakeLLM(
         [
-            [TextDelta('{"thought": "I may search.", "ready": false}')],
-            [TextDelta("{}\n{}\n{}")],
-            [TextDelta("Bonjour.")],
+            _step("Search.", "web_search", query="python", max_results="many"),
+            _step("Search again.", "web_search", query="python", max_results=5),
+            _step("All known."),
+            [TextDelta("Python 3.14.")],
         ]
     )
 
-    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+    _run(ReActAgent(llm, _tools(), PROMPTS))
 
-    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "Bonjour."
-    assert llm.tools[2] == []
-    assert events[-1] == TurnCompleted([Message.assistant("Bonjour.")])
+    assert searches == [{"query": "python", "max_results": 5}]
 
 
-def test_a_reply_opening_with_json_is_asked_again_without_tools() -> None:
-    """`{}` followed by text is a botched call too, not an answer."""
+def test_the_budget_ends_with_an_answer(searches: list[Mapping[str, Any]]) -> None:
+    """Once the effort's steps are spent, the agent answers with what it has."""
     llm = FakeLLM(
         [
-            [TextDelta('{"thought": "I may search.", "ready": false}')],
-            [TextDelta("{}\n \nWhat you remember about the user: (unknown)")],
-            [TextDelta("C'est oublié.")],
+            _step("Search.", "web_search", query="a"),
+            _step("Search more.", "web_search", query="b"),
+            [TextDelta("Python 3.14.")],
         ]
     )
+    agent = ReActAgent(llm, _tools(), PROMPTS)
+    agent.thinking_effort = ThinkingEffort.LOW
 
-    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+    events = _run(agent)
 
-    assert events[-1] == TurnCompleted([Message.assistant("C'est oublié.")])
+    assert len(searches) == ThinkingEffort.LOW.level
+    assert llm.options[2] is None
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
 
 
-def test_a_json_answer_without_tools_is_kept() -> None:
-    """Once ready, a JSON answer is what the user asked for: it is shown."""
+def test_no_effort_answers_at_once() -> None:
+    """Without thinking, the only request is the answer, without notes."""
+    llm = FakeLLM([[TextDelta("Python 3.14.")]])
+    agent = ReActAgent(llm, _tools(), PROMPTS)
+    agent.thinking_effort = ThinkingEffort.NONE
+
+    _run(agent)
+
+    assert llm.messages == [list(HISTORY)]
+    assert llm.options == [None]
+
+
+def test_a_refused_schema_falls_back_to_the_flat_one_for_the_turn(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A server refusing `anyOf` gets the flat schema until the turn ends."""
     llm = FakeLLM(
-        [[TextDelta('{"thought": "Easy.", "ready": true}')], [TextDelta('{"a": 1}')]]
+        [
+            [LLMResponseError("invalid JSON schema in format")],
+            _step("Search.", "web_search", query="python"),
+            _step("All known."),
+            [TextDelta("Python 3.14.")],
+            _step("All known."),
+            [TextDelta("Python 3.14.")],
+        ]
     )
+    agent = ReActAgent(llm, _tools(), PROMPTS)
+
+    _run(agent)
+    _run(agent)
+
+    flat = _schema(llm.options[1])
+    assert flat["properties"]["action"]["enum"] == ["web_search", "answer"]
+    assert _schema(llm.options[2]) == _schema(llm.options[1])
+    assert _schema(llm.options[4]) != flat
+
+
+def test_an_error_after_the_reply_started_is_raised() -> None:
+    """Asking again would show the thought twice: the error ends the turn."""
+    llm = FakeLLM([[TextDelta('{"thought": "Hm'), LLMResponseError("lost")]])
+
+    with pytest.raises(AgentError, match="lost"):
+        _run(ReActAgent(llm, _tools(), PROMPTS))
+
+
+def test_a_json_answer_is_kept() -> None:
+    """The answer is never taken for a tool call: JSON the user asked for is shown."""
+    llm = FakeLLM([_step("Easy."), [TextDelta('{"a": 1}')]])
 
     events = _run(ReActAgent(llm, _tools(), PROMPTS))
 
@@ -187,7 +387,7 @@ def test_the_thought_streams_as_its_json_arrives() -> None:
         'e9j\\u00e0 \\"',
         'tout\\" \\ud83d',
         "\\ude00",
-        '.", "ready": true}',
+        '.", "action": "answer"}',
     ]
     llm = FakeLLM([[TextDelta(chunk) for chunk in chunks], [TextDelta("Python.")]])
 
@@ -204,7 +404,7 @@ def test_the_thought_streams_as_its_json_arrives() -> None:
         "",
     ]
     assert deltas[-1].ready
-    assert llm.tools[1] == []
+    assert llm.options[1] is None
 
 
 def test_failing_code_is_fixed_without_the_user() -> None:
@@ -213,15 +413,13 @@ def test_failing_code_is_fixed_without_the_user() -> None:
     runner = FakeCodeRunner([CodeRun("", error, 1, 0.3), CodeRun("4\n", "", 0, 0.3)])
     registry = ToolRegistry()
     python.register_self(registry, runner)
-    first = ToolCall("run_python", {"code": "print(y * 2)"}, id="a")
-    fixed = ToolCall("run_python", {"code": "y = 2\nprint(y * 2)"}, id="b")
     llm = FakeLLM(
         [
-            [TextDelta('{"thought": "Compute it.", "ready": false}')],
-            [ToolCallRequest(first)],
-            [TextDelta('{"thought": "y is undefined, define it.", "ready": false}')],
-            [ToolCallRequest(fixed)],
-            [TextDelta('{"thought": "The result is 4.", "ready": true}')],
+            _step("Compute it.", "run_python", code="print(y * 2)"),
+            _step(
+                "y is undefined, define it.", "run_python", code="y = 2\nprint(y * 2)"
+            ),
+            _step("The result is 4."),
             [TextDelta("The result is 4.")],
         ]
     )
@@ -229,6 +427,6 @@ def test_failing_code_is_fixed_without_the_user() -> None:
     events = _run(ReActAgent(llm, registry, PROMPTS))
 
     assert runner.codes == ["print(y * 2)", "y = 2\nprint(y * 2)"]
-    seen_by_retry = [m.content for m in llm.messages[2] if m.role == "tool"]
+    seen_by_retry = [m.content for m in llm.messages[1] if m.role == "tool"]
     assert any("NameError" in content for content in seen_by_retry)
     assert events[-1] == TurnCompleted([Message.assistant("The result is 4.")])
