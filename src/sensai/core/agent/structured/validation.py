@@ -39,18 +39,36 @@ class JsonSchemaOutput:
         except json.JSONDecodeError as error:
             raise StructuredOutputError("model response is not valid JSON") from error
 
-        self._validate_value(parsed, self._schema, "response")
+        self.check(parsed, "response")
         return parsed
+
+    def check(self, value: Any, path: str = "value") -> None:
+        """Validate a value that is already parsed, such as tool call arguments.
+
+        Keywords outside the supported subset are ignored, so a schema written
+        for another validator, such as an MCP tool's, accepts more than it
+        should rather than rejecting a valid value.
+
+        Raises:
+            StructuredOutputError: The value breaks a supported keyword.
+        """
+        self._validate_value(value, self._schema, path)
 
     def _validate_value(self, value: Any, schema: dict[str, Any], path: str) -> None:
         """Validate the JSON Schema keywords used by Sensai's bundled schemas."""
+        if not isinstance(schema, dict):
+            return  # `true`, `false`: valid schemas, not checked
         if "enum" in schema and value not in schema["enum"]:
             raise StructuredOutputError(f"{path} must be one of {schema['enum']!r}")
 
-        validator = self._TYPE_VALIDATORS.get(schema.get("type"))
+        # A list of types, such as ["string", "null"], is not checked.
+        type_ = schema.get("type")
+        validator = self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
         if validator is not None:
             validator(self, value, schema, path)
 
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            return
         if "minimum" in schema and value < schema["minimum"]:
             raise StructuredOutputError(f"{path} must be at least {schema['minimum']}")
         if "maximum" in schema and value > schema["maximum"]:
