@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-from sensai.adapters.sandbox.docker_runner import collect_artifacts
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from sensai.adapters.sandbox.docker_runner import (
+    DockerCodeRunner,
+    SandboxLimits,
+    collect_artifacts,
+)
 
 
 def _workdir(tmp_path: Path) -> Path:
@@ -44,3 +45,28 @@ def test_a_run_without_files_keeps_only_the_script(tmp_path: Path) -> None:
 
     assert artifacts == ()
     assert script.read_text() == "print(1)"
+
+
+def test_run_options_isolate_and_limit_the_container() -> None:
+    """No network, read-only, capped resources, no capability, only /work mounted."""
+    limits = SandboxLimits(timeout=5, memory="256m", cpus=0.5)
+    runner = DockerCodeRunner("sensai-sandbox", Path("artifacts"), limits)
+
+    options = runner.run_options(Path("/home/me/artifacts/.work/run-1"))
+
+    assert options["network_mode"] == "none"
+    assert options["read_only"] is True
+    assert options["mem_limit"] == options["memswap_limit"] == "256m"
+    assert options["nano_cpus"] == 500_000_000
+    assert options["pids_limit"] == 128
+    assert options["cap_drop"] == ["ALL"]
+    assert options["volumes"] == {
+        "/home/me/artifacts/.work/run-1": {"bind": "/work", "mode": "rw"}
+    }
+    assert options["working_dir"] == "/work"
+    assert options["detach"] is True
+
+
+def test_default_limits() -> None:
+    """Without limits, a run gets 30 s, 512 MB and one CPU."""
+    assert SandboxLimits() == SandboxLimits(timeout=30.0, memory="512m", cpus=1.0)
