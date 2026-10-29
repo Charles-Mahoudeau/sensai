@@ -8,6 +8,7 @@ from sensai.core.prompts.defaults import (
     REACT_ANSWER,
     REACT_NOTES,
     REACT_THOUGHT,
+    SESSION_TITLE,
     SYSTEM,
     load_defaults,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "REACT_ANSWER",
     "REACT_NOTES",
     "REACT_THOUGHT",
+    "SESSION_TITLE",
     "SYSTEM",
     "ComparisonReport",
     "InvalidPromptError",
