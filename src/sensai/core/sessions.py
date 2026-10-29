@@ -92,9 +92,19 @@ class SessionRecorder:
         if self._titler is None or self._titled or self._session_id is None:
             return
         history = self._engine.history
-        user = next((m.content for m in history if m.role == "user"), "")
-        reply = next((m.content for m in history if m.role == "assistant"), "")
-        if not user or not reply:
+        # Pair the first reply with the user message that prompted it: an earlier
+        # message may have failed and gone unanswered.
+        reply_at = next(
+            (i for i, m in enumerate(history) if m.role == "assistant" and m.content),
+            None,
+        )
+        if reply_at is None:
+            return
+        reply = history[reply_at].content
+        user = next(
+            (m.content for m in reversed(history[:reply_at]) if m.role == "user"), ""
+        )
+        if not user:
             return
         session_id = self._session_id
         self._titled = True

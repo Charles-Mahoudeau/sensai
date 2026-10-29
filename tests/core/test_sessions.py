@@ -361,6 +361,29 @@ def test_watch_retries_the_title_after_a_failure() -> None:
     asyncio.run(run())
 
 
+def test_watch_titles_with_the_user_message_that_got_the_reply() -> None:
+    """An unanswered first message is not paired with a later reply."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        titler = _StubTitler("Weather")
+        engine = _engine(
+            (Message.user("lost"), Message.user("weather?"), Message.assistant("sunny"))
+        )
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+
+        await turn_done()
+        task.cancel()
+
+        assert titler.exchanges == [("weather?", "sunny")]
+
+    asyncio.run(run())
+
+
 def test_a_new_session_after_start_new_is_titled_again() -> None:
     """Each session gets its own title."""
 
