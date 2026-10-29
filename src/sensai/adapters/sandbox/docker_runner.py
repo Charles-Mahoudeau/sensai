@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import docker
-from docker.errors import APIError, DockerException
+from docker.errors import APIError, DockerException, ImageNotFound
 
 from sensai.core.models import Attachment
 from sensai.core.models.sandbox import CodeRun
@@ -64,6 +64,25 @@ class DockerCodeRunner:
         self._clock = clock
         self._now = now
         self._client: docker.DockerClient | None = None
+
+    async def available(self) -> str | None:
+        """Return why code can't run here, or None when Docker and the image are ok."""
+        try:
+            return await asyncio.to_thread(self._missing_image)
+        except DockerException as error:
+            return f"Docker is not reachable: {error}"
+
+    def _missing_image(self) -> str | None:
+        client = self._docker()
+        client.ping()
+        try:
+            client.images.get(self._image)
+        except ImageNotFound:
+            return (
+                f"the {self._image!r} image is missing; build it with: docker build "
+                f"-t {self._image} src/sensai/adapters/sandbox/image"
+            )
+        return None
 
     async def run(self, code: str) -> CodeRun:
         """Run `code` in a new container and collect its output and files."""

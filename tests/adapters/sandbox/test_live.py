@@ -168,3 +168,20 @@ def test_the_script_runs_without_privileges(tmp_path: Path) -> None:
     uid, capabilities = run.stdout.split()
     assert uid != "0"
     assert int(capabilities, 16) == 0
+
+
+def test_the_image_is_available(tmp_path: Path) -> None:
+    """The daemon answers and the image exists."""
+    runner = DockerCodeRunner(IMAGE, tmp_path)
+
+    assert asyncio.run(runner.available()) is None
+
+
+def test_a_missing_image_says_how_to_build_it(tmp_path: Path) -> None:
+    """An unknown image gives the build command, not a crash."""
+    runner = DockerCodeRunner("sensai-no-such-image", tmp_path)
+
+    reason = asyncio.run(runner.available())
+
+    assert reason is not None
+    assert "docker build -t sensai-no-such-image" in reason

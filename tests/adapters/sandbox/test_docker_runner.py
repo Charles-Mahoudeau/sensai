@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sensai.adapters.sandbox.docker_runner import (
     DockerCodeRunner,
     SandboxLimits,
     collect_artifacts,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def _workdir(tmp_path: Path) -> Path:
@@ -70,3 +75,14 @@ def test_run_options_isolate_and_limit_the_container() -> None:
 def test_default_limits() -> None:
     """Without limits, a run gets 30 s, 512 MB and one CPU."""
     assert SandboxLimits() == SandboxLimits(timeout=30.0, memory="512m", cpus=1.0)
+
+
+def test_unreachable_docker_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a daemon, `available()` explains why instead of raising."""
+    monkeypatch.setenv("DOCKER_HOST", "unix:///nonexistent/docker.sock")
+    runner = DockerCodeRunner("sensai-sandbox", Path("artifacts"))
+
+    reason = asyncio.run(runner.available())
+
+    assert reason is not None
+    assert reason.startswith("Docker is not reachable")
