@@ -137,6 +137,15 @@ class SessionRepository(Protocol):
         """
         ...
 
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Set the title of a session, replacing the previous one.
+
+        Raises:
+            SessionNotFoundError: No session has this id.
+            StorageError: The store failed to write.
+        """
+        ...
+
     async def delete_session(self, session_id: int) -> None:
         """Delete a session and all its messages.
 

@@ -192,6 +192,19 @@ class SqliteSessionRepository:
 
         await self._db.run(add)
 
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Replace the session's title, leaving its update time unchanged."""
+
+        def set_() -> None:
+            with self._db.write() as conn:
+                touched = conn.execute(
+                    "UPDATE sessions SET title = ? WHERE id = ?", (title, session_id)
+                ).rowcount
+                if not touched:
+                    raise SessionNotFoundError(session_id)
+
+        await self._db.run(set_)
+
     async def delete_session(self, session_id: int) -> None:
         """Delete a session; its messages go with it (`ON DELETE CASCADE`)."""
 

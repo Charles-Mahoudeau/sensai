@@ -88,6 +88,11 @@ class InMemorySessionStore:
         session = await self.get_session(session_id)
         self._sessions[session_id] = replace(session, usage=session.usage + usage)
 
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Replace the session's title."""
+        session = await self.get_session(session_id)
+        self._sessions[session_id] = replace(session, title=title)
+
     async def delete_session(self, session_id: int) -> None:
         """Delete a session and its messages."""
         await self.get_session(session_id)
