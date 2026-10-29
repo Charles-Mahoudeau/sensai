@@ -6,12 +6,14 @@ from typing import TYPE_CHECKING
 
 from textual.widgets import Markdown
 
+from sensai.adapters.tui.widgets.math_markdown import MathMarkdown
+
 if TYPE_CHECKING:
     from textual.widgets.markdown import MarkdownStream
 
 
-class AssistantMessage(Markdown):
-    """A model answer, rendered as Markdown while it streams in."""
+class AssistantMessage(MathMarkdown):
+    """A model answer, rendered as Markdown (math included) while it streams in."""
 
     DEFAULT_CSS = """
     AssistantMessage {
