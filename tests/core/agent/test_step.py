@@ -277,3 +277,26 @@ def test_call_key_without_required_arguments_counts_them_all() -> None:
     assert call_key(tool, ToolCall("memory_read", {"query": "a"})) != call_key(
         tool, ToolCall("memory_read", {"query": "b"})
     )
+
+
+@pytest.mark.parametrize(
+    ("thought", "cut"),
+    [
+        ("Pour être plus précis sur l'origine exacte du terme ", True),
+        ("I need to search for", True),
+        ("I need fresh data.", False),
+        ("Ça va ?", False),
+        ("Il cite « hyperpop »", False),
+        ("", False),
+    ],
+)
+def test_parse_step_tells_a_thought_cut_mid_sentence(thought: str, cut: bool) -> None:
+    """A quote closing the string early leaves a thought without its full stop."""
+    text = json.dumps({"thought": thought, "action": "answer"})
+
+    assert parse_step(text, [SEARCH]).cut is cut
+
+
+def test_a_reply_that_is_not_json_is_never_cut() -> None:
+    """Only a parsed thought can be cut: a broken reply just ends the thoughts."""
+    assert not parse_step('{"thought": "Hm', [SEARCH]).cut

@@ -184,6 +184,48 @@ def test_a_reply_that_is_not_a_step_is_shown_whole_then_answered() -> None:
     assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
 
 
+CUT = "Pour être précis sur l'origine du terme"
+
+
+def test_an_answer_forced_by_a_cut_thought_thinks_again() -> None:
+    """The cut thought becomes a note, is not tagged ready, and a step follows."""
+    llm = FakeLLM([_step(CUT), _step("All known."), [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    closing = [e for e in events if isinstance(e, ThinkingDelta) and not e.text]
+    assert [e.ready for e in closing] == [False, False, False, True]
+    assert llm.messages[1][-1].content.endswith(f" NOTES: {CUT}")
+    assert llm.options[2] is None
+
+
+def test_a_cut_answer_is_thought_again_once_per_turn() -> None:
+    """A model that never ends its sentences answers after one more step."""
+    llm = FakeLLM([_step(CUT), _step(CUT), [TextDelta("Python 3.14.")]])
+
+    events = _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert llm.options[2] is None
+    assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
+
+
+def test_a_cut_thought_calling_a_tool_runs_it(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A call has concrete arguments: the model chose it, cut or not."""
+    llm = FakeLLM(
+        [
+            _step(CUT, "web_search", query="hyperpop"),
+            _step("All known."),
+            [TextDelta("Hyperpop.")],
+        ]
+    )
+
+    _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == [{"query": "hyperpop"}]
+
+
 def test_invalid_arguments_are_not_run(searches: list[Mapping[str, Any]]) -> None:
     """Arguments that break the tool's parameters come back as an error result."""
     llm = FakeLLM(
