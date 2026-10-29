@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+import logging
+from typing import TYPE_CHECKING, Protocol
+
+from sensai.core.events import Done
+from sensai.core.ports import StorageError
 
 if TYPE_CHECKING:
     from sensai.core.engine import Engine
@@ -10,12 +15,24 @@ if TYPE_CHECKING:
     from sensai.core.usage import UsageMeter
 
 
+_logger = logging.getLogger("SessionRecorder")
+
+
+class Titler(Protocol):
+    """Names a conversation from its first exchange, like `SessionTitler`."""
+
+    async def title_for(self, user_message: str, reply: str) -> str | None:
+        """Return a short title, or None if there is none."""
+        ...
+
+
 class SessionRecorder:
     """Save the messages and token usage of an engine, and switch sessions.
 
     Without a session to start from, one is created when the first message is
     saved. Clearing the conversation leaves the next session to be created the
-    same way, so a session never starts empty.
+    same way, so a session never starts empty. `watch` saves after every turn and
+    titles the session once it has a first exchange.
     """
 
     def __init__(
@@ -27,6 +44,7 @@ class SessionRecorder:
         session_id: int | None,
         saved: int,
         meter: UsageMeter | None = None,
+        titler: Titler | None = None,
     ) -> None:
         """Record into an existing session, or into a new one if `session_id` is None.
 
@@ -37,6 +55,8 @@ class SessionRecorder:
             session_id: The session to append to, or None to create one when needed.
             saved: How many messages of the engine history are already saved.
             meter: Counts the session's token usage; usage is not saved if None.
+            titler: Names each session after its first exchange; sessions stay
+                untitled if None.
         """
         self._repo = repo
         self._engine = engine
@@ -44,6 +64,42 @@ class SessionRecorder:
         self._session_id = session_id
         self._saved = saved
         self._meter = meter
+        self._titler = titler
+        self._titled = False
+        self._lock = asyncio.Lock()
+
+    async def watch(self) -> None:
+        """Save the conversation after every turn, and title the session.
+
+        Runs until cancelled. Subscribe happens when the call starts, so create
+        the task before the first message is submitted. A failure to save or to
+        title is logged: it must not stop the watching.
+        """
+        async for event in self._engine.subscribe():
+            if isinstance(event, Done):
+                try:
+                    await self._after_turn()
+                except StorageError as error:
+                    _logger.warning("Could not save the session: %s", error)
+
+    async def _after_turn(self) -> None:
+        await self.save()
+        if self._titler is None or self._titled or self._session_id is None:
+            return
+        history = self._engine.history
+        user = next((m.content for m in history if m.role == "user"), "")
+        reply = next((m.content for m in history if m.role == "assistant"), "")
+        if not user or not reply:
+            return
+        session_id = self._session_id
+        self._titled = True
+        title = await self._titler.title_for(user, reply)
+        if title is None:
+            # Try again after the next turn, unless the session has changed.
+            if self._session_id == session_id:
+                self._titled = False
+            return
+        await self._repo.set_title(session_id, title)
 
     async def save(self) -> None:
         """Append the messages and the usage not saved yet to the current session.
@@ -53,6 +109,10 @@ class SessionRecorder:
         Raises:
             StorageError: The store failed to write.
         """
+        async with self._lock:
+            await self._save()
+
+    async def _save(self) -> None:
         unsaved = self._engine.history[self._saved :]
         if unsaved and self._session_id is None:
             session = await self._repo.create_session(model=self._model)
@@ -85,10 +145,12 @@ class SessionRecorder:
         Raises:
             StorageError: The store failed to write.
         """
-        await self.save()
-        if self._session_id is None:
-            return
-        self._session_id = None
-        self._saved = 0
-        if self._meter is not None:
-            self._meter.reset()
+        async with self._lock:
+            await self._save()
+            if self._session_id is None:
+                return
+            self._session_id = None
+            self._saved = 0
+            self._titled = False
+            if self._meter is not None:
+                self._meter.reset()

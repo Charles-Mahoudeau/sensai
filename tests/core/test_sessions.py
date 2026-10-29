@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import pytest
 
 from sensai.core.engine import Engine
-from sensai.core.events import EventBus
+from sensai.core.events import Done, EventBus
 from sensai.core.models import Message
 from sensai.core.models.llm import ChatDone, Usage, UsageTotals
 from sensai.core.pipeline.base import Pipeline
@@ -16,6 +17,9 @@ from sensai.core.sessions import SessionRecorder
 from sensai.core.usage import UsageMeter
 from tests.core.test_engine import ScriptedRunner
 from tests.fakes import InMemorySessionStore
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 def _engine(history: tuple[Message, ...]) -> Engine:
@@ -256,5 +260,128 @@ def test_usage_that_failed_to_save_is_saved_on_retry() -> None:
         await recorder.save()
 
         assert (await repo.get_session(session.id)).usage == _ONE_CALL
+
+    asyncio.run(run())
+
+
+class _StubTitler:
+    """Returns scripted titles and records the exchanges it was given."""
+
+    def __init__(self, *titles: str | None) -> None:
+        self._titles = iter(titles)
+        self.exchanges: list[tuple[str, str]] = []
+
+    async def title_for(self, user_message: str, reply: str) -> str | None:
+        self.exchanges.append((user_message, reply))
+        return next(self._titles)
+
+
+def _watched(
+    engine: Engine, recorder: SessionRecorder
+) -> tuple[asyncio.Task[None], Callable[[], Awaitable[None]]]:
+    """Start `watch`, and return a function that publishes Done and lets it run."""
+    task = asyncio.ensure_future(recorder.watch())
+
+    async def turn_done() -> None:
+        await engine._bus.publish(Done("s"))
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+    return task, turn_done
+
+
+def test_watch_saves_and_titles_after_the_first_exchange() -> None:
+    """The first complete exchange creates the session and names it, once."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        titler = _StubTitler("Greeting", "Other")
+        engine = _engine((Message.user("hi"), Message.assistant("hello")))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+
+        await turn_done()
+        await turn_done()
+        task.cancel()
+
+        [session] = await repo.list_sessions()
+        assert session.title == "Greeting"
+        assert titler.exchanges == [("hi", "hello")]
+        assert len(await repo.get_messages(session.id)) == 2
+
+    asyncio.run(run())
+
+
+def test_watch_does_not_title_before_a_reply() -> None:
+    """A turn that failed, leaving only the user message, is saved untitled."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        titler = _StubTitler("Never")
+        engine = _engine((Message.user("hi"),))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+
+        await turn_done()
+        task.cancel()
+
+        [session] = await repo.list_sessions()
+        assert session.title is None
+        assert titler.exchanges == []
+
+    asyncio.run(run())
+
+
+def test_watch_retries_the_title_after_a_failure() -> None:
+    """No title this turn means another attempt on the next one."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        titler = _StubTitler(None, "Greeting")
+        engine = _engine((Message.user("hi"), Message.assistant("hello")))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+
+        await turn_done()
+        assert [s.title for s in await repo.list_sessions()] == [None]
+        await turn_done()
+        task.cancel()
+
+        assert [s.title for s in await repo.list_sessions()] == ["Greeting"]
+
+    asyncio.run(run())
+
+
+def test_a_new_session_after_start_new_is_titled_again() -> None:
+    """Each session gets its own title."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        titler = _StubTitler("One", "Two")
+        engine = _engine((Message.user("a"), Message.assistant("b")))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+        await turn_done()
+
+        await recorder.start_new()
+        engine.clear()
+        engine._history.extend((Message.user("c"), Message.assistant("d")))
+        await turn_done()
+        task.cancel()
+
+        titles = sorted(s.title or "" for s in await repo.list_sessions())
+        assert titles == ["One", "Two"]
 
     asyncio.run(run())

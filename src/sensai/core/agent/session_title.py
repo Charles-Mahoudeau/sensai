@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 _MAX_LENGTH = 60
 # Room for a short title, and for a reasoning model that thinks despite `think`.
 _MAX_TOKENS = 64
+# Enough to tell the topic; a pasted document need not be sent whole.
+_MAX_EXCHANGE = 1000
 _QUOTES = "\"'`«»\u201c\u201d\u2018\u2019 "
 _TRAILING_PUNCTUATION = ".!?…:;,"
 
@@ -43,7 +45,10 @@ class SessionTitler:
         """
         messages = [
             Message.system(self._prompt),
-            Message.user(f"User: {user_message}\n\nAssistant: {reply}"),
+            Message.user(
+                f"User: {user_message[:_MAX_EXCHANGE]}\n\n"
+                f"Assistant: {reply[:_MAX_EXCHANGE]}"
+            ),
         ]
         options = ChatOptions(think=False, temperature=0.3, max_tokens=_MAX_TOKENS)
         try:
