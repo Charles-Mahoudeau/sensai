@@ -98,6 +98,8 @@ whatever the user's language, and a `type` filter ignores case and accents, so
 
 ## Steps
 
+[The ReAct Process](react.md) walks through a whole turn with diagrams.
+
 A turn is a few **steps**, then one **answer**:
 
 ```text
@@ -133,7 +135,8 @@ Either way, the arguments are checked against the tool's real parameters before
 it runs. Invalid ones run nothing: the error is the call's result, so the next
 step can fix them. A server that refuses the step schema before replying gets
 the flat one, `{"thought", "action": <enum of names>, "arguments": {}}`, for the
-rest of the agent's life.
+rest of the turn: the next turn tries the full schema again, so a one-off error
+doesn't downgrade the session.
 
 ### Guards
 
