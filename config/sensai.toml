@@ -16,3 +16,12 @@ enabled = false
 [agent]
 # none | low | medium | high | ultra
 thinking_effort = "medium"
+
+[sandbox]
+# docker build -t sensai-sandbox src/sensai/adapters/sandbox/image
+enabled = true
+image = "sensai-sandbox"
+timeout = 30                # seconds
+memory = "512m"
+cpus = 1
+artifacts_dir = "artifacts"
