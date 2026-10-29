@@ -1,7 +1,7 @@
 """Decodes the private thought of the ReAct agent while its JSON streams.
 
-The thought is asked for in JSON, `{"thought": "...", "ready": true}`, so the
-model's reasoning arrives inside a JSON string. Decoding it chunk by chunk keeps
+The thought is asked for in JSON, `{"thought": "...", "action": "answer"}`, so
+the model's reasoning arrives inside a JSON string. Decoding it chunk by chunk keeps
 the reasoning visible as it is written, instead of only once the reply is done.
 """
 

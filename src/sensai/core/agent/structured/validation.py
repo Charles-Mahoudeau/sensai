@@ -39,22 +39,67 @@ class JsonSchemaOutput:
         except json.JSONDecodeError as error:
             raise StructuredOutputError("model response is not valid JSON") from error
 
-        self._validate_value(parsed, self._schema, "response")
+        self.check(parsed, "response")
         return parsed
+
+    def check(self, value: Any, path: str = "value") -> None:
+        """Validate a value that is already parsed, such as tool call arguments.
+
+        Keywords outside the supported subset are ignored, so a schema written
+        for another validator, such as an MCP tool's, accepts more than it
+        should rather than rejecting a valid value.
+
+        Raises:
+            StructuredOutputError: The value breaks a supported keyword.
+        """
+        self._validate_value(value, self._schema, path)
 
     def _validate_value(self, value: Any, schema: dict[str, Any], path: str) -> None:
         """Validate the JSON Schema keywords used by Sensai's bundled schemas."""
+        if schema is False:
+            raise StructuredOutputError(f"{path} is not allowed")
+        if not isinstance(schema, dict):
+            return  # `true`: accepts any value
         if "enum" in schema and value not in schema["enum"]:
             raise StructuredOutputError(f"{path} must be one of {schema['enum']!r}")
 
-        validator = self._TYPE_VALIDATORS.get(schema.get("type"))
-        if validator is not None:
-            validator(self, value, schema, path)
+        type_ = schema.get("type")
+        if isinstance(type_, list):
+            self._validate_any_type(value, schema, type_, path)
+        else:
+            validator = (
+                self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
+            )
+            if validator is not None:
+                validator(self, value, schema, path)
 
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            return
         if "minimum" in schema and value < schema["minimum"]:
             raise StructuredOutputError(f"{path} must be at least {schema['minimum']}")
         if "maximum" in schema and value > schema["maximum"]:
             raise StructuredOutputError(f"{path} must be at most {schema['maximum']}")
+
+    def _validate_any_type(
+        self, value: Any, schema: dict[str, Any], types: list[Any], path: str
+    ) -> None:
+        """Validate a value against a list of types, such as `["string", "null"]`."""
+        for type_ in types:
+            if type_ == "null":
+                if value is None:
+                    return
+                continue
+            validator = (
+                self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
+            )
+            if validator is None:
+                return  # a type this validator doesn't know: not checked
+            try:
+                validator(self, value, schema, path)
+            except StructuredOutputError:
+                continue
+            return
+        raise StructuredOutputError(f"{path} must be one of the types {types!r}")
 
     def _validate_object(self, value: Any, schema: dict[str, Any], path: str) -> None:
         """Validate object properties and reject unrequested fields."""

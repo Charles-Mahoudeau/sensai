@@ -139,7 +139,7 @@ def test_the_agent_records_the_fact_after_answering() -> None:
     """The record is written once the answer is out, and the UI sees the call."""
     store = InMemoryMemoryStore()
     turns = [
-        [TextDelta('{"thought": "All known.", "ready": true}')],
+        [TextDelta('{"thought": "All known.", "action": "answer"}')],
         [TextDelta("Noté !")],
         _facts(("favorite car brand", "preference", "Prefers BMW cars")),
     ]
@@ -158,7 +158,7 @@ def test_the_agent_records_nothing_when_the_tools_are_disabled() -> None:
     """With the tools off (`--no-tools`), no extraction is even attempted."""
     store = InMemoryMemoryStore()
     turns = [
-        [TextDelta('{"thought": "All known.", "ready": true}')],
+        [TextDelta('{"thought": "All known.", "action": "answer"}')],
         [TextDelta("Noté !")],
     ]
 
@@ -228,7 +228,7 @@ def test_a_planned_call_to_a_disabled_tool_is_dropped() -> None:
     asyncio.run(store.create(name="ville", type="identity", description="Lyon"))
     llm = FakeLLM(
         [
-            [TextDelta('{"thought": "OK.", "ready": true}')],
+            [TextDelta('{"thought": "OK.", "action": "answer"}')],
             [TextDelta("C'est noté.")],
             _facts(forget=["ville"]),
         ]
