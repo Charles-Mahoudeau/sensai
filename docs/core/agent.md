@@ -42,8 +42,8 @@ prompt followed by the user profile), so the model receives exactly one.
 
 | Field | Prompt name | Used for |
 | --- | --- | --- |
-| `thought` | `react_thought` | Private thought before acting; `{tools}` is filled in |
-| `notes` | `react_notes` | Wraps the thought for the acting call; `{thought}` is filled in |
+| `thought` | `react_thought` | Private thought and its action; `{tools}` is filled in |
+| `notes` | `react_notes` | Wraps the turn's previous thoughts for the next thought and the answer; `{thought}` is filled in |
 | `answer` | `react_answer` | Final "answer now" request after tool results |
 
 `app.py` builds it from the active versions in the prompt library;
@@ -96,22 +96,71 @@ Categories are one of `MEMORY_CATEGORIES` (`core/models/memory.py`), in English
 whatever the user's language, and a `type` filter ignores case and accents, so
 `preference` also finds an older `préférence`.
 
-## Thoughts
+## Steps
 
-Each thought is asked for in JSON, `{"thought": "...", "ready": true}`, with a
-response schema. `ready` decides whether the next call offers the tools, so it
-no longer depends on the model writing an exact English sentence (it reasons in
-the user's language). A reply that is not valid JSON counts as not ready.
+A turn is a few **steps**, then one **answer**:
 
-The thought still streams: the schema puts `thought` first, and `ThoughtStream`
+```text
+repeat up to thinking_effort.level times:
+    step = thought + action, in JSON under the step schema
+    action "answer"  -> stop
+    action <tool>    -> the agent runs it, and adds the call and its result
+answer = one call without tools, streamed to the user
+```
+
+The step schema (`core/agent/step.py`) has one `anyOf` branch per offered tool,
+`{"thought", "action": <tool>, "arguments": <its parameters>}`, and one for the
+answer, `{"thought", "action": "answer"}`. Constrained by it, the model can't
+write a tool call as text or pair a tool with another one's arguments: a step
+is always an offered tool or the answer. The model is never given native tools,
+so the answer, the only text the user sees as the reply, has nothing to call.
+
+The thoughts are the turn's notes: each step and the answer get the previous
+ones, wrapped by `react_notes`. The answer request is the user's message with
+the notes appended, or, after tool results, `react_answer` and the notes.
+
+### Portable tool schemas
+
+A tool's parameters are copied into the step schema only as far as every Ollama
+version with JSON schemas turns them into a grammar: `type`, `properties`,
+`required`, `items` and `enum`. Descriptions and limits such as `minimum` are
+dropped, as is a combination of `required` lists ("one of these fields", as in
+`memory_read`): they only narrow the values. A tool whose parameters combine
+schemas otherwise (`anyOf` of types, `$ref`, a list of types...) accepts any
+object in the grammar.
+
+Either way, the arguments are checked against the tool's real parameters before
+it runs. Invalid ones run nothing: the error is the call's result, so the next
+step can fix them. A server that refuses the step schema before replying gets
+the flat one, `{"thought", "action": <enum of names>, "arguments": {}}`, for the
+rest of the agent's life.
+
+### Guards
+
+The code, not the prompt, keeps a small model from looping:
+
+- a call repeating an earlier one of the turn ends the steps; calls are compared
+  on their **required** arguments, as a small model repeats a search changing
+  only its result count;
+- a tool failing twice in a turn is left out of the next steps;
+- a thought that stops mid-sentence was cut: a double quote the model meant to
+  open a quotation closed the JSON string, and the schema forced an action
+  before the reasoning concluded. An answer chosen that way is not trusted:
+  once per turn, the agent thinks again, the cut thought kept as a note. A call
+  chosen that way still runs, as its arguments are concrete. The thought
+  prompt also asks for « » or ' ' instead of double quotes;
+- once the budget is spent, the agent answers with what it has.
+
+A reply that is not a step (cut off, or a server ignoring the schema) is shown
+whole as the thought and ends the steps.
+
+### Streaming
+
+The thought streams: every branch puts `thought` first, and `ThoughtStream`
 (`core/agent/thought_stream.py`) decodes that string chunk by chunk, an escape
-cut between two chunks (`\u00e9`) waiting for the next one; `ready` is read once
-the reply is complete. An empty `ThinkingDelta` first opens the step in the
-front-end, so its clock runs while the model reads the prompt.
-
-When the tools are offered, the template pushes the model to call one. A reply
-that then opens with JSON without being a call (`{}`, sometimes followed by
-text) is not an answer: like a tool call written as text, it is dropped and
-asked again once without tools.
+cut between two chunks (`\u00e9`) waiting for the next one; the action is read
+once the reply is complete, and an answer action tags the step as ready. An
+empty `ThinkingDelta` first opens the step in the front-end, so its clock runs
+while the model reads the prompt.
 
 Plan mode and permission prompts belong to later orchestration features.
