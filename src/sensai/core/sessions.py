@@ -84,6 +84,8 @@ class SessionRecorder:
                     await self._after_turn()
                 except StorageError as error:
                     _logger.warning("Could not save the session: %s", error)
+                except Exception:
+                    _logger.exception("Could not title the session")
 
     async def _after_turn(self) -> None:
         await self.save()
