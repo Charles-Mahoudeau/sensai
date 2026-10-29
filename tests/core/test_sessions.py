@@ -384,6 +384,43 @@ def test_watch_titles_with_the_user_message_that_got_the_reply() -> None:
     asyncio.run(run())
 
 
+class _FlakyTitleStore(InMemorySessionStore):
+    """Fails the first title write."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._failed = False
+
+    async def set_title(self, session_id: int, title: str) -> None:
+        if not self._failed:
+            self._failed = True
+            raise StorageError("disk full")
+        await super().set_title(session_id, title)
+
+
+def test_watch_retries_the_title_after_a_failed_write() -> None:
+    """A title that could not be stored is written after the next turn."""
+
+    async def run() -> None:
+        repo = _FlakyTitleStore()
+        titler = _StubTitler("Greeting", "Greeting")
+        engine = _engine((Message.user("hi"), Message.assistant("hello")))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, titler=titler
+        )
+        task, turn_done = _watched(engine, recorder)
+        await asyncio.sleep(0)
+
+        await turn_done()
+        assert [s.title for s in await repo.list_sessions()] == [None]
+        await turn_done()
+        task.cancel()
+
+        assert [s.title for s in await repo.list_sessions()] == ["Greeting"]
+
+    asyncio.run(run())
+
+
 def test_a_new_session_after_start_new_is_titled_again() -> None:
     """Each session gets its own title."""
 

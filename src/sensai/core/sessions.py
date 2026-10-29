@@ -114,7 +114,13 @@ class SessionRecorder:
             if self._session_id == session_id:
                 self._titled = False
             return
-        await self._repo.set_title(session_id, title)
+        try:
+            await self._repo.set_title(session_id, title)
+        except StorageError:
+            # Try again after the next turn, unless the session has changed.
+            if self._session_id == session_id:
+                self._titled = False
+            raise
 
     async def save(self) -> None:
         """Append the messages and the usage not saved yet to the current session.
