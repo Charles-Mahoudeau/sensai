@@ -23,19 +23,15 @@ ART_WIDTH = max(len(line) for line in ART.splitlines())
 TITLE = "Sensai"
 # One is picked at random each time the banner is shown, like a Minecraft splash.
 MOTDS = (
-    "Now with 100% more tokens!",
-    "Runs on your machine, thinks on its own.",
-    "Ask me anything. Except the meaning of life.",
-    "No cloud was harmed in the making of this answer.",
-    "Local models, global ambitions.",
-    "I remember things. Ask me to forget.",
-    "Powered by matrix multiplication.",
-    "Hallucinations are a feature, sometimes.",
-    "Have you tried turning it off and on again?",
-    "Sensai says: drink some water.",
-    "It works on my GPU.",
     "Y'a plein de couleurs, on dirait My Little Pony !",
     "En vrai les IDs c'est vraiment cool.",
+    "Si on fait Vulkan, va vraiment falloir s'y mettre.",
+    "Embrasse-moi. - Alexandre Franquet",
+    "Calcule 'my_intcmp' en moins de 30 secondes !",
+    "Demande-moi n'importe quoi, sauf le sens de la vie.",
+    "Fonctionne sur ton GPU, ou pas.",
+    "Les hallucinations sont une fonctionnalité, parfois.",
+    "Un grand sage m'a appris comment mettre des tunnels.",
 )
 
 
