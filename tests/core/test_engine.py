@@ -460,3 +460,15 @@ def test_list_sessions_is_empty_without_a_store() -> None:
     engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
 
     assert asyncio.run(engine.list_sessions()) == ()
+
+
+def test_restore_replaces_the_history() -> None:
+    """The conversation becomes the given messages."""
+    engine = Engine(
+        ScriptedRunner(()), Pipeline(), EventBus(), history=[Message.user("a")]
+    )
+
+    engine.restore([Message.user("b"), Message.assistant("c")])
+
+    assert [m.content for m in engine.history] == ["b", "c"]
+    assert not engine.busy

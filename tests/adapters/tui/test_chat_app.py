@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, OptionList, Static
 
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
@@ -22,6 +22,7 @@ from sensai.adapters.tui.panels import (
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    Banner,
     CommandMenu,
     EffortLabel,
     ErrorMessage,
@@ -103,6 +104,11 @@ class BlockingLLM:
 def _app(llm: LLM) -> SensaiApp:
     engine = Engine(Agent(llm, ToolRegistry()), Pipeline(), EventBus())
     return SensaiApp(engine, model="test-model")
+
+
+def _subtitle(app: SensaiApp) -> str:
+    [banner] = app.query(Banner)
+    return str(banner.query_one(".banner-subtitle", Static).render())
 
 
 def _run(app: SensaiApp, scenario: Callable[[Pilot[None]], Awaitable[None]]) -> None:
@@ -306,6 +312,7 @@ def test_clear_command_empties_the_transcript_and_history() -> None:
         assert _texts(app, UserMessage) == []
         assert _texts(app, AssistantMessage) == []
         assert _texts(app, HintMessage) == [CLEARED_HINT]
+        assert _subtitle(app) == "New session"
 
     _run(app, scenario)
 
@@ -515,7 +522,7 @@ def test_tool_calls_stack_above_the_answer() -> None:
         assert lines[1].text == "● Failed to call tool fetch: boom"
 
         order = [type(w) for w in app.query("#transcript > *")]
-        assert order == [UserMessage, ReasoningGroup, AssistantMessage]
+        assert order == [Banner, UserMessage, ReasoningGroup, AssistantMessage]
 
     _run(app, scenario)
 
@@ -538,6 +545,7 @@ def test_text_between_tool_calls_keeps_its_place() -> None:
 
         order = [type(w) for w in app.query("#transcript > *")]
         assert order == [
+            Banner,
             UserMessage,
             AssistantMessage,
             ReasoningGroup,
@@ -1070,7 +1078,7 @@ def test_sessions_panel_lists_titles_newest_first_and_untitled_ones() -> None:
         await pilot.pause()
 
         panel = app.query_one(SessionsPanel)
-        rows = [str(row.render()) for row in panel.query(".session-row")]
+        rows = [str(option.prompt) for option in panel.query_one(OptionList).options]
         assert [row.split("  ", 1)[1] for row in rows] == ["Untitled", "Install uv"]
         assert panel.border_title is not None
         assert str(panel.border_title) == "Sessions · 2"
@@ -1090,5 +1098,77 @@ def test_sessions_panel_says_when_there_are_no_sessions() -> None:
 
         [empty] = app.query_one(SessionsPanel).query(".panel-empty")
         assert str(empty.render()) == "No sessions yet"
+
+    _run(app, scenario)
+
+
+def test_a_new_app_opens_on_the_banner() -> None:
+    """The transcript starts with the big title and a new-session subtitle."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.pause()
+
+        assert _subtitle(app) == "New session"
+        assert str(app.query_one(".banner-title", Static).render()) == "Sensai"
+
+    _run(app, scenario)
+
+
+def test_the_banner_falls_back_to_a_plain_title_in_a_narrow_terminal() -> None:
+    """The block letters need 45 columns; below that only the title shows."""
+    app = _app(FakeLLM([]))
+
+    async def run() -> None:
+        async with app.run_test(size=(40, 20)) as pilot:
+            await pilot.pause()
+            assert not app.query_one(".banner-art").display
+            assert app.query_one(".banner-title").display
+
+        async with _app(FakeLLM([])).run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            assert pilot.app.query_one(".banner-art").display
+            assert not pilot.app.query_one(".banner-title").display
+
+    asyncio.run(run())
+
+
+def test_choosing_a_session_resumes_it() -> None:
+    """Enter on a session loads its messages, shows them and closes the panel."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    resumed: list[int] = []
+
+    async def on_resume(session_id: int) -> list[Message]:
+        resumed.append(session_id)
+        return list(await store.get_messages(session_id))
+
+    app = SensaiApp(
+        engine, model="qwen3:8b", commands=default_registry(on_resume=on_resume)
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        old = await store.create_session(model="m", title="Install uv")
+        await store.append_message(old.id, Message.user("how to install uv?"))
+        await store.append_message(old.id, Message.assistant("Use the script."))
+        await store.create_session(model="m", title="Other")  # listed first
+        await _send(pilot, "/sessions")
+        await pilot.pause()
+
+        await pilot.press("down", "enter")
+        await pilot.pause()
+
+        assert resumed == [old.id]
+        assert [m.content for m in engine.history] == [
+            "how to install uv?",
+            "Use the script.",
+        ]
+        assert _subtitle(app) == "Install uv"
+        assert _texts(app, UserMessage) == ["how to install uv?"]
+        assert _texts(app, AssistantMessage) == ["Use the script."]
+        assert not app.query(SessionsPanel)
+        assert app.query_one("#prompt", Input).display
 
     _run(app, scenario)

@@ -207,6 +207,21 @@ class Engine:
         self._tasks[submission_id] = task
         return submission_id
 
+    @property
+    def busy(self) -> bool:
+        """Whether a submission is running."""
+        return bool(self._tasks)
+
+    def restore(self, history: Sequence[Message]) -> None:
+        """Replace the conversation with the messages of another session.
+
+        Raises:
+            SubmissionInProgressError: A submission is still running.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        self._history[:] = history
+
     def clear(self) -> None:
         """Forget the conversation; the next submission starts from scratch.
 

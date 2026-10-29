@@ -356,7 +356,9 @@ async def _serve(config: Config, options: ChatOptions) -> None:
         watcher = asyncio.create_task(recorder.watch())
         await asyncio.sleep(0)  # subscribed before the first message
         commands = default_registry(
-            on_clear=recorder.start_new, persona_names=engine.persona_names
+            on_clear=recorder.start_new,
+            on_resume=recorder.resume,
+            persona_names=engine.persona_names,
         )
         await SensaiApp(engine, model=config.model, commands=commands).run_async()
         await _cancel(watcher)

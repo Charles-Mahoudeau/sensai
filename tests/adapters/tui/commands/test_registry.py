@@ -21,8 +21,11 @@ from sensai.core.pipeline.base import Pipeline
 from tests.core.test_engine import ScriptedRunner
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sensai.adapters.tui.commands import CommandContext
     from sensai.adapters.tui.panels import Panel
+    from sensai.core.models import Message
 
 
 class FakeContext:
@@ -36,6 +39,7 @@ class FakeContext:
         self.refreshed = 0
         self.exited = False
         self.panels: list[Panel] = []
+        self.sessions_shown: list[tuple[str, tuple[Message, ...]]] = []
 
     @property
     def engine(self) -> Engine:
@@ -49,6 +53,10 @@ class FakeContext:
     async def clear_transcript(self) -> None:
         """Count the clears."""
         self.cleared += 1
+
+    async def show_session(self, title: str, messages: Sequence[Message]) -> None:
+        """Record the session shown."""
+        self.sessions_shown.append((title, tuple(messages)))
 
     def refresh_status(self) -> None:
         """Count the refreshes."""

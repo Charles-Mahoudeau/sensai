@@ -241,10 +241,15 @@ HintMessage {
 }
 
 #sessions-panel {
-    overflow-y: auto;
-
-    .session-row {
-        height: 1;
+    #sessions-list {
+        height: auto;
+        max-height: 20;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        padding: 0;
+        border: none;
+        background: $background;
+        scrollbar-size-vertical: 1;
     }
 }
 

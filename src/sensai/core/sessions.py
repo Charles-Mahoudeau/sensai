@@ -10,7 +10,10 @@ from sensai.core.events import Done
 from sensai.core.ports import StorageError
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sensai.core.engine import Engine
+    from sensai.core.models import Message
     from sensai.core.ports import SessionRepository
     from sensai.core.usage import UsageMeter
 
@@ -134,6 +137,27 @@ class SessionRecorder:
         except BaseException:
             meter.restore_unsaved(usage)
             raise
+
+    async def resume(self, session_id: int) -> Sequence[Message]:
+        """Save the current session, then record into a stored one.
+
+        Returns the messages of that session, for the caller to load into the
+        engine right away: the next save appends what follows them.
+
+        Raises:
+            SessionNotFoundError: No session has this id.
+            StorageError: The store failed to read or write.
+        """
+        async with self._lock:
+            await self._save()
+            session = await self._repo.get_session(session_id)
+            messages = await self._repo.get_messages(session_id)
+            self._session_id = session_id
+            self._saved = len(messages)
+            self._titled = session.title is not None
+            if self._meter is not None:
+                self._meter.reset(session.usage)
+            return messages
 
     async def start_new(self) -> None:
         """Save the current session, then record into a new one.

@@ -219,3 +219,61 @@ def test_sessions_reports_a_store_failure_as_a_hint() -> None:
 
     assert context.panels == []
     assert context.hints == ["Could not read the sessions: disk gone"]
+
+
+def test_resuming_a_session_loads_it_and_shows_it_under_its_title() -> None:
+    """The chosen session's messages go to the engine and the transcript."""
+    store = InMemorySessionStore()
+    messages = [Message.user("hi"), Message.assistant("hello")]
+
+    async def on_resume(session_id: int) -> list[Message]:
+        del session_id
+        return messages
+
+    async def run() -> FakeContext:
+        session = await store.create_session(model="m", title="Greeting")
+        engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), sessions=store)
+        context = FakeContext(engine)
+        await default_registry(on_resume=on_resume).run("/sessions", context)
+        [panel] = context.panels
+        assert isinstance(panel, SessionsPanel)
+        assert panel._on_select is not None
+        await panel._on_select(session)
+        return context
+
+    context = asyncio.run(run())
+
+    assert context.engine.history == tuple(messages)
+    assert context.sessions_shown == [("Greeting", tuple(messages))]
+
+
+def test_resuming_fails_with_a_hint_and_keeps_the_conversation() -> None:
+    """A store error leaves the engine history and the transcript alone."""
+    store = InMemorySessionStore()
+
+    async def on_resume(session_id: int) -> list[Message]:
+        raise StorageError(f"no session {session_id}")
+
+    async def run() -> FakeContext:
+        session = await store.create_session(model="m")
+        engine = Engine(
+            ScriptedRunner(()),
+            Pipeline(),
+            EventBus(),
+            history=[Message.user("keep")],
+            sessions=store,
+        )
+        context = FakeContext(engine)
+        await default_registry(on_resume=on_resume).run("/chats", context)
+        [panel] = context.panels
+        assert isinstance(panel, SessionsPanel)
+        assert panel._on_select is not None
+        await panel._on_select(session)
+        return context
+
+    context = asyncio.run(run())
+
+    assert context.engine.history == (Message.user("keep"),)
+    assert context.sessions_shown == []
+    assert len(context.hints) == 1
+    assert context.hints[0].startswith("Could not resume the session")

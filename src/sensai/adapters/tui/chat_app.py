@@ -14,6 +14,7 @@ from sensai.adapters.tui.companion import Companion, Mood
 from sensai.adapters.tui.panels import Panel
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
+    Banner,
     CommandMenu,
     EffortLabel,
     ErrorMessage,
@@ -37,7 +38,7 @@ from sensai.core.events import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Sequence
 
     from textual.app import ComposeResult
     from textual.binding import BindingType
@@ -46,8 +47,9 @@ if TYPE_CHECKING:
     from sensai.adapters.tui.commands import CommandRegistry
     from sensai.core.engine import Engine
     from sensai.core.events import Event
-    from sensai.core.models import ToolCall
+    from sensai.core.models import Message, ToolCall
 
+NEW_SESSION = "New session"
 EMPTY_INPUT_HINT = "Type a message and press Enter. /exit to quit."
 HAPPY_SECONDS = 2.0
 INTERRUPTED_SECONDS = 2.0
@@ -99,7 +101,7 @@ class SensaiApp(App[None]):
 
     def compose(self) -> ComposeResult:
         """Lay out the transcript, the prompt and the status line."""
-        yield VerticalScroll(id="transcript")
+        yield VerticalScroll(Banner(NEW_SESSION), id="transcript")
         menu = CommandMenu()
         yield menu
         yield PromptInput(
@@ -154,8 +156,25 @@ class SensaiApp(App[None]):
         await self._write(HintMessage(text))
 
     async def clear_transcript(self) -> None:
-        """Remove every message shown so far."""
-        await self.query_one("#transcript", VerticalScroll).remove_children()
+        """Remove every message shown so far, back to a new session's banner."""
+        await self._reset_transcript(NEW_SESSION)
+
+    async def show_session(self, title: str, messages: Sequence[Message]) -> None:
+        """Replace the transcript with a resumed session, under its title."""
+        await self._reset_transcript(title)
+        for message in messages:
+            if message.role == "user":
+                await self._write(UserMessage(message.content))
+            elif message.role == "assistant" and message.content:
+                reply = AssistantMessage()
+                await self._write(reply)
+                await reply.add_fragment(message.content)
+                await reply.finish()
+
+    async def _reset_transcript(self, subtitle: str) -> None:
+        transcript = self.query_one("#transcript", VerticalScroll)
+        await transcript.remove_children()
+        await transcript.mount(Banner(subtitle))
 
     def refresh_status(self) -> None:
         """Show the engine's current persona and effort in the status bar."""

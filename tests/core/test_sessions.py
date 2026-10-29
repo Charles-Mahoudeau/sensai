@@ -12,7 +12,7 @@ from sensai.core.events import Done, EventBus
 from sensai.core.models import Message
 from sensai.core.models.llm import ChatDone, Usage, UsageTotals
 from sensai.core.pipeline.base import Pipeline
-from sensai.core.ports import StorageError
+from sensai.core.ports import SessionNotFoundError, StorageError
 from sensai.core.sessions import SessionRecorder
 from sensai.core.usage import UsageMeter
 from tests.core.test_engine import ScriptedRunner
@@ -383,5 +383,75 @@ def test_a_new_session_after_start_new_is_titled_again() -> None:
 
         titles = sorted(s.title or "" for s in await repo.list_sessions())
         assert titles == ["One", "Two"]
+
+    asyncio.run(run())
+
+
+def test_resume_saves_the_current_session_then_continues_the_chosen_one() -> None:
+    """Later messages are appended to the resumed session, not the old one."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        old = await repo.create_session(model="m", title="Old")
+        await repo.append_message(old.id, Message.user("old question"))
+        meter = UsageMeter()
+        engine = _engine((Message.user("current"),))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=None, saved=0, meter=meter
+        )
+
+        messages = await recorder.resume(old.id)
+        engine.restore(messages)
+        engine._history.append(Message.user("follow-up"))
+        await recorder.save()
+
+        assert list(messages) == [Message.user("old question")]
+        assert await repo.get_messages(old.id) == [
+            Message.user("old question"),
+            Message.user("follow-up"),
+        ]
+        others = [s for s in await repo.list_sessions() if s.id != old.id]
+        assert [await repo.get_messages(s.id) for s in others] == [
+            [Message.user("current")]
+        ]
+
+    asyncio.run(run())
+
+
+def test_resume_counts_usage_from_the_resumed_session() -> None:
+    """The meter starts from the totals saved for that session."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        old = await repo.create_session(model="m")
+        await repo.add_usage(old.id, _ONE_CALL)
+        meter = UsageMeter()
+        recorder = SessionRecorder(
+            repo, _engine(()), model="m", session_id=None, saved=0, meter=meter
+        )
+
+        await recorder.resume(old.id)
+
+        assert meter.total == _ONE_CALL
+
+    asyncio.run(run())
+
+
+def test_resume_of_an_unknown_session_keeps_the_current_one() -> None:
+    """A failed switch changes nothing."""
+
+    async def run() -> None:
+        repo = InMemorySessionStore()
+        current = await repo.create_session(model="m")
+        engine = _engine((Message.user("hi"),))
+        recorder = SessionRecorder(
+            repo, engine, model="m", session_id=current.id, saved=0
+        )
+
+        with pytest.raises(SessionNotFoundError):
+            await recorder.resume(999)
+        await recorder.save()
+
+        assert await repo.get_messages(current.id) == [Message.user("hi")]
 
     asyncio.run(run())
