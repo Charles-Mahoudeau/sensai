@@ -13,6 +13,7 @@ from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.companion import Companion, Mood
 from sensai.adapters.tui.panels import Panel
 from sensai.adapters.tui.widgets import (
+    ArtifactView,
     AssistantMessage,
     CommandMenu,
     EffortLabel,
@@ -235,6 +236,8 @@ class SensaiApp(App[None]):
                 await (await self._open_group()).add_tool(line)
             case ToolRunFinished(call=call, result=result):
                 self._finish_tool(call, result.content, is_error=result.is_error)
+                for attachment in result.attachments:
+                    await self._write(ArtifactView(attachment))
                 if not self._running_tools:
                     self._companion.set_mood(Mood.THINKING)
             case MessageCompleted(message=message):
