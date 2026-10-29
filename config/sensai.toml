@@ -16,3 +16,11 @@ enabled = false
 [agent]
 # none | low | medium | high | ultra
 thinking_effort = "medium"
+
+# Each [mcp.servers.<name>] table declares one HTTP MCP server. The name is the tool
+# namespace prefix (<name>__<tool>). Secrets stay in the environment: token_env names
+# the variable holding the bearer token.
+
+[mcp.servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+token_env = "GITHUB_TOKEN"

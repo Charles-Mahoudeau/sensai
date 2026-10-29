@@ -143,18 +143,14 @@ async def build_tools(
     memory.register_self(tool_registry, memory_repository)
 
     clients: list[McpClient] = []
-    if config.mcp.github_token:
-        clients.append(
-            HttpMcpClient(
-                "github",
-                "https://api.githubcopilot.com/mcp/",
-                BearerAuth(config.mcp.github_token),
+    for server in config.mcp.servers:
+        if server.token_env and not server.token:
+            logging.getLogger(__name__).warning(
+                "%s not set, skipping the %s MCP server", server.token_env, server.name
             )
-        )
-    else:
-        logging.getLogger(__name__).warning(
-            "GITHUB_TOKEN not set, skipping the GitHub MCP server"
-        )
+            continue
+        auth = BearerAuth(server.token) if server.token else None
+        clients.append(HttpMcpClient(server.name, server.url, auth))
 
     statuses: list[McpServerStatus] = []
     for client in clients:
