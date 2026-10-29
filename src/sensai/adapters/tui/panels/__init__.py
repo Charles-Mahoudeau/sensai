@@ -2,7 +2,8 @@
 
 from sensai.adapters.tui.panels.base import Panel
 from sensai.adapters.tui.panels.mcp import McpPanel
+from sensai.adapters.tui.panels.sessions import SessionsPanel
 from sensai.adapters.tui.panels.tools import ToolsPanel
 from sensai.adapters.tui.panels.usage import UsagePanel
 
-__all__ = ["McpPanel", "Panel", "ToolsPanel", "UsagePanel"]
+__all__ = ["McpPanel", "Panel", "SessionsPanel", "ToolsPanel", "UsagePanel"]

@@ -35,6 +35,7 @@ from sensai.core.agent.memory_extraction import MemoryExtractor
 from sensai.core.agent.memory_recall import MemoryRecall
 from sensai.core.agent.prompts import AgentPrompts, MemoryPrompts
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.session_title import SessionTitler
 from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.errors import SensaiError
@@ -42,7 +43,12 @@ from sensai.core.events import EventBus
 from sensai.core.model_memory import ModelMemory
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
-from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
+from sensai.core.prompts import (
+    SESSION_TITLE,
+    PromptComparison,
+    PromptLibrary,
+    load_defaults,
+)
 from sensai.core.sessions import SessionRecorder
 from sensai.core.tools.builtin import memory, web_search
 from sensai.core.tools.mcp import register_mcp_server
@@ -55,7 +61,13 @@ if TYPE_CHECKING:
 
     from sensai.core.agent import Agent
     from sensai.core.models import McpServerStatus, Message
-    from sensai.core.ports import LLM, McpClient, MemoryRepository, ModelMonitor
+    from sensai.core.ports import (
+        LLM,
+        McpClient,
+        MemoryRepository,
+        ModelMonitor,
+        SessionRepository,
+    )
 
 
 @dataclass(frozen=True)
@@ -83,6 +95,7 @@ async def build_engine(
     mcp_servers: Sequence[McpServerStatus] = (),
     monitor: ModelMonitor | None = None,
     usage_meter: UsageMeter | None = None,
+    sessions: SessionRepository | None = None,
 ) -> Engine:
     """Build an Engine around an already configured agent.
 
@@ -96,6 +109,7 @@ async def build_engine(
         mcp_servers: The outcome of connecting to each MCP server.
         monitor: Reports the memory used by the configured model, if any.
         usage_meter: The meter the agent's model counts into, if any.
+        sessions: Where the sessions are stored, for front-ends to list them.
 
     Returns:
         The engine, ready to be driven by the TUI or CLI.
@@ -115,6 +129,7 @@ async def build_engine(
         mcp_servers=mcp_servers,
         model_memory=ModelMemory(monitor, config.model) if monitor else None,
         usage_meter=usage_meter,
+        sessions=sessions,
     )
     if config.personas.default is not None:
         engine.set_persona(config.personas.default)
@@ -296,12 +311,7 @@ async def _serve(config: Config, options: ChatOptions) -> None:
 
         session_repo = SqliteSessionRepository(db)
         memory_repo = SqliteMemoryRepository(db)
-        last = await session_repo.list_sessions(limit=1)
-        session = (
-            last[0] if last else await session_repo.create_session(model=config.model)
-        )
-        history = await session_repo.get_messages(session.id)
-        usage_meter = UsageMeter(session.usage)
+        usage_meter = UsageMeter()
 
         tools, mcp_servers = await build_tools(config, stack, memory_repo)
         tools.set_all_enabled(enabled=options.tools_enabled)
@@ -318,25 +328,36 @@ async def _serve(config: Config, options: ChatOptions) -> None:
             config,
             agent,
             system_prompt,
-            history,
             profile=profile,
             tools=tools,
             mcp_servers=mcp_servers,
             monitor=OllamaMonitor(client, config.ollama.url),
             usage_meter=usage_meter,
+            sessions=session_repo,
+        )
+        # The unmetered model: naming a session is not part of its usage.
+        titler = SessionTitler(
+            _ollama_chat(config, client),
+            (await prompts.active(SESSION_TITLE)).content,
         )
         recorder = SessionRecorder(
             session_repo,
             engine,
             model=config.model,
-            session_id=session.id,
-            saved=len(history),
+            session_id=None,
+            saved=0,
             meter=usage_meter,
+            titler=titler,
         )
+        watcher = asyncio.create_task(recorder.watch())
+        await asyncio.sleep(0)  # subscribed before the first message
         commands = default_registry(
-            on_clear=recorder.start_new, persona_names=engine.persona_names
+            on_clear=recorder.start_new,
+            on_resume=recorder.resume,
+            persona_names=engine.persona_names,
         )
         await SensaiApp(engine, model=config.model, commands=commands).run_async()
+        await _cancel(watcher)
         await recorder.save()
 
 

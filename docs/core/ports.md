@@ -76,7 +76,7 @@ Module: `core/ports/memory.py`. Both stores are asynchronous. The SQLite adapter
 
 `SessionStore` saves conversations and the persistent user profile.
 
-- `create_session`, `get_session`, and `list_sessions` manage `Session` objects. `list_sessions` returns the most recently updated first and accepts a `limit`.
+- `create_session`, `get_session`, and `list_sessions` manage `Session` objects. `list_sessions` returns the most recently updated first and accepts a `limit` (`None` for every session).
 - `append_message` adds a `Message` at the end of a session and refreshes the session's update time. `get_messages` returns the messages of a session, oldest first, ready to be sent to `LLM.chat`.
 - `delete_session` removes a session with its messages.
 - `get_profile` returns the profile as key/value pairs, empty when nothing is set. `set_profile_value` creates or replaces an entry, and `delete_profile_value` removes one and does nothing if the key is unknown.

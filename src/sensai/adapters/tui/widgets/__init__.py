@@ -1,6 +1,7 @@
 """Widgets rendering the chat transcript and the prompt."""
 
 from sensai.adapters.tui.widgets.assistant_message import AssistantMessage
+from sensai.adapters.tui.widgets.banner import Banner
 from sensai.adapters.tui.widgets.command_menu import CommandMenu
 from sensai.adapters.tui.widgets.effort_label import EffortLabel
 from sensai.adapters.tui.widgets.error_message import ErrorMessage
@@ -17,6 +18,7 @@ from sensai.adapters.tui.widgets.user_message import UserMessage
 
 __all__ = [
     "AssistantMessage",
+    "Banner",
     "CommandMenu",
     "EffortLabel",
     "ErrorMessage",
