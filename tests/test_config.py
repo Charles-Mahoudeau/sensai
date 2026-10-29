@@ -112,3 +112,30 @@ def test_invalid_keep_alive_is_rejected(tmp_path: Path, value: str) -> None:
     """Anything but a string or a whole number of seconds is refused."""
     with pytest.raises(ConfigError, match=r"ollama\.keep_alive"):
         load_config(_write(tmp_path, f"[ollama]\nkeep_alive = {value}\n"))
+
+
+def test_sandbox_is_off_without_a_section(tmp_path: Path) -> None:
+    """Without `[sandbox]`, run_python is not offered."""
+    assert not load_config(_write(tmp_path, "")).sandbox.enabled
+
+
+def test_sandbox_section_is_read(tmp_path: Path) -> None:
+    """Values are read, and the artifacts folder is relative to the project."""
+    body = (
+        "[sandbox]\nenabled = true\nimage = 'img'\ntimeout = 5\n"
+        "memory = '256m'\ncpus = 0.5\nartifacts_dir = 'out'\n"
+    )
+
+    sandbox = load_config(_write(tmp_path, body)).sandbox
+
+    assert sandbox.enabled
+    assert (sandbox.image, sandbox.timeout, sandbox.memory) == ("img", 5.0, "256m")
+    assert sandbox.cpus == 0.5
+    assert sandbox.artifacts_dir == tmp_path / "out"
+
+
+@pytest.mark.parametrize("body", ["timeout = 0", "cpus = -1", "timeout = 'soon'"])
+def test_invalid_sandbox_values_are_rejected(tmp_path: Path, body: str) -> None:
+    """A non-positive or non-numeric limit raises a ConfigError."""
+    with pytest.raises(ConfigError, match="sandbox"):
+        load_config(_write(tmp_path, f"[sandbox]\n{body}\n"))

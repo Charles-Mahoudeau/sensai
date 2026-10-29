@@ -75,6 +75,27 @@ class McpConfig:
 
 
 @dataclass(frozen=True)
+class SandboxConfig:
+    """Configuration for the sandbox where the model's Python code runs.
+
+    Attributes:
+        enabled: Whether `run_python` is offered (it also needs Docker).
+        image: The Docker image runs use.
+        timeout: Seconds a run may last.
+        memory: The memory a run may use, in Docker's notation ("512m").
+        cpus: How many CPUs a run may use.
+        artifacts_dir: Where the files runs create are saved.
+    """
+
+    enabled: bool = False
+    image: str = "sensai-sandbox"
+    timeout: float = 30.0
+    memory: str = "512m"
+    cpus: float = 1.0
+    artifacts_dir: Path = Path("artifacts")
+
+
+@dataclass(frozen=True)
 class Config:
     """Global application configuration."""
 
@@ -87,6 +108,25 @@ class Config:
         default_factory=StructuredOutputConfig
     )
     mcp: McpConfig = McpConfig()
+    sandbox: SandboxConfig = SandboxConfig()
+
+
+def _parse_sandbox(data: dict[str, Any], base: Path) -> SandboxConfig:
+    defaults = SandboxConfig()
+    try:
+        config = SandboxConfig(
+            enabled=bool(data.get("enabled", defaults.enabled)),
+            image=str(data.get("image", defaults.image)),
+            timeout=float(data.get("timeout", defaults.timeout)),
+            memory=str(data.get("memory", defaults.memory)),
+            cpus=float(data.get("cpus", defaults.cpus)),
+            artifacts_dir=base / str(data.get("artifacts_dir", defaults.artifacts_dir)),
+        )
+    except (TypeError, ValueError) as error:
+        raise ConfigError(f"invalid [sandbox] value: {error}") from None
+    if config.timeout <= 0 or config.cpus <= 0:
+        raise ConfigError("sandbox.timeout and sandbox.cpus must be positive")
+    return config
 
 
 def _parse_thinking_effort(value: object) -> ThinkingEffort:
@@ -197,6 +237,7 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
             schemas=schemas,
         ),
         mcp=McpConfig(github_token=os.environ.get("GITHUB_TOKEN") or None),
+        sandbox=_parse_sandbox(data.get("sandbox", {}), base),
     )
 
     return config
