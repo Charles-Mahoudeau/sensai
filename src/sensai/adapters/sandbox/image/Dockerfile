@@ -3,12 +3,13 @@
 FROM python:3.13-slim
 
 RUN pip install --no-cache-dir \
-        sympy==1.14.0 \
-        numpy==2.5.4 \
-        scipy==1.18.1 \
-        matplotlib==3.11.2 \
-        pandas==3.1.0 \
-    && useradd --create-home --uid 1000 sandbox
+    sympy==1.14.0 \
+    numpy==2.5.4 \
+    scipy==1.18.1 \
+    matplotlib==3.11.2 \
+    pandas==3.1.0 \
+    && useradd --create-home --uid 1000 sandbox \
+    && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 
 # Render figures to files; there is no display.
 ENV MPLBACKEND=Agg \
