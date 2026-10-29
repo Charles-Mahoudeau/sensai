@@ -163,14 +163,22 @@ class ReActAgent(Agent):
         notes: list[str] = []
         seen: set[tuple[str, str]] = set()
         failures: Counter[str] = Counter()
+        retry_cut = True
         for _ in range(self._thinking_effort.level):
             steps: list[Step] = []
-            async for event in self._think(run, tools, notes, steps):
+            async for event in self._think(
+                run, tools, notes, steps, retry_cut=retry_cut
+            ):
                 yield event
             step = steps[0]
             if step.thought:
                 notes.append(step.thought)
             if step.call is None:
+                if step.cut and retry_cut:
+                    # Cut mid-sentence, the answer was forced, not concluded:
+                    # once per turn, think again from the partial thought.
+                    retry_cut = False
+                    continue
                 break
             spec = next(spec for spec in tools if spec.name == step.call.name)
             key = call_key(spec, step.call)
@@ -197,6 +205,8 @@ class ReActAgent(Agent):
         tools: Sequence[ToolSpec],
         notes: Sequence[str],
         steps: list[Step],
+        *,
+        retry_cut: bool,
     ) -> AsyncIterator[AgentEvent]:
         """Stream a private thought, then append its step to `steps`.
 
@@ -204,7 +214,8 @@ class ReActAgent(Agent):
         streams as `ThoughtStream` decodes it, and the action is read once the
         reply is complete. An empty delta first opens the thought in the
         front-end, which shows its clock while the model reads the prompt. The
-        last delta tags an answer as ready.
+        last delta tags an answer as ready, unless it is cut and `retry_cut`
+        says the agent will think again.
 
         A server that refuses the schema before replying gets the flat one, for
         this step and every later one.
@@ -242,7 +253,8 @@ class ReActAgent(Agent):
         step = parse_step("".join(parts), tools)
         steps.append(step)
         # A reply that was not a step streamed nothing: show it whole.
-        yield ThinkingDelta(text="" if shown else step.thought, ready=step.call is None)
+        ready = step.call is None and not (step.cut and retry_cut)
+        yield ThinkingDelta(text="" if shown else step.thought, ready=ready)
 
     async def _act(
         self, run: AgentRun, spec: ToolSpec, call: ToolCall

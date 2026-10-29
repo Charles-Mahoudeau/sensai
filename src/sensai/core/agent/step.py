@@ -51,6 +51,8 @@ _COMBINING = frozenset(
     }
 )
 _ANY_OBJECT: dict[str, Any] = {"type": "object"}
+# How a finished thought ends; one ending otherwise was cut.
+_SENTENCE_ENDS = (".", "!", "?", "…", "»", ")", "]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,10 +62,14 @@ class Step:
     Attributes:
         thought: The private reasoning, shown to the user as it is written.
         call: The tool to run next; `None` when the agent can answer.
+        cut: Whether the thought stops mid-sentence. A double quote the model
+            meant to open a quotation closes the JSON string, and the schema
+            then forces an action before the reasoning concluded.
     """
 
     thought: str
     call: ToolCall | None = None
+    cut: bool = False
 
 
 def step_schema(tools: Sequence[ToolSpec]) -> dict[str, Any]:
@@ -125,13 +131,14 @@ def parse_step(text: str, tools: Sequence[ToolSpec]) -> Step:
         return Step(text.strip())
     thought = data.get("thought")
     thought = thought.strip() if isinstance(thought, str) else ""
+    cut = bool(thought) and not thought.endswith(_SENTENCE_ENDS)
     action = data.get("action")
     arguments = data.get("arguments")
     if action not in {tool.name for tool in tools}:
-        return Step(thought)
+        return Step(thought, cut=cut)
     if not isinstance(arguments, dict):
         arguments = {}
-    return Step(thought, ToolCall(action, arguments, new_call_id()))
+    return Step(thought, ToolCall(action, arguments, new_call_id()), cut=cut)
 
 
 def check_arguments(tool: ToolSpec, arguments: Mapping[str, Any]) -> str | None:

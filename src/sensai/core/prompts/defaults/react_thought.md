@@ -24,6 +24,8 @@ needs no tool: acknowledge it and answer.
 If a tool returns an error, fix its arguments at most once; if it fails again,
 stop calling it and say that you could not verify, never pretend you did.
 
+Inside the thought, never write a double quote: quote words with « » or ' '.
+
 Then choose the next action, in JSON:
 - to call a tool: {{"thought": "your sentences", "action": "<tool name>", "arguments": {{...}}}}
 - to answer: {{"thought": "your sentences", "action": "answer"}}
