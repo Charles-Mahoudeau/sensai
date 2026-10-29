@@ -3,24 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
-from sensai.adapters.tui.panels import McpPanel, ToolsPanel, UsagePanel
+from sensai.adapters.tui.panels import McpPanel, SessionsPanel, ToolsPanel, UsagePanel
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import Message, ThinkingEffort
 from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
+from sensai.core.ports import StorageError
 from sensai.core.tools.registry import ToolRegistry
 from tests.adapters.tui.commands.test_registry import FakeContext
 from tests.core.test_engine import ScriptedRunner, WaitingRunner
-from tests.fakes import FakeLLM, InMemoryPersonaSource
+from tests.fakes import FakeLLM, InMemoryPersonaSource, InMemorySessionStore
+
+if TYPE_CHECKING:
+    from sensai.core.models.memory import Session
 
 
 def test_default_registry_lists_the_builtins_in_menu_order() -> None:
-    """The menu shows /clear, /effort, /persona, /mcp, /tools, /usage and /exit."""
+    """The menu lists the builtins, /sessions after /usage and /exit last."""
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
@@ -28,6 +33,7 @@ def test_default_registry_lists_the_builtins_in_menu_order() -> None:
         "/mcp",
         "/tools",
         "/usage",
+        "/sessions",
         "/exit",
     ]
 
@@ -109,6 +115,24 @@ def test_mcp_tools_and_usage_open_their_panels() -> None:
     ]
 
 
+def test_sessions_and_its_alias_open_the_sessions_panel() -> None:
+    """/sessions and /chats both list the stored sessions, titles included."""
+
+    async def run(text: str) -> FakeContext:
+        store = InMemorySessionStore()
+        await store.create_session(model="m", title="Greeting")
+        engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), sessions=store)
+        context = FakeContext(engine)
+        await default_registry().run(text, context)
+        return context
+
+    for text in ("/sessions", "/chats"):
+        context = asyncio.run(run(text))
+        [panel] = context.panels
+        assert isinstance(panel, SessionsPanel)
+        assert [s.title for s in panel._sessions] == ["Greeting"]
+
+
 def _persona(name: str) -> Persona:
     section = PersonaSection("identity", (PersonaEntry("role", name),))
     return Persona(name, (section,))
@@ -178,3 +202,20 @@ def test_persona_is_refused_while_a_submission_runs() -> None:
 
     assert context.hints == ["A submission is already in progress."]
     assert context.refreshed == 0
+
+
+def test_sessions_reports_a_store_failure_as_a_hint() -> None:
+    """A store that cannot be read gives a hint, not a crash or a panel."""
+
+    class _BrokenStore(InMemorySessionStore):
+        async def list_sessions(self, *, limit: int = 50) -> list[Session]:
+            raise StorageError("disk gone")
+
+    context = FakeContext(
+        Engine(ScriptedRunner(()), Pipeline(), EventBus(), sessions=_BrokenStore())
+    )
+
+    asyncio.run(default_registry().run("/sessions", context))
+
+    assert context.panels == []
+    assert context.hints == ["Could not read the sessions: disk gone"]

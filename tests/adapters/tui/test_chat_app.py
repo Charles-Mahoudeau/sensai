@@ -12,7 +12,13 @@ from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
 from sensai.adapters.tui.companion import ANIMATIONS, Companion, Mood
-from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel, UsagePanel
+from sensai.adapters.tui.panels import (
+    McpPanel,
+    Panel,
+    SessionsPanel,
+    ToolsPanel,
+    UsagePanel,
+)
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
     AssistantMessage,
@@ -54,7 +60,12 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import UsageMeter
-from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
+from tests.fakes import (
+    FakeLLM,
+    FakeModelMonitor,
+    InMemoryPersonaSource,
+    InMemorySessionStore,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -359,6 +370,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
             "/mcp",
             "/tools",
             "/usage",
+            "/sessions",
             "/exit",
         ]
 
@@ -1039,5 +1051,44 @@ def test_persona_command_completes_switches_and_shows_the_persona() -> None:
         assert _texts(app, HintMessage) == [
             "Persona: sensei (available: pirate, sensei)"
         ]
+
+    _run(app, scenario)
+
+
+def test_sessions_panel_lists_titles_newest_first_and_untitled_ones() -> None:
+    """Each session shows its last activity and its title, or a placeholder."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        older = await store.create_session(model="m", title="Install uv")
+        newer = await store.create_session(model="m")
+        await _send(pilot, "/chats")
+        await pilot.pause()
+
+        panel = app.query_one(SessionsPanel)
+        rows = [str(row.render()) for row in panel.query(".session-row")]
+        assert [row.split("  ", 1)[1] for row in rows] == ["Untitled", "Install uv"]
+        assert panel.border_title is not None
+        assert str(panel.border_title) == "Sessions · 2"
+        assert newer.id != older.id
+
+    _run(app, scenario)
+
+
+def test_sessions_panel_says_when_there_are_no_sessions() -> None:
+    """An empty store shows an explanation."""
+    engine = Engine(Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/sessions")
+        await pilot.pause()
+
+        [empty] = app.query_one(SessionsPanel).query(".panel-empty")
+        assert str(empty.render()) == "No sessions yet"
 
     _run(app, scenario)

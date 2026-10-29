@@ -10,6 +10,7 @@ from sensai.adapters.tui.commands.builtin import (
     exit_,
     mcp,
     persona,
+    sessions,
     tools,
     usage,
 )
@@ -41,5 +42,6 @@ def default_registry(
     mcp.register_self(registry)
     tools.register_self(registry)
     usage.register_self(registry)
+    sessions.register_self(registry)
     exit_.register_self(registry)
     return registry

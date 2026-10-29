@@ -240,6 +240,14 @@ HintMessage {
     }
 }
 
+#sessions-panel {
+    overflow-y: auto;
+
+    .session-row {
+        height: 1;
+    }
+}
+
 #tools-panel {
     #tools-header {
         height: 1;
