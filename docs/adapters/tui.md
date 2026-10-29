@@ -23,6 +23,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
 | `widgets/` | One module per widget: the transcript lines, the prompt and its command menu |
 | `companion.py` | `Companion`: the animated face drawn in the prompt border, and its `Mood` frames |
+| `latex.py` | `latex_to_unicode()`: flattens a LaTeX formula into Unicode text |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
 ## Usage
@@ -181,7 +182,7 @@ usual.
 | Widget | Shows |
 | --- | --- |
 | `UserMessage` | The user's message |
-| `AssistantMessage` | The answer, rendered as Markdown while it streams |
+| `AssistantMessage` | The answer, rendered as Markdown (math included) while it streams |
 | `ReasoningGroup` | One turn's thoughts and tool calls, collapsible |
 | `ThoughtStep` | One think/act cycle inside a group |
 | `ToolCallLine` | One tool call, inside a group |
@@ -197,6 +198,19 @@ calls internally, and overriding it makes the text loop endlessly.
 
 Each widget stores its plain text in `.text`, which the tests use for
 assertions.
+
+### Math
+
+`AssistantMessage` and the expanded `ThoughtStep` are `MathMarkdown` widgets
+(`widgets/math_markdown.py`). Their parser reads LaTeX math, inline as `$…$` or
+`\(…\)` and displayed as `$$…$$` or `\[…\]`, and turns each formula into
+Unicode text with `latex_to_unicode()`, since a terminal can't typeset it:
+`$\frac{-b \pm \sqrt{\Delta}}{2a}$` shows as *(-b ± √Δ)/(2a)*. Inline formulas
+are shown in italics; displayed ones get their own indented `MarkdownMath`
+block. A `$` only opens a formula when followed by a non-space and only closes
+one when preceded by a non-space and not followed by a digit, so "$5 or $10"
+stays plain text. While a formula streams in, its raw LaTeX shows until the
+closing delimiter arrives.
 
 ## Reasoning display
 
