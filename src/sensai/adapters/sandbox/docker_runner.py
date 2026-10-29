@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import mimetypes
 import os
 import shutil
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import docker
-from docker.errors import DockerException
+from docker.errors import APIError, DockerException
 
 from sensai.core.models import Attachment
 from sensai.core.models.sandbox import CodeRun
@@ -22,6 +23,8 @@ from sensai.core.ports import SandboxError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from docker.models.containers import Container
 
 SCRIPT = "main.py"
 """The script's file name inside the run folder."""
@@ -69,7 +72,7 @@ class DockerCodeRunner:
             (workdir / SCRIPT).write_text(code, encoding="utf-8")
             start = self._clock()
             try:
-                exit_code, out, err = await asyncio.to_thread(self._execute, workdir)
+                exit_code, out, err, timed_out = await self._execute(workdir)
             except DockerException as error:
                 raise SandboxError(f"Docker could not run the code: {error}") from error
             duration = self._clock() - start
@@ -77,25 +80,39 @@ class DockerCodeRunner:
             run_id = f"{now:%H%M%S}-{workdir.name[-6:]}"
             run_dir = self._artifacts_dir / f"{now:%Y-%m-%d}" / run_id
             artifacts, script = collect_artifacts(workdir, run_dir)
-        return CodeRun(
-            out, err, exit_code, duration, artifacts=artifacts, script=script
-        )
+        return CodeRun(out, err, exit_code, duration, timed_out, artifacts, script)
 
-    def _execute(self, workdir: Path) -> tuple[int, str, str]:
-        """Run the script in a container, blocking; always remove the container."""
-        container = self._docker().containers.run(
-            self._image, ["python", SCRIPT], **self.run_options(workdir)
+    async def _execute(self, workdir: Path) -> tuple[int, str, str, bool]:
+        """Run the script in a container, killed at the time limit, then removed.
+
+        The Docker SDK blocks, so each call runs in a worker thread.
+        """
+        container: Container = await asyncio.to_thread(
+            self._docker().containers.run,
+            self._image,
+            ["python", SCRIPT],
+            **self.run_options(workdir),
         )
         try:
-            status = container.wait()
-            out = container.logs(stdout=True, stderr=False)
-            err = container.logs(stdout=False, stderr=True)
+            try:
+                status = await asyncio.wait_for(
+                    asyncio.to_thread(container.wait), self._limits.timeout
+                )
+                timed_out = False
+            except TimeoutError:
+                with contextlib.suppress(APIError):  # It may have just exited.
+                    await asyncio.to_thread(container.kill)
+                status = await asyncio.to_thread(container.wait)
+                timed_out = True
+            out = await asyncio.to_thread(container.logs, stdout=True, stderr=False)
+            err = await asyncio.to_thread(container.logs, stdout=False, stderr=True)
         finally:
-            container.remove(force=True)
+            await asyncio.to_thread(container.remove, force=True)
         return (
             int(status["StatusCode"]),
             out.decode(errors="replace"),
             err.decode(errors="replace"),
+            timed_out,
         )
 
     def _docker(self) -> docker.DockerClient:

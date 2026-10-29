@@ -101,3 +101,20 @@ def test_no_container_is_left_behind(tmp_path: Path) -> None:
     _run(tmp_path, "raise SystemExit(3)")
 
     assert _sandbox_containers() == before
+
+
+def test_an_infinite_loop_is_stopped_at_the_time_limit(tmp_path: Path) -> None:
+    """The run is killed at the limit, keeps what it printed, and is removed."""
+    before = _sandbox_containers()
+
+    run = _run(
+        tmp_path,
+        "print('started')\nwhile True:\n    pass",
+        SandboxLimits(timeout=3),
+    )
+
+    assert run.timed_out
+    assert not run.ok
+    assert run.stdout.strip() == "started"
+    assert 3 <= run.duration < 15
+    assert _sandbox_containers() == before
