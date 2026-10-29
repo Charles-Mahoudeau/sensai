@@ -9,10 +9,17 @@ from sensai.core.models import ToolOutput, ToolSpec
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from sensai.core.models.sandbox import CodeRun
     from sensai.core.ports import CodeRunner
     from sensai.core.tools.registry import ToolHandler, ToolRegistry
 
 NAME = "run_python"
+OUTPUT_LIMIT = 4000
+"""Most characters of stdout, and of stderr, given back to the model."""
+
+_FIX_IT = (
+    "The code failed: read the error above, fix the code and call run_python again."
+)
 
 
 def register_self(tool_registry: ToolRegistry, runner: CodeRunner) -> None:
@@ -53,9 +60,38 @@ def handler(runner: CodeRunner) -> ToolHandler:
         code = arguments.get("code")
         if not isinstance(code, str) or not code.strip():
             raise ValueError("'code' must be a non-empty Python script")
-        run = await runner.run(code)
-        return ToolOutput(
-            run.stdout + run.stderr, attachments=run.artifacts, is_error=not run.ok
-        )
+        return format_run(await runner.run(code))
 
     return run_python
+
+
+def format_run(run: CodeRun) -> ToolOutput:
+    """Turn a run into the text the model reads, with its files attached."""
+    if run.timed_out:
+        status = f"timed out after {run.duration:.0f} s"
+    else:
+        status = f"exit {run.exit_code} in {run.duration:.1f} s"
+    parts = [status]
+    if run.stdout:
+        parts.append(f"--- stdout ---\n{_cap(run.stdout, keep_end=False)}")
+    if run.stderr:
+        parts.append(f"--- stderr ---\n{_cap(run.stderr, keep_end=True)}")
+    if run.artifacts:
+        files = "\n".join(f"{a.path} ({a.media_type})" for a in run.artifacts)
+        parts.append(f"--- files shown to the user ---\n{files}")
+    if not run.ok:
+        parts.append(_FIX_IT)
+    return ToolOutput("\n".join(parts), attachments=run.artifacts, is_error=not run.ok)
+
+
+def _cap(text: str, *, keep_end: bool) -> str:
+    """Shorten `text` to `OUTPUT_LIMIT` characters, keeping its start or its end.
+
+    A traceback's useful part is at its end; printed results start at the top.
+    """
+    if len(text) <= OUTPUT_LIMIT:
+        return text
+    cut = len(text) - OUTPUT_LIMIT
+    if keep_end:
+        return f"[… {cut} characters cut]\n{text[-OUTPUT_LIMIT:]}"
+    return f"{text[:OUTPUT_LIMIT]}\n[… {cut} characters cut]"
