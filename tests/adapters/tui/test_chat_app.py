@@ -34,6 +34,7 @@ from sensai.adapters.tui.widgets import (
     ToolCallLine,
     UserMessage,
 )
+from sensai.adapters.tui.widgets.banner import MOTDS
 from sensai.core.agent import Agent
 from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
@@ -1170,5 +1171,19 @@ def test_choosing_a_session_resumes_it() -> None:
         assert _texts(app, AssistantMessage) == ["Use the script."]
         assert not app.query(SessionsPanel)
         assert app.query_one("#prompt", Input).display
+
+    _run(app, scenario)
+
+
+def test_the_banner_shows_a_random_splash_line() -> None:
+    """The line under the subtitle is one of the known ones; a given one is kept."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.pause()
+
+        [motd] = app.query(".banner-motd")
+        assert str(motd.render()) in MOTDS
+        assert str(Banner("x", "Hello!").motd) == "Hello!"
 
     _run(app, scenario)
