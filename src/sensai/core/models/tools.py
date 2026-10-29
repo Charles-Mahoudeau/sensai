@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -45,6 +46,34 @@ class ToolSpec:
         if not _NAME_RE.match(self.name):
             raise ValueError(f"ToolSpec.name {self.name!r} must match [A-Za-z0-9_-]+")
         object.__setattr__(self, "parameters", MappingProxyType(dict(self.parameters)))
+
+
+@dataclass(frozen=True, slots=True)
+class Attachment:
+    """A file a tool produced, such as a plot, shown to the user."""
+
+    path: Path
+    media_type: str
+
+    @property
+    def is_image(self) -> bool:
+        """Tell whether a front-end can display the file as an image."""
+        return self.media_type.startswith("image/")
+
+
+@dataclass(frozen=True, slots=True)
+class ToolOutput:
+    """What a tool handler returns when plain text isn't enough.
+
+    Attributes:
+        content: The text given back to the model.
+        attachments: Files the tool produced.
+        is_error: Whether the call failed, e.g. code that raised.
+    """
+
+    content: str
+    attachments: tuple[Attachment, ...] = ()
+    is_error: bool = False
 
 
 @dataclass(frozen=True, slots=True)

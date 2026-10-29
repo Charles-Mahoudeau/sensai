@@ -6,15 +6,18 @@ from sensai.core.models.mcp import McpServerStatus
 from sensai.core.models.prompts import PromptVersion
 from sensai.core.models.tools import (
     SOURCE_SEPARATOR,
+    Attachment,
     PermissionDecision,
     ToolCall,
     ToolInfo,
+    ToolOutput,
     ToolResult,
     ToolSpec,
 )
 
 __all__ = [
     "SOURCE_SEPARATOR",
+    "Attachment",
     "ChatDone",
     "ChatEvent",
     "McpServerStatus",
@@ -25,6 +28,7 @@ __all__ = [
     "ThinkingEffort",
     "ToolCall",
     "ToolInfo",
+    "ToolOutput",
     "ToolResult",
     "ToolSpec",
 ]
