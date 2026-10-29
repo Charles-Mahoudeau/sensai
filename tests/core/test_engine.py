@@ -39,7 +39,12 @@ from sensai.core.ports import PersonaNotFoundError
 from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import UsageMeter
-from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
+from tests.fakes import (
+    FakeLLM,
+    FakeModelMonitor,
+    InMemoryPersonaSource,
+    InMemorySessionStore,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -432,3 +437,26 @@ def test_set_persona_is_refused_while_a_submission_runs() -> None:
         await asyncio.sleep(0)
 
     asyncio.run(run())
+
+
+def test_list_sessions_reads_the_store_newest_first() -> None:
+    """The engine lists what the session store holds."""
+
+    async def run() -> None:
+        store = InMemorySessionStore()
+        first = await store.create_session(model="m", title="First")
+        second = await store.create_session(model="m", title="Second")
+        engine = Engine(ScriptedRunner(()), Pipeline(), EventBus(), sessions=store)
+
+        listed = await engine.list_sessions()
+
+        assert {s.id for s in listed} == {first.id, second.id}
+
+    asyncio.run(run())
+
+
+def test_list_sessions_is_empty_without_a_store() -> None:
+    """No store configured means no sessions."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    assert asyncio.run(engine.list_sessions()) == ()
