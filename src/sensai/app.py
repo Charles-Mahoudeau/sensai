@@ -19,6 +19,7 @@ from sensai.adapters.mcp.http_client import HttpMcpClient
 from sensai.adapters.ollama import OllamaChat, OllamaMonitor
 from sensai.adapters.persona import TomlPersonaDir
 from sensai.adapters.profile import read_profile_file
+from sensai.adapters.sandbox import DockerCodeRunner, SandboxLimits
 from sensai.adapters.storage import sqlite_migrator
 from sensai.adapters.storage.connection import create_connection
 from sensai.adapters.storage.repositories import (
@@ -44,7 +45,7 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.profile import render_profile
 from sensai.core.prompts import PromptComparison, PromptLibrary, load_defaults
 from sensai.core.sessions import SessionRecorder
-from sensai.core.tools.builtin import memory, web_search
+from sensai.core.tools.builtin import memory, python, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import MeteredLLM, UsageMeter
@@ -141,6 +142,7 @@ async def build_tools(
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
     memory.register_self(tool_registry, memory_repository)
+    await _register_sandbox(tool_registry, config)
 
     clients: list[McpClient] = []
     if config.mcp.github_token:
@@ -161,6 +163,21 @@ async def build_tools(
         stack.push_async_callback(client.aclose)
         statuses.append(await register_mcp_server(tool_registry, client))
     return tool_registry, tuple(statuses)
+
+
+async def _register_sandbox(tool_registry: ToolRegistry, config: Config) -> None:
+    """Offer `run_python` when the sandbox is enabled and Docker can run it."""
+    sandbox = config.sandbox
+    if not sandbox.enabled:
+        return
+    limits = SandboxLimits(sandbox.timeout, sandbox.memory, sandbox.cpus)
+    runner = DockerCodeRunner(sandbox.image, sandbox.artifacts_dir, limits)
+    if (reason := await runner.available()) is not None:
+        logging.getLogger(__name__).warning(
+            "Code sandbox unavailable (%s), skipping run_python", reason
+        )
+        return
+    python.register_self(tool_registry, runner)
 
 
 async def build_agent(
