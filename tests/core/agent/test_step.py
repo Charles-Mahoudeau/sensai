@@ -99,7 +99,7 @@ def test_portable_arguments_keep_enums_and_nested_items() -> None:
                     "items": {"type": "object", "properties": {"name": {}}},
                 },
             },
-            "required": ["state", "unknown"],
+            "required": ["state"],
         },
     )
 
@@ -139,6 +139,21 @@ def test_arguments_beyond_the_portable_subset_accept_any_object(
         "mcp_tool",
         "An MCP tool.",
         {"type": "object", "properties": {"owner": parameter}},
+    )
+
+    assert portable_arguments(tool) == {"type": "object"}
+
+
+def test_a_required_field_without_a_property_accepts_any_object() -> None:
+    """A grammar can't declare it, and closing the object would forbid it."""
+    tool = ToolSpec(
+        "mcp_tool",
+        "An MCP tool.",
+        {
+            "type": "object",
+            "properties": {"owner": {"type": "string"}},
+            "required": ["owner", "repo"],
+        },
     )
 
     assert portable_arguments(tool) == {"type": "object"}
@@ -201,6 +216,8 @@ def test_a_call_without_arguments_gets_an_empty_object() -> None:
         '{"thought": "Hm',
         "I am ready to answer.",
         '["web_search"]',
+        '{"thought": "Hm.", "action": ["web_search"], "arguments": {}}',
+        '{"thought": "Hm.", "action": {}, "arguments": {}}',
         '{"thought": "Hm.", "action": "github__get_me", "arguments": {}}',
     ],
 )
@@ -254,6 +271,35 @@ def test_check_arguments_tolerates_keywords_it_does_not_know() -> None:
     )
 
     assert check_arguments(tool, {"owner": None, "flag": 1, "page": "x"}) is None
+
+
+def test_check_arguments_checks_a_list_of_types() -> None:
+    """A value must match one of the listed types, `null` included."""
+    tool = ToolSpec(
+        "mcp_tool",
+        "An MCP tool.",
+        {"type": "object", "properties": {"owner": {"type": ["string", "null"]}}},
+    )
+
+    assert check_arguments(tool, {"owner": "me"}) is None
+    assert check_arguments(tool, {"owner": None}) is None
+    assert "arguments.owner must be one of the types" in (
+        check_arguments(tool, {"owner": 3}) or ""
+    )
+
+
+def test_check_arguments_rejects_a_property_that_is_false() -> None:
+    """`false` allows no value."""
+    tool = ToolSpec(
+        "mcp_tool",
+        "An MCP tool.",
+        {"type": "object", "properties": {"forbidden": False}},
+    )
+
+    assert "arguments.forbidden is not allowed" in (
+        check_arguments(tool, {"forbidden": 1}) or ""
+    )
+    assert check_arguments(tool, {}) is None
 
 
 def test_call_key_only_counts_required_arguments() -> None:

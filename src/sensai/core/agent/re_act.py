@@ -66,7 +66,7 @@ def _describe_arguments(tool: ToolSpec) -> str:
     properties = tool.parameters.get("properties") or {}
     required = set(tool.parameters.get("required") or ())
     if not properties:
-        return "none"
+        return "none" if tool.parameters.keys() <= {"type"} else "not described"
     described = []
     for name, schema in properties.items():
         kind = schema.get("type") if isinstance(schema, dict) else None
@@ -135,8 +135,8 @@ class ReActAgent(Agent):
         self._structured_output = structured_output
         self._memory_extractor = memory_extractor
         self._memory_recall = memory_recall
-        # Set once the model server refuses the step schema: from then on,
-        # steps use the flat one.
+        # Set once the model server refuses the step schema: from then on, the
+        # steps of the turn use the flat one.
         self._flat_steps = False
 
     @property
@@ -149,6 +149,7 @@ class ReActAgent(Agent):
         self._thinking_effort = value
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
+        self._flat_steps = False
         hidden: set[str] = set()
         if self._memory_extractor is not None:
             # The extractor writes memory. Offered to the model, these tools get
@@ -185,7 +186,9 @@ class ReActAgent(Agent):
             if key in seen:
                 # Asking again would loop: answer with what is already known.
                 break
-            seen.add(key)
+            if check_arguments(spec, step.call.arguments) is None:
+                # A rejected call didn't run: its corrected retry isn't a repeat.
+                seen.add(key)
             async for event in self._act(run, spec, step.call):
                 if isinstance(event, ToolRunFinished) and event.result.is_error:
                     failures[spec.name] += 1
@@ -218,7 +221,8 @@ class ReActAgent(Agent):
         says the agent will think again.
 
         A server that refuses the schema before replying gets the flat one, for
-        this step and every later one.
+        this step and the rest of the turn: a one-off error doesn't downgrade the
+        session.
         """
         yield ThinkingDelta(text="")
         prompt = self._prompts.thought.format(tools=_describe_tools(tools))

@@ -287,6 +287,24 @@ def test_a_search_repeated_with_other_options_answers(
     assert events[-1] == TurnCompleted([Message.assistant("Python 3.14.")])
 
 
+def test_a_call_rejected_for_its_arguments_can_be_retried(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A call that didn't run is not a repeat: its correction is run."""
+    llm = FakeLLM(
+        [
+            _step("Search.", "web_search", query="python", max_results="many"),
+            _step("Search again.", "web_search", query="python", max_results=5),
+            _step("All known."),
+            [TextDelta("Python 3.14.")],
+        ]
+    )
+
+    _run(ReActAgent(llm, _tools(), PROMPTS))
+
+    assert searches == [{"query": "python", "max_results": 5}]
+
+
 def test_the_budget_ends_with_an_answer(searches: list[Mapping[str, Any]]) -> None:
     """Once the effort's steps are spent, the agent answers with what it has."""
     llm = FakeLLM(
@@ -318,11 +336,14 @@ def test_no_effort_answers_at_once() -> None:
     assert llm.options == [None]
 
 
-def test_a_refused_schema_falls_back_to_the_flat_one() -> None:
-    """A server refusing `anyOf` gets the flat schema, now and for later steps."""
+def test_a_refused_schema_falls_back_to_the_flat_one_for_the_turn(
+    searches: list[Mapping[str, Any]],
+) -> None:
+    """A server refusing `anyOf` gets the flat schema until the turn ends."""
     llm = FakeLLM(
         [
             [LLMResponseError("invalid JSON schema in format")],
+            _step("Search.", "web_search", query="python"),
             _step("All known."),
             [TextDelta("Python 3.14.")],
             _step("All known."),
@@ -336,7 +357,8 @@ def test_a_refused_schema_falls_back_to_the_flat_one() -> None:
 
     flat = _schema(llm.options[1])
     assert flat["properties"]["action"]["enum"] == ["web_search", "answer"]
-    assert _schema(llm.options[3]) == flat
+    assert _schema(llm.options[2]) == _schema(llm.options[1])
+    assert _schema(llm.options[4]) != flat
 
 
 def test_an_error_after_the_reply_started_is_raised() -> None:

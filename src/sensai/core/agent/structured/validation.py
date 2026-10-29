@@ -56,16 +56,22 @@ class JsonSchemaOutput:
 
     def _validate_value(self, value: Any, schema: dict[str, Any], path: str) -> None:
         """Validate the JSON Schema keywords used by Sensai's bundled schemas."""
+        if schema is False:
+            raise StructuredOutputError(f"{path} is not allowed")
         if not isinstance(schema, dict):
-            return  # `true`, `false`: valid schemas, not checked
+            return  # `true`: accepts any value
         if "enum" in schema and value not in schema["enum"]:
             raise StructuredOutputError(f"{path} must be one of {schema['enum']!r}")
 
-        # A list of types, such as ["string", "null"], is not checked.
         type_ = schema.get("type")
-        validator = self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
-        if validator is not None:
-            validator(self, value, schema, path)
+        if isinstance(type_, list):
+            self._validate_any_type(value, schema, type_, path)
+        else:
+            validator = (
+                self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
+            )
+            if validator is not None:
+                validator(self, value, schema, path)
 
         if not isinstance(value, int | float) or isinstance(value, bool):
             return
@@ -73,6 +79,27 @@ class JsonSchemaOutput:
             raise StructuredOutputError(f"{path} must be at least {schema['minimum']}")
         if "maximum" in schema and value > schema["maximum"]:
             raise StructuredOutputError(f"{path} must be at most {schema['maximum']}")
+
+    def _validate_any_type(
+        self, value: Any, schema: dict[str, Any], types: list[Any], path: str
+    ) -> None:
+        """Validate a value against a list of types, such as `["string", "null"]`."""
+        for type_ in types:
+            if type_ == "null":
+                if value is None:
+                    return
+                continue
+            validator = (
+                self._TYPE_VALIDATORS.get(type_) if isinstance(type_, str) else None
+            )
+            if validator is None:
+                return  # a type this validator doesn't know: not checked
+            try:
+                validator(self, value, schema, path)
+            except StructuredOutputError:
+                continue
+            return
+        raise StructuredOutputError(f"{path} must be one of the types {types!r}")
 
     def _validate_object(self, value: Any, schema: dict[str, Any], path: str) -> None:
         """Validate object properties and reject unrequested fields."""

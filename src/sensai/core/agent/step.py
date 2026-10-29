@@ -10,8 +10,8 @@ A tool's parameters are copied into the schema only as far as every Ollama
 version with JSON schemas turns them into a grammar: types, properties,
 required, items and enums. Other limits, such as a minimum, are dropped and
 checked by `check_arguments` instead. A tool whose parameters combine schemas
-(`anyOf`, `$ref`...) for more than required fields accepts any object, also
-checked before it runs.
+(`anyOf`, `$ref`...) for more than required fields accepts any object. The
+checks ignore those keywords too, so its arguments reach the tool unchecked.
 """
 
 from __future__ import annotations
@@ -134,7 +134,7 @@ def parse_step(text: str, tools: Sequence[ToolSpec]) -> Step:
     cut = bool(thought) and not thought.endswith(_SENTENCE_ENDS)
     action = data.get("action")
     arguments = data.get("arguments")
-    if action not in {tool.name for tool in tools}:
+    if not isinstance(action, str) or action not in {tool.name for tool in tools}:
         return Step(thought, cut=cut)
     if not isinstance(arguments, dict):
         arguments = {}
@@ -216,6 +216,8 @@ def _portable(schema: Any) -> dict[str, Any] | None:
         ):
             return None
         portable["enum"] = list(enum)
+    if set(schema.get("required") or ()) - set(schema.get("properties") or ()):
+        return None  # a required name the grammar can't declare
     if "properties" in schema:
         if not isinstance(schema["properties"], Mapping):
             return None
