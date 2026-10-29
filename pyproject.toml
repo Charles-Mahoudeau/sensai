@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "rich>=15.0.0",
     "textual>=8.2.8",
+    "textual-image[textual]>=0.14.2",
 ]
 
 [project.scripts]
