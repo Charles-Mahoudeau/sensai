@@ -8,7 +8,7 @@ path = "config/profile.toml"
 
 [personas]
 path = "config/personas"
-default = "sensei"
+default = "sensai"
 
 [structured_output]
 enabled = false
