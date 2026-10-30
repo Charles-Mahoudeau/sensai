@@ -46,6 +46,12 @@ def test_calculator_is_registered() -> None:
         ("sqrt 16", "4"),
         ("log 1000", "3"),
         ("2 ^ 100", str(2**100)),
+        ("10 ^ 20 / 4", "25000000000000000000"),
+        ("2.5 * 10 ^ 20", "250000000000000000000"),
+        (
+            "1.2345678901234567890123456789012345",
+            "1.2345678901234567890123456789012345",
+        ),
     ],
 )
 def test_calculator_evaluates_expressions(expression: str, expected: str) -> None:
@@ -65,26 +71,38 @@ def test_calculator_evaluates_expressions(expression: str, expected: str) -> Non
         ),
         ("10 ^ 20 / 3", "3.33333333333333e+19"),
         ("sqrt 2 * 10 ^ 30", "1.4142135623731e+30"),
-        ("2.5 * 10 ^ 20", "2.5e+20"),
+        ("sqrt 2", "1.4142135623731"),
+        ("1 / 3", "0.333333333333333"),
+        ("2 ^ -2000", "8.70980981621722e-603"),
+        ("0.5 ^ 2000", "8.70980981621722e-603"),
     ],
 )
-def test_calculator_rounds_large_inexact_results(
-    expression: str, expected: str
-) -> None:
-    """Large non-integer results are rounded, not shown as a falsely exact integer."""
+def test_calculator_rounds_inexact_results(expression: str, expected: str) -> None:
+    """Rounded results are marked `≈`, small or large, never shown as exact."""
     result = _calculate(expression)
 
     assert not result.is_error
     assert result.content == f"{expression} ≈ {expected}"
 
 
-@pytest.mark.parametrize("expression", ["9 ^ 9 ^ 9", "10 ^ 4001", "0.5 ^ -100000"])
-def test_calculator_refuses_oversized_powers(expression: str) -> None:
-    """Powers whose result is too large are refused instead of computed."""
+@pytest.mark.parametrize(
+    "expression",
+    ["9 ^ 9 ^ 9", "10 ^ 4001", "0.5 ^ -100000", "10 ^ 3999 * 10 ^ 3999"],
+)
+def test_calculator_refuses_oversized_results(expression: str) -> None:
+    """Powers and products whose result is too large are refused, not computed."""
     result = _calculate(expression)
 
     assert result.is_error
     assert "too large" in result.content
+
+
+def test_calculator_refuses_results_underflowing_to_zero() -> None:
+    """A nonzero power too small for a float is an error, not a false zero."""
+    result = _calculate("e ^ -800")
+
+    assert result.is_error
+    assert "too small" in result.content
 
 
 @pytest.mark.parametrize("expression", ["1 / 0", "1 / 0 + 1"])
