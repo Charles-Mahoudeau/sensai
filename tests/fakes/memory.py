@@ -65,7 +65,7 @@ class InMemorySessionStore:
         except KeyError:
             raise SessionNotFoundError(session_id) from None
 
-    async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
+    async def list_sessions(self, *, limit: int | None = 50) -> Sequence[Session]:
         """Return the most recently updated sessions first."""
         ordered = sorted(
             self._sessions.values(), key=lambda s: s.updated_at, reverse=True
@@ -87,6 +87,11 @@ class InMemorySessionStore:
         """Add usage to the session's totals."""
         session = await self.get_session(session_id)
         self._sessions[session_id] = replace(session, usage=session.usage + usage)
+
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Replace the session's title."""
+        session = await self.get_session(session_id)
+        self._sessions[session_id] = replace(session, title=title)
 
     async def delete_session(self, session_id: int) -> None:
         """Delete a session and its messages."""

@@ -6,18 +6,25 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from PIL import Image as Picture
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, OptionList, Static
 
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.chat_app import EMPTY_INPUT_HINT
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
 from sensai.adapters.tui.companion import ANIMATIONS, Companion, Mood
-from sensai.adapters.tui.panels import McpPanel, Panel, ToolsPanel, UsagePanel
+from sensai.adapters.tui.panels import (
+    McpPanel,
+    Panel,
+    SessionsPanel,
+    ToolsPanel,
+    UsagePanel,
+)
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
     ArtifactView,
     AssistantMessage,
+    Banner,
     CommandMenu,
     EffortLabel,
     ErrorMessage,
@@ -29,6 +36,7 @@ from sensai.adapters.tui.widgets import (
     ToolCallLine,
     UserMessage,
 )
+from sensai.adapters.tui.widgets.banner import MOTDS
 from sensai.core.agent import Agent
 from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
@@ -57,7 +65,12 @@ from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import LLMUnavailableError
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import UsageMeter
-from tests.fakes import FakeLLM, FakeModelMonitor, InMemoryPersonaSource
+from tests.fakes import (
+    FakeLLM,
+    FakeModelMonitor,
+    InMemoryPersonaSource,
+    InMemorySessionStore,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -96,6 +109,11 @@ class BlockingLLM:
 def _app(llm: LLM) -> SensaiApp:
     engine = Engine(Agent(llm, ToolRegistry()), Pipeline(), EventBus())
     return SensaiApp(engine, model="test-model")
+
+
+def _subtitle(app: SensaiApp) -> str:
+    [banner] = app.query(Banner)
+    return str(banner.query_one(".banner-subtitle", Static).render())
 
 
 def _run(app: SensaiApp, scenario: Callable[[Pilot[None]], Awaitable[None]]) -> None:
@@ -299,6 +317,7 @@ def test_clear_command_empties_the_transcript_and_history() -> None:
         assert _texts(app, UserMessage) == []
         assert _texts(app, AssistantMessage) == []
         assert _texts(app, HintMessage) == [CLEARED_HINT]
+        assert _subtitle(app) == "New session"
 
     _run(app, scenario)
 
@@ -363,6 +382,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
             "/mcp",
             "/tools",
             "/usage",
+            "/sessions",
             "/exit",
         ]
 
@@ -507,7 +527,7 @@ def test_tool_calls_stack_above_the_answer() -> None:
         assert lines[1].text == "● Failed to call tool fetch: boom"
 
         order = [type(w) for w in app.query("#transcript > *")]
-        assert order == [UserMessage, ReasoningGroup, AssistantMessage]
+        assert order == [Banner, UserMessage, ReasoningGroup, AssistantMessage]
 
     _run(app, scenario)
 
@@ -530,6 +550,7 @@ def test_text_between_tool_calls_keeps_its_place() -> None:
 
         order = [type(w) for w in app.query("#transcript > *")]
         assert order == [
+            Banner,
             UserMessage,
             AssistantMessage,
             ReasoningGroup,
@@ -586,7 +607,13 @@ def test_tool_artifacts_are_shown_between_the_reasoning_and_the_answer(
         await _wait_until_idle(pilot)
 
         order = [type(w) for w in app.query("#transcript > *")]
-        assert order == [UserMessage, ReasoningGroup, ArtifactView, AssistantMessage]
+        assert order == [
+            Banner,
+            UserMessage,
+            ReasoningGroup,
+            ArtifactView,
+            AssistantMessage,
+        ]
         assert app.query_one(ArtifactView).attachment.path == plot
 
     _run(app, scenario)
@@ -1068,5 +1095,159 @@ def test_persona_command_completes_switches_and_shows_the_persona() -> None:
         assert _texts(app, HintMessage) == [
             "Persona: sensei (available: pirate, sensei)"
         ]
+
+    _run(app, scenario)
+
+
+def test_sessions_panel_lists_titles_newest_first_and_untitled_ones() -> None:
+    """Each session shows its last activity and its title, or a placeholder."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        older = await store.create_session(model="m", title="Install uv")
+        newer = await store.create_session(model="m")
+        await _send(pilot, "/chats")
+        await pilot.pause()
+
+        panel = app.query_one(SessionsPanel)
+        rows = [str(option.prompt) for option in panel.query_one(OptionList).options]
+        assert [row.split("  ", 1)[1] for row in rows] == ["Untitled", "Install uv"]
+        assert panel.border_title is not None
+        assert str(panel.border_title) == "Sessions · 2"
+        assert newer.id != older.id
+
+    _run(app, scenario)
+
+
+def test_sessions_panel_says_when_there_are_no_sessions() -> None:
+    """An empty store shows an explanation."""
+    engine = Engine(Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "/sessions")
+        await pilot.pause()
+
+        [empty] = app.query_one(SessionsPanel).query(".panel-empty")
+        assert str(empty.render()) == "No sessions yet"
+
+    _run(app, scenario)
+
+
+def test_sessions_panel_keeps_the_highlight_visible_in_a_short_terminal() -> None:
+    """Scrolling down through many sessions never leaves the cursor off-screen."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    app = SensaiApp(engine, model="qwen3:8b")
+
+    async def run() -> None:
+        async with app.run_test(size=(80, 20)) as pilot:
+            for index in range(30):
+                await store.create_session(model="m", title=f"Session {index}")
+            await _send(pilot, "/sessions")
+            await pilot.pause()
+
+            panel = app.query_one(SessionsPanel)
+            sessions = panel.query_one(OptionList)
+            for _ in range(29):
+                await pilot.press("down")
+                await pilot.pause()
+                # one line per option, so the option index is its line
+                top = sessions.scroll_offset.y
+                assert sessions.highlighted is not None
+                assert top <= sessions.highlighted < top + sessions.size.height
+                assert sessions.region.bottom <= panel.content_region.bottom
+
+    asyncio.run(run())
+
+
+def test_a_new_app_opens_on_the_banner() -> None:
+    """The transcript starts with the big title and a new-session subtitle."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.pause()
+
+        assert _subtitle(app) == "New session"
+        assert str(app.query_one(".banner-title", Static).render()) == "Sensai"
+
+    _run(app, scenario)
+
+
+def test_the_banner_falls_back_to_a_plain_title_in_a_narrow_terminal() -> None:
+    """The block letters need 45 columns; below that only the title shows."""
+    app = _app(FakeLLM([]))
+
+    async def run() -> None:
+        async with app.run_test(size=(40, 20)) as pilot:
+            await pilot.pause()
+            assert not app.query_one(".banner-art").display
+            assert app.query_one(".banner-title").display
+
+        async with _app(FakeLLM([])).run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            assert pilot.app.query_one(".banner-art").display
+            assert not pilot.app.query_one(".banner-title").display
+
+    asyncio.run(run())
+
+
+def test_choosing_a_session_resumes_it() -> None:
+    """Enter on a session loads its messages, shows them and closes the panel."""
+    store = InMemorySessionStore()
+    engine = Engine(
+        Agent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus(), sessions=store
+    )
+    resumed: list[int] = []
+
+    async def on_resume(session_id: int) -> list[Message]:
+        resumed.append(session_id)
+        return list(await store.get_messages(session_id))
+
+    app = SensaiApp(
+        engine, model="qwen3:8b", commands=default_registry(on_resume=on_resume)
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        old = await store.create_session(model="m", title="Install uv")
+        await store.append_message(old.id, Message.user("how to install uv?"))
+        await store.append_message(old.id, Message.assistant("Use the script."))
+        await store.create_session(model="m", title="Other")  # listed first
+        await _send(pilot, "/sessions")
+        await pilot.pause()
+
+        await pilot.press("down", "enter")
+        await pilot.pause()
+
+        assert resumed == [old.id]
+        assert [m.content for m in engine.history] == [
+            "how to install uv?",
+            "Use the script.",
+        ]
+        assert _subtitle(app) == "Install uv"
+        assert _texts(app, UserMessage) == ["how to install uv?"]
+        assert _texts(app, AssistantMessage) == ["Use the script."]
+        assert not app.query(SessionsPanel)
+        assert app.query_one("#prompt", Input).display
+
+    _run(app, scenario)
+
+
+def test_the_banner_shows_a_random_splash_line() -> None:
+    """The line under the subtitle is one of the known ones; a given one is kept."""
+    app = _app(FakeLLM([]))
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await pilot.pause()
+
+        [motd] = app.query(".banner-motd")
+        assert str(motd.render()) in MOTDS
+        assert str(Banner("x", "Hello!").motd) == "Hello!"
 
     _run(app, scenario)

@@ -119,14 +119,15 @@ class SqliteSessionRepository:
             raise SessionNotFoundError(session_id)
         return self._to_session(row)
 
-    async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
+    async def list_sessions(self, *, limit: int | None = 50) -> Sequence[Session]:
         """Return the most recently updated sessions first."""
 
         def list_() -> list[Session]:
             rows = self._db.conn.execute(
                 f"SELECT {self._session_columns} FROM sessions"
                 " ORDER BY updated_at DESC, id DESC LIMIT ?",
-                (limit,),
+                # SQLite reads a negative LIMIT as no limit.
+                (-1 if limit is None else limit,),
             ).fetchall()
             return [self._to_session(row) for row in rows]
 
@@ -191,6 +192,19 @@ class SqliteSessionRepository:
                     raise SessionNotFoundError(session_id)
 
         await self._db.run(add)
+
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Replace the session's title, leaving its update time unchanged."""
+
+        def set_() -> None:
+            with self._db.write() as conn:
+                touched = conn.execute(
+                    "UPDATE sessions SET title = ? WHERE id = ?", (title, session_id)
+                ).rowcount
+                if not touched:
+                    raise SessionNotFoundError(session_id)
+
+        await self._db.run(set_)
 
     async def delete_session(self, session_id: int) -> None:
         """Delete a session; its messages go with it (`ON DELETE CASCADE`)."""

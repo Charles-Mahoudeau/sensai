@@ -240,6 +240,19 @@ HintMessage {
     }
 }
 
+#sessions-panel {
+    #sessions-list {
+        height: auto;
+        max-height: 100%;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        padding: 0;
+        border: none;
+        background: $background;
+        scrollbar-size-vertical: 1;
+    }
+}
+
 #tools-panel {
     #tools-header {
         height: 1;
