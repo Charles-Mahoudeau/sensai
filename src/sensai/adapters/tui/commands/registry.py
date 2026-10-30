@@ -9,12 +9,13 @@ from rich.highlighter import Highlighter
 from rich.style import Style
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Sequence
 
     from rich.text import Text
 
     from sensai.adapters.tui.panels import Panel
     from sensai.core.engine import Engine
+    from sensai.core.models import Message
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +89,10 @@ class CommandContext(Protocol):
 
     async def clear_transcript(self) -> None:
         """Remove every message shown so far."""
+        ...
+
+    async def show_session(self, title: str, messages: Sequence[Message]) -> None:
+        """Replace the transcript with a resumed session, under its title."""
         ...
 
     def refresh_status(self) -> None:

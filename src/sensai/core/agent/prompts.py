@@ -23,8 +23,10 @@ class AgentPrompts:
     """The three ReAct prompts, usually the active versions from the library.
 
     Attributes:
-        thought: Asks for a private thought before acting; filled with `{tools}`.
-        notes: Wraps that thought for the acting call; filled with `{thought}`.
+        thought: Asks for a private thought and its action, a tool or the
+            answer; filled with `{tools}`.
+        notes: Wraps the turn's previous thoughts for the next thought and the
+            answer; filled with `{thought}`.
         answer: Asks for the final answer after tool results.
     """
 

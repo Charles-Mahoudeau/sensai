@@ -23,8 +23,8 @@ def test_escapes_are_decoded_even_when_cut_between_chunks() -> None:
 
 
 def test_the_closing_quote_ends_the_thought() -> None:
-    """What follows the thought, such as `ready`, is never shown."""
-    assert _decode('{"thought": "Fini.", "ready": true}', "}") == ["Fini.", ""]
+    """What follows the thought, such as the action, is never shown."""
+    assert _decode('{"thought": "Fini.", "action": "answer"', "}") == ["Fini.", ""]
 
 
 def test_a_reply_that_is_not_the_json_thought_shows_nothing() -> None:

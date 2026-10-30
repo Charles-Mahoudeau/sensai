@@ -1,6 +1,6 @@
 """Read personas from a directory of TOML files.
 
-Each file is one persona, named after the file (`sensei.toml` is `sensei`).
+Each file is one persona, named after the file (`sensai.toml` is `sensei`).
 Each TOML table is a section and each key in it is one entry::
 
     [identity]

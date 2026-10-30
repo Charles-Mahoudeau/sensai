@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from collections import Counter
 from typing import TYPE_CHECKING, Literal
 
 from sensai.core.agent import Agent
-from sensai.core.agent.events import AgentEvent, TurnCompleted
+from sensai.core.agent.events import (
+    AgentEvent,
+    ToolRunFinished,
+    ToolRunStarted,
+    TurnCompleted,
+)
 from sensai.core.agent.memory_extraction import MEMORY_WRITE_TOOLS
 from sensai.core.agent.prompts import AgentPrompts
-from sensai.core.agent.structured import (
-    JsonSchemaOutput,
-    StructuredOutputError,
-    format_structured_output,
+from sensai.core.agent.step import (
+    Step,
+    call_key,
+    check_arguments,
+    flat_step_schema,
+    parse_step,
+    step_schema,
 )
+from sensai.core.agent.structured import format_structured_output
 from sensai.core.agent.thought_stream import ThoughtStream
-from sensai.core.models import TextDelta, ThinkingEffort, ToolCall
-from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta, ToolCallRequest
+from sensai.core.models import TextDelta, ThinkingEffort, ToolResult
+from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta
+from sensai.core.ports import LLMResponseError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -26,89 +35,53 @@ if TYPE_CHECKING:
     from sensai.core.agent.memory_extraction import MemoryExtractor
     from sensai.core.agent.memory_recall import MemoryRecall
     from sensai.core.agent.structured import (
+        JsonSchemaOutput,
         OutputSchemaName,
         StructuredOutputCatalog,
     )
-    from sensai.core.models import ToolSpec
+    from sensai.core.models import ToolCall, ToolSpec
     from sensai.core.ports import LLM
     from sensai.core.tools.registry import ToolRegistry
 
 type AgentMode = Literal["answer", "plan"]
-# Llama-style chat templates only render the tool definitions in the last
-# message when it is a user one, and only open the assistant turn after a user or
-# tool message. Every call below therefore ends with a user or tool message.
 
 _MEMORY_READ_TOOL = "memory_read"
-# A reply starting like this may be a tool call written as text, not an answer.
-_BARE_CALL_START = "{\"'`"
 _REPEATED_CALL = "Repeated call skipped: its result is already in the conversation."
-# The thought comes first, so the model reasons before it decides.
-_THOUGHT_OUTPUT = JsonSchemaOutput(
-    {
-        "type": "object",
-        "properties": {
-            "thought": {"type": "string"},
-            "ready": {"type": "boolean"},
-        },
-        "required": ["thought", "ready"],
-        "additionalProperties": False,
-    }
-)
-
-
-@dataclass(frozen=True, slots=True)
-class _Thought:
-    """A private thought, and whether it concluded the answer can be written."""
-
-    text: str
-    ready: bool
-
-
-def _with_notes(
-    messages: Sequence[Message], thought: str, template: str
-) -> list[Message]:
-    """Attach the private thought to the end of the conversation.
-
-    The notes are folded into the last message when it is the user's, so it keeps
-    carrying the request; after a tool result they become a user message of
-    their own. The history itself is left untouched.
-    """
-    notes = template.format(thought=thought)
-    last = messages[-1]
-    if last.role == "user":
-        return [*messages[:-1], Message.user(last.content + notes)]
-    return [*messages, Message.user(notes.lstrip())]
+# A tool failing this many times in a turn is no longer offered in that turn.
+_MAX_FAILURES = 2
 
 
 def _describe_tools(tools: Sequence[ToolSpec]) -> str:
-    """Render the tool names and descriptions for the thought prompt."""
+    """Render the tools, their descriptions and arguments for the thought prompt."""
     if not tools:
         return "(none)"
-    return "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
+    return "\n".join(
+        f"- {tool.name}: {tool.description}\n  arguments: {_describe_arguments(tool)}"
+        for tool in tools
+    )
 
 
-def _parse_thought(text: str) -> _Thought:
-    """Read a structured thought; one that is not valid JSON is not ready."""
-    try:
-        data = _THOUGHT_OUTPUT.parse(text)
-    except StructuredOutputError:
-        return _Thought(text.strip(), ready=False)
-    return _Thought(data["thought"].strip(), ready=data["ready"])
+def _describe_arguments(tool: ToolSpec) -> str:
+    """Render arguments as `query (string, required), limit (integer)`."""
+    properties = tool.parameters.get("properties") or {}
+    required = set(tool.parameters.get("required") or ())
+    if not properties:
+        return "none" if tool.parameters.keys() <= {"type"} else "not described"
+    described = []
+    for name, schema in properties.items():
+        kind = schema.get("type") if isinstance(schema, dict) else None
+        details = [kind if isinstance(kind, str) else "value"]
+        if name in required:
+            details.append("required")
+        described.append(f"{name} ({', '.join(details)})")
+    return ", ".join(described)
 
 
-def _starts_with_json(text: str) -> bool:
-    """Tell whether a reply opens with a JSON value, such as `{}`, whatever follows."""
-    body = text.strip().removeprefix("```json").removeprefix("```").lstrip()
-    try:
-        json.JSONDecoder().raw_decode(body)
-    except ValueError:
-        return False
-    return True
-
-
-def _call_key(call: ToolCall) -> tuple[str, str]:
-    """Identify a tool call by its name and arguments."""
-    return call.name, json.dumps(dict(call.arguments), sort_keys=True, default=str)
+def _describe_notes(notes: Sequence[str]) -> str:
+    """Number the thoughts of the turn, oldest first."""
+    if len(notes) == 1:
+        return notes[0]
+    return "\n".join(f"{index}. {note}" for index, note in enumerate(notes, 1))
 
 
 def _memory_query(messages: Sequence[Message]) -> str | None:
@@ -121,7 +94,15 @@ def _memory_query(messages: Sequence[Message]) -> str | None:
 
 
 class ReActAgent(Agent):
-    """Agent that reasons privately, then acts or answers, in think/act cycles."""
+    """Agent that reasons privately and acts in steps, then answers.
+
+    Each step is a thought in JSON ending with an action: call one tool, or
+    answer. The schema of the reply only allows a tool that is offered, with
+    arguments shaped like its parameters, so a tool call is never written as
+    text. Once the agent can answer, or its budget is spent, a last call
+    without tools writes the answer, which is the only text streamed to the
+    user.
+    """
 
     def __init__(
         self,
@@ -154,6 +135,9 @@ class ReActAgent(Agent):
         self._structured_output = structured_output
         self._memory_extractor = memory_extractor
         self._memory_recall = memory_recall
+        # Set once the model server refuses the step schema: from then on, the
+        # steps of the turn use the flat one.
+        self._flat_steps = False
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -165,62 +149,172 @@ class ReActAgent(Agent):
         self._thinking_effort = value
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
+        self._flat_steps = False
         hidden: set[str] = set()
         if self._memory_extractor is not None:
             # The extractor writes memory. Offered to the model, these tools get
-            # called at random whenever the template pushes it to call one.
+            # called at random.
             hidden |= MEMORY_WRITE_TOOLS
         if await self._recall_memory(run):
             # Every stored memory is in the system message: a search would
             # find nothing new, and an empty result reads as "nothing stored".
             hidden.add(_MEMORY_READ_TOOL)
-        tools = tuple(
-            spec for spec in self._tool_registry.spec() if spec.name not in hidden
-        )
+        tools = [spec for spec in self._tool_registry.spec() if spec.name not in hidden]
 
+        notes: list[str] = []
         seen: set[tuple[str, str]] = set()
+        failures: Counter[str] = Counter()
+        retry_cut = True
         for _ in range(self._thinking_effort.level):
-            thoughts: list[_Thought] = []
-            async for event in self._generate_thought(run, tools, thoughts):
-                yield event
-            calls: list[ToolCall] = []
-            thought = thoughts[0]
-            # Llama templates push the model to answer with a function call
-            # whenever tools are offered, so offer none once it is ready.
-            async for event in self._act(
-                run, thought.text, calls, tools=None if thought.ready else tools
+            steps: list[Step] = []
+            async for event in self._think(
+                run, tools, notes, steps, retry_cut=retry_cut
             ):
                 yield event
-            if not calls:
-                async for event in self._finish(run):
-                    yield event
-                return
-            keys = {_call_key(call) for call in calls}
-            if keys & seen:
-                # Asking again would loop: answer with what is already known.
-                for call in calls:
-                    run.add_message(
-                        Message.tool(_REPEATED_CALL, call.name, call.id or ""),
-                        persist=False,
-                    )
+            step = steps[0]
+            if step.thought:
+                notes.append(step.thought)
+            if step.call is None:
+                if step.cut and retry_cut:
+                    # Cut mid-sentence, the answer was forced, not concluded:
+                    # once per turn, think again from the partial thought.
+                    retry_cut = False
+                    continue
                 break
-            seen |= keys
-            # A3 will intercept confirmation-required calls here and select
-            # the `permission_decision` schema before executing any tool.
-            async for event in self._run_tool_calls(run, calls, persist=False):
+            spec = next(spec for spec in tools if spec.name == step.call.name)
+            key = call_key(spec, step.call)
+            if key in seen:
+                # Asking again would loop: answer with what is already known.
+                break
+            if check_arguments(spec, step.call.arguments) is None:
+                # A rejected call didn't run: its corrected retry isn't a repeat.
+                seen.add(key)
+            async for event in self._act(run, spec, step.call):
+                if isinstance(event, ToolRunFinished) and event.result.is_error:
+                    failures[spec.name] += 1
                 yield event
+            if failures[spec.name] >= _MAX_FAILURES:
+                tools.remove(spec)
 
-        # Thinking budget spent: answer with what was gathered, without tools.
-        async for event in self._act(run, "I have gathered enough.", [], tools=None):
+        async for event in self._answer(run, notes):
             yield event
-        async for event in self._finish(run):
-            yield event
-
-    async def _finish(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
-        """Record what the user said about themself, then end the turn."""
         async for event in self._remember(run):
             yield event
         yield TurnCompleted(run.produced_messages)
+
+    async def _think(
+        self,
+        run: AgentRun,
+        tools: Sequence[ToolSpec],
+        notes: Sequence[str],
+        steps: list[Step],
+        *,
+        retry_cut: bool,
+    ) -> AsyncIterator[AgentEvent]:
+        """Stream a private thought, then append its step to `steps`.
+
+        The model replies in JSON under the step schema: the `thought` text
+        streams as `ThoughtStream` decodes it, and the action is read once the
+        reply is complete. An empty delta first opens the thought in the
+        front-end, which shows its clock while the model reads the prompt. The
+        last delta tags an answer as ready, unless it is cut and `retry_cut`
+        says the agent will think again.
+
+        A server that refuses the schema before replying gets the flat one, for
+        this step and the rest of the turn: a one-off error doesn't downgrade the
+        session.
+        """
+        yield ThinkingDelta(text="")
+        prompt = self._prompts.thought.format(tools=_describe_tools(tools))
+        if notes:
+            prompt += self._prompts.notes.format(thought=_describe_notes(notes))
+        messages = [*run.messages, Message.user(prompt)]
+        while True:
+            schema = (flat_step_schema if self._flat_steps else step_schema)(tools)
+            stream = ThoughtStream()
+            parts: list[str] = []
+            shown = False
+            try:
+                async for event in self._llm.chat(
+                    messages, options=ChatOptions(response_schema=schema)
+                ):
+                    if isinstance(event, TextDelta):
+                        parts.append(event.text)
+                        if fragment := stream.feed(event.text):
+                            shown = True
+                            yield ThinkingDelta(text=fragment)
+            except LLMResponseError:
+                if parts or self._flat_steps:
+                    raise
+                self._logger.warning(
+                    "The model server refused the step schema; using the flat one",
+                    exc_info=True,
+                )
+                self._flat_steps = True
+                continue
+            break
+
+        step = parse_step("".join(parts), tools)
+        steps.append(step)
+        # A reply that was not a step streamed nothing: show it whole.
+        ready = step.call is None and not (step.cut and retry_cut)
+        yield ThinkingDelta(text="" if shown else step.thought, ready=ready)
+
+    async def _act(
+        self, run: AgentRun, spec: ToolSpec, call: ToolCall
+    ) -> AsyncIterator[AgentEvent]:
+        """Run the call of a step, and record it as a tool call and its result.
+
+        Arguments that don't match the tool's parameters are not run: the
+        error is the result, so the next thought can fix them.
+        """
+        run.add_message(Message.assistant(tool_calls=(call,)), persist=False)
+        if (problem := check_arguments(spec, call.arguments)) is None:
+            async for event in self._run_tool_calls(run, (call,), persist=False):
+                yield event
+            return
+        result = ToolResult.error(
+            call.name, f"Invalid arguments, nothing was run: {problem}", call.id or ""
+        )
+        yield ToolRunStarted(call=call)
+        yield ToolRunFinished(call=call, result=result)
+        run.add_message(
+            Message.tool(result.content, result.name, result.call_id), persist=False
+        )
+
+    async def _answer(
+        self, run: AgentRun, notes: Sequence[str]
+    ) -> AsyncIterator[AgentEvent]:
+        """Write the answer, without tools, from the conversation and the notes.
+
+        Free-form answers stream as they come; in plan mode the answer follows
+        the plan schema and is shown once formatted.
+        """
+        block = (
+            self._prompts.notes.format(thought=_describe_notes(notes)) if notes else ""
+        )
+        last = run.messages[-1]
+        if last.role == "user":
+            messages = [*run.messages[:-1], Message.user(last.content + block)]
+        else:
+            messages = [*run.messages, Message.user(self._prompts.answer + block)]
+
+        output_name: OutputSchemaName | None = "plan" if self._mode == "plan" else None
+        output = self._output_for(output_name) if output_name is not None else None
+        options = ChatOptions(response_schema=output.schema) if output else None
+
+        parts: list[str] = []
+        async for event in self._llm.chat(messages, options=options):
+            if isinstance(event, TextDelta):
+                parts.append(event.text)
+                if output is None:
+                    yield event
+
+        text = "".join(parts)
+        if output is not None and output_name is not None:
+            text = format_structured_output(output_name, output.parse(text))
+            yield TextDelta(text)
+        run.add_message(Message.assistant(text), persist=True)
 
     async def _remember(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         """Run the memory writes the extractor plans for the user's message.
@@ -262,134 +356,6 @@ class ReActAgent(Agent):
         if recollection.text:
             run.extend_system_message(recollection.text)
         return recollection.complete
-
-    async def _generate_thought(
-        self, run: AgentRun, tools: Sequence[ToolSpec], thoughts: list[_Thought]
-    ) -> AsyncIterator[AgentEvent]:
-        """Stream a private thought, then append it and its readiness to `thoughts`.
-
-        The model replies in JSON: the `thought` text streams as `ThoughtStream`
-        decodes it, and `ready` is read once the reply is complete. An empty
-        delta first opens the thought in the front-end, which shows its clock
-        while the model reads the prompt.
-        """
-        yield ThinkingDelta(text="")
-        prompt = self._prompts.thought.format(tools=_describe_tools(tools))
-        options = ChatOptions(response_schema=_THOUGHT_OUTPUT.schema)
-        stream = ThoughtStream()
-        text_parts: list[str] = []
-        shown = False
-        async for event in self._llm.chat(
-            [*run.messages, Message.user(prompt)], options=options
-        ):
-            if isinstance(event, TextDelta):
-                text_parts.append(event.text)
-                if fragment := stream.feed(event.text):
-                    shown = True
-                    yield ThinkingDelta(text=fragment)
-
-        thought = _parse_thought("".join(text_parts))
-        thoughts.append(thought)
-        # A reply that was not JSON streamed nothing: show it whole.
-        yield ThinkingDelta(text="" if shown else thought.text, ready=thought.ready)
-
-    async def _act(
-        self,
-        run: AgentRun,
-        thought: str,
-        calls: list[ToolCall],
-        *,
-        tools: Sequence[ToolSpec] | None,
-        retry_bare_call: bool = True,
-    ) -> AsyncIterator[AgentEvent]:
-        """Call the model once; text is the answer, tool calls fill `calls`.
-
-        With `tools`, even none, the thought joins the request as notes and the
-        tools are offered; `None` asks for the final answer instead.
-        A text-only reply ends the turn and is persisted as the final answer.
-        When tool calls are requested, any accompanying text is not persisted.
-        A reply that is only a tool call written as text, or with tools one that
-        opens with JSON, such as `{}`, is dropped and asked again without tools.
-        """
-        text_parts: list[str] = []
-        held: list[str] | None = None
-        use_tools = tools is not None
-
-        if use_tools:
-            messages = _with_notes(run.messages, thought, self._prompts.notes)
-        elif run.messages[-1].role == "user":
-            messages = list(run.messages)
-        else:
-            messages = [*run.messages, Message.user(self._prompts.answer)]
-
-        # Free-form answers stream directly; only plan mode needs a JSON contract.
-        output_name: OutputSchemaName | None = "plan" if self._mode == "plan" else None
-        output = self._output_for(output_name) if output_name is not None else None
-        is_structured_response = output is not None and not use_tools
-        options = (
-            ChatOptions(response_schema=output.schema)
-            if is_structured_response
-            else None
-        )
-
-        async for event in self._llm.chat(messages, tools=tools or (), options=options):
-            match event:
-                case TextDelta(text=text):
-                    text_parts.append(text)
-                    if is_structured_response:
-                        pass
-                    elif held is not None:
-                        held.append(text)
-                    elif (start := "".join(text_parts).lstrip()[:1]) and (
-                        start in _BARE_CALL_START
-                    ):
-                        held = [text]
-                    else:
-                        yield event
-                case ToolCallRequest(call=call):
-                    calls.append(call)
-
-        text = "".join(text_parts)
-        if held is not None:
-            # Pushed to call a tool, a small model may write `{}` instead.
-            failed_call = self._is_bare_tool_call(text) or (
-                use_tools and _starts_with_json(text)
-            )
-            if retry_bare_call and not calls and failed_call:
-                self._logger.info("Dropped a tool call written as text: %r", text)
-                async for event in self._act(
-                    run, thought, calls, tools=None, retry_bare_call=False
-                ):
-                    yield event
-                return
-            yield TextDelta("".join(held))
-        if calls:
-            run.add_message(
-                Message.assistant(text, tool_calls=tuple(calls)), persist=False
-            )
-        else:
-            if output is not None and output_name is not None and not use_tools:
-                parsed = output.parse(text)
-                text = format_structured_output(output_name, parsed)
-                yield TextDelta(text)
-            run.add_message(Message.assistant(text), persist=True)
-
-    def _is_bare_tool_call(self, text: str) -> bool:
-        """Tell whether a reply is only a tool name or call written as text."""
-        names = {info.spec.name for info in self._tool_registry.tools()}
-        stripped = text.strip()
-        if stripped.strip("`\"' ") in names:
-            return True
-        body = stripped.removeprefix("```json").removeprefix("```")
-        try:
-            data = json.loads(body.removesuffix("```").strip())
-        except ValueError:
-            return False
-        return (
-            isinstance(data, dict)
-            and isinstance(data.get("name"), str)
-            and data["name"] in names
-        )
 
     def _output_for(self, name: OutputSchemaName) -> JsonSchemaOutput | None:
         """Select the structured output contract for the current agent context."""

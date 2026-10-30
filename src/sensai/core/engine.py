@@ -34,8 +34,9 @@ if TYPE_CHECKING:
     from sensai.core.model_memory import ModelMemory
     from sensai.core.models import McpServerStatus, ToolInfo
     from sensai.core.models.llm import LoadedModel, UsageReport
+    from sensai.core.models.memory import Session
     from sensai.core.models.persona import Persona
-    from sensai.core.ports import PersonaSource
+    from sensai.core.ports import PersonaSource, SessionRepository
     from sensai.core.tools.registry import ToolRegistry
     from sensai.core.usage import UsageMeter
 
@@ -72,6 +73,7 @@ class Engine:
         mcp_servers: Sequence[McpServerStatus] = (),
         model_memory: ModelMemory | None = None,
         usage_meter: UsageMeter | None = None,
+        sessions: SessionRepository | None = None,
     ) -> None:
         """Initialize the engine with its processing dependencies.
 
@@ -87,6 +89,7 @@ class Engine:
             mcp_servers: The outcome of connecting to each MCP server.
             model_memory: Reads the model's memory footprint; none if None.
             usage_meter: Counts the session's token usage; none if None.
+            sessions: Where the sessions are stored, to list them; none if None.
         """
         self._runner = runner
         self._pipeline = pipeline
@@ -101,6 +104,7 @@ class Engine:
         self._mcp_servers = tuple(mcp_servers)
         self._model_memory = model_memory
         self._usage_meter = usage_meter
+        self._sessions = sessions
 
     @property
     def thinking_effort(self) -> ThinkingEffort:
@@ -177,6 +181,16 @@ class Engine:
         """
         return await usage_report(self._usage_meter, self._model_memory)
 
+    async def list_sessions(self) -> Sequence[Session]:
+        """The stored sessions, the most recently updated first; empty if none.
+
+        Raises:
+            StorageError: The store failed to read.
+        """
+        if self._sessions is None:
+            return ()
+        return await self._sessions.list_sessions(limit=None)
+
     def subscribe(self) -> AsyncGenerator[Event]:
         """Subscribe a front-end to the public event stream."""
         return self._bus.subscribe()
@@ -192,6 +206,21 @@ class Engine:
         task = asyncio.create_task(self._run(submission_id))
         self._tasks[submission_id] = task
         return submission_id
+
+    @property
+    def busy(self) -> bool:
+        """Whether a submission is running."""
+        return bool(self._tasks)
+
+    def restore(self, history: Sequence[Message]) -> None:
+        """Replace the conversation with the messages of another session.
+
+        Raises:
+            SubmissionInProgressError: A submission is still running.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        self._history[:] = history
 
     def clear(self) -> None:
         """Forget the conversation; the next submission starts from scratch.

@@ -99,11 +99,11 @@ class SessionRepository(Protocol):
         """
         ...
 
-    async def list_sessions(self, *, limit: int = 50) -> Sequence[Session]:
+    async def list_sessions(self, *, limit: int | None = 50) -> Sequence[Session]:
         """Return the most recently updated sessions, newest first.
 
         Args:
-            limit: The maximum number of sessions to return.
+            limit: The maximum number of sessions to return; every one if None.
 
         Raises:
             StorageError: The store failed to read.
@@ -130,6 +130,15 @@ class SessionRepository(Protocol):
 
     async def add_usage(self, session_id: int, usage: UsageTotals) -> None:
         """Add token usage to the totals saved for a session.
+
+        Raises:
+            SessionNotFoundError: No session has this id.
+            StorageError: The store failed to write.
+        """
+        ...
+
+    async def set_title(self, session_id: int, title: str) -> None:
+        """Set the title of a session, replacing the previous one.
 
         Raises:
             SessionNotFoundError: No session has this id.

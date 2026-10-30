@@ -69,6 +69,18 @@ def test_list_sessions_respects_limit() -> None:
     assert asyncio.run(run()) == 2
 
 
+def test_list_sessions_without_limit_returns_every_session() -> None:
+    """A `limit` of None lifts the cap."""
+    store = InMemorySessionStore()
+
+    async def run() -> int:
+        for _ in range(60):
+            await store.create_session(model="m")
+        return len(await store.list_sessions(limit=None))
+
+    assert asyncio.run(run()) == 60
+
+
 def test_delete_session_removes_it() -> None:
     """A deleted session can't be read any more."""
     store = InMemorySessionStore()

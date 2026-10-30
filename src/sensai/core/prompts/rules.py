@@ -32,7 +32,8 @@ class PromptRule:
 
 
 PROMPT_RULES: dict[str, PromptRule] = {
-    REACT_THOUGHT: PromptRule(frozenset({"tools"}), ("ready to answer",)),
+    # The step schema only allows a tool or "answer": the prompt names the latter.
+    REACT_THOUGHT: PromptRule(frozenset({"tools"}), ('"answer"',)),
     REACT_NOTES: PromptRule(frozenset({"thought"})),
     # The code parses both fields of the reply.
     MEMORY_EXTRACTION: PromptRule(frozenset({"memories"}), ('"facts"', '"forget"')),

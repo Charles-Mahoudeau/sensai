@@ -2,6 +2,19 @@
 
 Design and usage: [docs/adapters/tui.md](../adapters/tui.md#panels).
 
+## Configure the MCP servers
+
+As a user, I want to declare any HTTP MCP server in the configuration file, so that I can plug
+Sensai into new tool sources without touching the code.
+
+Acceptance criteria:
+
+- Each `[mcp.servers.<name>]` table in `config/sensai.toml` declares one server with a `url` and
+  an optional `token_env`; its tools appear as `<name>__<tool>`.
+- The bearer token is read from the environment variable `token_env` names, never from the file.
+- A server whose `token_env` variable is unset is skipped with a warning.
+- An invalid server table makes Sensai exit with an error naming the offending key.
+
 ## See which MCP servers are connected
 
 As a user, I want to list the MCP servers Sensai uses, so that I know which tools sources are

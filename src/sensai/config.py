@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sensai.core.models import ThinkingEffort
+from sensai.core.models import SOURCE_SEPARATOR, ThinkingEffort
 from sensai.exceptions import ConfigError
 
 SUPPORTED_STRUCTURED_OUTPUT_SCHEMAS = frozenset({"permission_decision", "plan"})
@@ -65,13 +65,30 @@ class StructuredOutputConfig:
 
 
 @dataclass(frozen=True)
+class McpServerConfig:
+    """Configuration for one HTTP MCP server.
+
+    Attributes:
+        name: The server name, used as its tool namespace prefix.
+        url: The server endpoint.
+        token_env: The environment variable holding the bearer token, if any.
+        token: The bearer token read from `token_env`; None when unset or empty.
+    """
+
+    name: str
+    url: str
+    token_env: str | None = None
+    token: str | None = None
+
+
+@dataclass(frozen=True)
 class McpConfig:
     """Configuration for MCP servers.
 
     Secrets come from the environment, never from the TOML file.
     """
 
-    github_token: str | None = None
+    servers: tuple[McpServerConfig, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,6 +129,32 @@ def _parse_keep_alive(value: object) -> str | int:
             f"seconds, got {type(value).__name__} {value!r}"
         )
     return value
+
+
+def _parse_mcp_servers(value: object) -> tuple[McpServerConfig, ...]:
+    if not isinstance(value, dict):
+        raise ConfigError("mcp.servers must be a table of server tables")
+    servers: list[McpServerConfig] = []
+    for name, entry in value.items():
+        key = f"mcp.servers.{name}"
+        if not name or SOURCE_SEPARATOR in name:
+            raise ConfigError(
+                f"invalid server name {name!r} in mcp.servers, it must be non-empty "
+                f"and must not contain {SOURCE_SEPARATOR!r}"
+            )
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{key} must be a table")
+        if unknown := sorted(entry.keys() - {"url", "token_env"}):
+            raise ConfigError(f"unknown key(s) in {key}: {', '.join(unknown)}")
+        url = entry.get("url")
+        if not isinstance(url, str) or not url:
+            raise ConfigError(f"{key}.url must be a non-empty string")
+        token_env = entry.get("token_env")
+        if token_env is not None and (not isinstance(token_env, str) or not token_env):
+            raise ConfigError(f"{key}.token_env must be a non-empty string")
+        token = os.environ.get(token_env) or None if token_env else None
+        servers.append(McpServerConfig(name, url, token_env, token))
+    return tuple(servers)
 
 
 def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
@@ -196,7 +239,9 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
             enabled=structured_output.get("enabled", False),
             schemas=schemas,
         ),
-        mcp=McpConfig(github_token=os.environ.get("GITHUB_TOKEN") or None),
+        mcp=McpConfig(
+            servers=_parse_mcp_servers(data.get("mcp", {}).get("servers", {}))
+        ),
     )
 
     return config

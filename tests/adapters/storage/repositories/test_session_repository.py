@@ -72,6 +72,36 @@ def test_add_usage_adds_to_the_saved_totals(conn: sqlite3.Connection) -> None:
     _run(conn, scenario)
 
 
+def test_set_title_is_read_back_and_replaces_the_previous_one(
+    conn: sqlite3.Connection,
+) -> None:
+    """The title shows in get and list, without touching the update time."""
+
+    async def scenario(repo: SqliteSessionRepository) -> None:
+        session = await repo.create_session(model="m")
+
+        await repo.set_title(session.id, "First")
+        await repo.set_title(session.id, "Second")
+
+        saved = await repo.get_session(session.id)
+        assert saved.title == "Second"
+        assert saved.updated_at == session.updated_at
+        [listed] = await repo.list_sessions()
+        assert listed.title == "Second"
+
+    _run(conn, scenario)
+
+
+def test_set_title_of_an_unknown_session_fails(conn: sqlite3.Connection) -> None:
+    """There is nothing to title."""
+
+    async def scenario(repo: SqliteSessionRepository) -> None:
+        with pytest.raises(SessionNotFoundError):
+            await repo.set_title(999, "Nope")
+
+    _run(conn, scenario)
+
+
 def test_add_usage_to_an_unknown_session_fails(conn: sqlite3.Connection) -> None:
     """Usage cannot be saved for a session that does not exist."""
 

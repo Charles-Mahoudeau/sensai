@@ -11,6 +11,7 @@ from sensai.core.prompts import (
     REACT_ANSWER,
     REACT_NOTES,
     REACT_THOUGHT,
+    SESSION_TITLE,
     SYSTEM,
     load_defaults,
     validate,
@@ -24,6 +25,7 @@ ALL = {
     REACT_ANSWER,
     MEMORY_EXTRACTION,
     MEMORY_RECALL,
+    SESSION_TITLE,
 }
 
 
@@ -46,7 +48,7 @@ def test_every_default_passes_its_rule(name: str) -> None:
     [
         (SYSTEM, "You are an AI assistant", ".\n"),
         (REACT_THOUGHT, "Before answering", "to false.\n"),
-        (REACT_NOTES, "\n[Private notes", "user.]"),
+        (REACT_NOTES, "\n[Private notes", "{thought}]"),
         (REACT_ANSWER, "Answer the user's request", "short one."),
         (MEMORY_EXTRACTION, "You maintain the long-term memory", ":\n{memories}"),
         (MEMORY_RECALL, "What you remember about the user", "conversations:"),
