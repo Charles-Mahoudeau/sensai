@@ -168,7 +168,7 @@ app's lifetime. Events from other submissions are ignored.
 | `TokenGenerated` | Append the text to it |
 | `MessageCompleted` | Finalize the answer (show the message content if nothing was streamed) |
 | `ThinkingGenerated` | Stream into a `ThoughtStep` inside the turn's `ReasoningGroup`; `ready` tags the step |
-| `ToolRunStarted` / `ToolRunFinished` | Add a `ToolCallLine` to the same group, then fill in its result |
+| `ToolRunStarted` / `ToolRunFinished` | Add a `ToolCallLine` to the same group, then fill in its result; mount an `ArtifactView` per attached file |
 | `ErrorEvent` | Remove the empty answer and show an `ErrorMessage` |
 | `Done` | Re-enable the prompt; add "(interrupted)" if `esc` was pressed |
 
@@ -185,6 +185,7 @@ usual.
 | `ReasoningGroup` | One turn's thoughts and tool calls, collapsible |
 | `ThoughtStep` | One think/act cycle inside a group |
 | `ToolCallLine` | One tool call, inside a group |
+| `ArtifactView` | A file a tool produced: the image inline, then its path |
 | `ErrorMessage` | An error reported by the engine |
 | `HintMessage` | Hints, command feedback and the "(interrupted)" marker |
 | `PromptInput` | The prompt; highlights commands and drives the menu |
@@ -216,6 +217,27 @@ What is visible is decided by CSS classes on the group (`-live`, `-full`,
 `-collapsed`) and on each step (`-streaming`, `-done`); see `sensai.tcss`.
 A text fragment arriving before a later tool call closes the group, so that
 tool call opens a new one.
+
+## Inline artifacts
+
+A tool can return files with its result (`ToolResult.attachments`), such as
+the plots `run_python` saves (see [Code Sandbox](../core/sandbox.md)). Each
+file gets an `ArtifactView` in the transcript, **outside** the reasoning group,
+so it stays visible when the group collapses:
+
+```text
+› Plot sin(x) on [0, 2π]
+▸ Reasoned · 2 steps · 1 tool · 6s
+  [the plot]
+  ↳ artifacts/2026-10-29/142310-a1b2c3/sine.png
+Here is the plot of sin(x).
+```
+
+Images are drawn with [textual-image](https://github.com/lnqs/textual-image),
+which picks the best protocol the terminal supports (Kitty, Sixel) and falls
+back to colored half-blocks. An image that can't be read shows a short message
+instead. Other files only show their path. Later thoughts of the same turn still
+go into the group above the image.
 
 ## Companion
 

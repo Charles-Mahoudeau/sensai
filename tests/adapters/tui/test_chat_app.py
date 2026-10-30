@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+from PIL import Image as Picture
 from textual.widgets import Button, Input, OptionList, Static
 
 from sensai.adapters.tui import SensaiApp
@@ -21,6 +22,7 @@ from sensai.adapters.tui.panels import (
 )
 from sensai.adapters.tui.panels.tools import ToolList
 from sensai.adapters.tui.widgets import (
+    ArtifactView,
     AssistantMessage,
     Banner,
     CommandMenu,
@@ -42,6 +44,7 @@ from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.model_memory import ModelMemory
 from sensai.core.models import (
+    Attachment,
     ChatDone,
     McpServerStatus,
     Message,
@@ -71,6 +74,7 @@ from tests.fakes import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+    from pathlib import Path
 
     from textual.pilot import Pilot
 
@@ -580,6 +584,37 @@ def test_thoughts_and_tool_calls_share_one_group_per_turn() -> None:
         assert len(group.query(ToolCallLine)) == 1
         assert group.header_text.startswith("▸ Reasoned · 2 steps · 1 tool")
         assert len(app.query(ReasoningGroup)) == 1
+
+    _run(app, scenario)
+
+
+def test_tool_artifacts_are_shown_between_the_reasoning_and_the_answer(
+    tmp_path: Path,
+) -> None:
+    """A plot from a tool stays visible in the transcript once the group folds."""
+    plot = tmp_path / "sine.png"
+    Picture.new("RGB", (40, 20), "white").save(plot)
+    call = ToolCall("run_python", {"code": "..."}, id="1")
+    result = ToolResult(
+        "run_python", "exit 0", "1", attachments=(Attachment(plot, "image/png"),)
+    )
+    app = _tool_app(
+        [ToolRunStarted(call), ToolRunFinished(call, result), TextDelta("Here")]
+    )
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        await _send(pilot, "Plot sin")
+        await _wait_until_idle(pilot)
+
+        order = [type(w) for w in app.query("#transcript > *")]
+        assert order == [
+            Banner,
+            UserMessage,
+            ReasoningGroup,
+            ArtifactView,
+            AssistantMessage,
+        ]
+        assert app.query_one(ArtifactView).attachment.path == plot
 
     _run(app, scenario)
 
