@@ -56,6 +56,28 @@ def test_calculator_evaluates_expressions(expression: str, expected: str) -> Non
     assert result.content == f"{expression} = {expected}"
 
 
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            "9998/51659898 * sqrt(546465) * 842^44 + 2 - 6 / 8 * 6",
+            "7.40069983123041e+127",
+        ),
+        ("10 ^ 20 / 3", "3.33333333333333e+19"),
+        ("sqrt 2 * 10 ^ 30", "1.4142135623731e+30"),
+        ("2.5 * 10 ^ 20", "2.5e+20"),
+    ],
+)
+def test_calculator_rounds_large_inexact_results(
+    expression: str, expected: str
+) -> None:
+    """Large non-integer results are rounded, not shown as a falsely exact integer."""
+    result = _calculate(expression)
+
+    assert not result.is_error
+    assert result.content == f"{expression} ≈ {expected}"
+
+
 @pytest.mark.parametrize("expression", ["9 ^ 9 ^ 9", "10 ^ 4001", "0.5 ^ -100000"])
 def test_calculator_refuses_oversized_powers(expression: str) -> None:
     """Powers whose result is too large are refused instead of computed."""

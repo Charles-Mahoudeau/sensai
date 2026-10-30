@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 type _Number = int | float | Decimal
 
 _MAX_RESULT_DIGITS = 4000
+# A float carries about 15 exact significant digits: a larger non-integer
+# result can't be exact, so it is rounded to that many.
+_SIGNIFICANT_DIGITS = 15
+_SCIENTIFIC_FROM = Decimal(10) ** _SIGNIFICANT_DIGITS
 
 _ARITHMETIC: dict[str, Callable[[Any, Any], _Number]] = {
     "+": operator.add,
@@ -31,7 +35,8 @@ def register_self(tool_registry: ToolRegistry) -> None:
         ToolSpec(
             name="calculator",
             description=(
-                "Evaluates an arithmetic expression and returns the exact result. "
+                "Evaluates an arithmetic expression and returns its result, "
+                "exact after '=' or rounded after '≈' when it is too large. "
                 "Use it for any calculation instead of computing it yourself. "
                 "Supports + - * /, ^ for powers, parentheses, sqrt, log and the "
                 "constants pi and e, e.g. '(2 + 3) ^ 2 / sqrt 16'. "
@@ -142,6 +147,21 @@ def _evaluate(postfix: list[str]) -> _Number:
 
 
 def _format(value: _Number) -> str:
+    """Render a result after its `=` sign, or after `≈` when it is rounded.
+
+    Integers stay exact. A large non-integer result went through a float or a
+    rounded division, so only its first digits are right: it is written in
+    scientific notation instead of as a long, falsely exact integer.
+    """
+    if isinstance(value, float):
+        value = Decimal(repr(value))
+    if isinstance(value, Decimal) and abs(value) >= _SCIENTIFIC_FROM:
+        mantissa, exponent = f"{value:.{_SIGNIFICANT_DIGITS - 1}e}".split("e")
+        return f"≈ {mantissa.rstrip('0').rstrip('.')}e{exponent}"
+    return f"= {_format_exact(value)}"
+
+
+def _format_exact(value: _Number) -> str:
     """Render a result without trailing zeros or a useless decimal part."""
     if isinstance(value, Decimal):
         value = value.normalize()
@@ -159,4 +179,4 @@ async def _calculator(args: Mapping[str, Any]) -> str:
         raise ValueError("The expression must not be empty.")
 
     # Restating the expression ties the result to the question for small models.
-    return f"{expression} = {_format(_evaluate(_to_postfix(expression)))}"
+    return f"{expression} {_format(_evaluate(_to_postfix(expression)))}"
