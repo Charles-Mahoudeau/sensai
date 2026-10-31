@@ -124,6 +124,70 @@ def chat_payload(
     return payload
 
 
+REPLY_PREVIEW = 200
+"""Most characters of a reply shown in its log summary."""
+
+
+def request_summary(
+    model: str,
+    messages: Sequence[Message],
+    tools: Sequence[ToolSpec],
+    options: ChatOptions | None,
+) -> str:
+    """One log line for a chat request: model, size and what it may answer.
+
+    For example `→ llama3 · 3 messages · step(web_search, answer)`.
+    """
+    count = len(messages)
+    parts = [f"→ {model}", f"{count} message{'' if count == 1 else 's'}"]
+    if tools:
+        parts.append("tools: " + ", ".join(spec.name for spec in tools))
+    if options is not None and options.response_schema is not None:
+        parts.append(_schema_summary(options.response_schema))
+    return " · ".join(parts)
+
+
+def _schema_summary(schema: Mapping[str, Any]) -> str:
+    """Name the actions of a step schema, or the fields of any other schema."""
+    branches = schema.get("anyOf") or []
+    actions = [
+        branch.get("properties", {}).get("action", {}).get("const")
+        for branch in branches
+    ]
+    if actions and all(isinstance(action, str) for action in actions):
+        return f"step({', '.join(actions)})"
+    enum = schema.get("properties", {}).get("action", {}).get("enum")
+    if isinstance(enum, list):
+        return f"step({', '.join(map(str, enum))})"
+    return f"schema({', '.join(schema.get('properties', {}))})"
+
+
+def reply_summary(text: str, calls: Sequence[ToolCall], done: ChatDone) -> str:
+    """One log line for a reply: duration, tokens, why it stopped, a preview.
+
+    For example `← 2.3 s · 1036 in / 69 out · stop · {"thought": "…"}`.
+    """
+    parts: list[str] = []
+    if done.timings is not None:
+        parts.append(f"{done.timings.total.total_seconds():.1f} s")
+    usage = done.usage
+    parts.append(f"{usage.prompt_tokens} in / {usage.completion_tokens} out")
+    if done.done_reason:
+        parts.append(done.done_reason)
+    if calls:
+        parts.append("calls: " + ", ".join(call.name for call in calls))
+    if text.strip():
+        parts.append(_preview(text))
+    return "← " + " · ".join(parts)
+
+
+def _preview(text: str) -> str:
+    flat = " ".join(text.split())
+    if len(flat) <= REPLY_PREVIEW:
+        return flat
+    return flat[: REPLY_PREVIEW - 1] + "…"
+
+
 def load_payload(model: str, keep_alive: str | int | None) -> dict[str, Any]:
     """Build the JSON body of a `/api/generate` request that only loads a model.
 

@@ -11,6 +11,8 @@ from sensai.adapters.ollama import _wire
 from sensai.core.models.llm import ChatDone, TextDelta, ToolCallRequest
 from sensai.core.ports import LLMResponseError, LLMUnavailableError, ModelNotFoundError
 
+_logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Sequence
 
@@ -86,7 +88,10 @@ class OllamaChat:
             self._model, messages, tools, options, keep_alive=self._keep_alive
         )
         try:
-            logging.info("Chat payload: %s", payload)
+            _logger.info(
+                "%s", _wire.request_summary(self._model, messages, tools, options)
+            )
+            _logger.debug("Chat payload: %s", payload)
             text_parts: list[str] = []
             tool_calls: list[ToolCallRequest] = []
             async with self._client.stream(
@@ -111,11 +116,16 @@ class OllamaChat:
                             case ToolCallRequest():
                                 tool_calls.append(event)
                             case ChatDone(done_reason=reason):
-                                logging.info(
-                                    "Chat response: text=%r tool_calls=%s "
+                                text = "".join(text_parts)
+                                calls = [request.call for request in tool_calls]
+                                _logger.info(
+                                    "%s", _wire.reply_summary(text, calls, event)
+                                )
+                                _logger.debug(
+                                    "Chat reply: text=%r tool_calls=%s "
                                     "done_reason=%s usage=%s",
-                                    "".join(text_parts),
-                                    [request.call for request in tool_calls],
+                                    text,
+                                    calls,
                                     reason,
                                     event.usage,
                                 )

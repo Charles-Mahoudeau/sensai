@@ -253,6 +253,21 @@ HintMessage {
     }
 }
 
+#logs-panel {
+    #logs-filter {
+        background: $boost;
+    }
+
+    /* fills what the panel has left; new records scroll into view */
+    #logs-view {
+        height: 1fr;
+        max-height: 20;
+        padding: 0;
+        background: $background;
+        scrollbar-size-vertical: 1;
+    }
+}
+
 #tools-panel {
     #tools-header {
         height: 1;
