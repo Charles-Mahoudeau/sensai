@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -302,3 +303,26 @@ def test_load_reports_failures_like_chat() -> None:
         _load(lambda _r: httpx.Response(404, json={"error": "model not found"}))
     with pytest.raises(LLMResponseError, match="out of memory"):
         _load(lambda _r: httpx.Response(500, json={"error": "out of memory"}))
+
+
+def test_info_logs_summaries_and_debug_the_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """INFO gets one short line per request and reply; the payload is DEBUG."""
+    body = _ndjson(_text("Hello"), {"message": {"content": ""}, **DONE})
+
+    with caplog.at_level(logging.INFO, logger="sensai.adapters.ollama.chat"):
+        _collect(_reply(body))
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "→ llama3 · 1 message",
+        "← 5 in / 2 out · stop · Hello",
+    ]
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="sensai.adapters.ollama.chat"):
+        _collect(_reply(body))
+
+    debug = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
+    assert debug[0].startswith("Chat payload: {'model': 'llama3'")
+    assert debug[1].startswith("Chat reply: text='Hello'")

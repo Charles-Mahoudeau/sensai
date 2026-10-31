@@ -88,7 +88,10 @@ class OllamaChat:
             self._model, messages, tools, options, keep_alive=self._keep_alive
         )
         try:
-            _logger.info("Chat payload: %s", payload)
+            _logger.info(
+                "%s", _wire.request_summary(self._model, messages, tools, options)
+            )
+            _logger.debug("Chat payload: %s", payload)
             text_parts: list[str] = []
             tool_calls: list[ToolCallRequest] = []
             async with self._client.stream(
@@ -113,11 +116,16 @@ class OllamaChat:
                             case ToolCallRequest():
                                 tool_calls.append(event)
                             case ChatDone(done_reason=reason):
+                                text = "".join(text_parts)
+                                calls = [request.call for request in tool_calls]
                                 _logger.info(
-                                    "Chat response: text=%r tool_calls=%s "
+                                    "%s", _wire.reply_summary(text, calls, event)
+                                )
+                                _logger.debug(
+                                    "Chat reply: text=%r tool_calls=%s "
                                     "done_reason=%s usage=%s",
-                                    "".join(text_parts),
-                                    [request.call for request in tool_calls],
+                                    text,
+                                    calls,
                                     reason,
                                     event.usage,
                                 )
