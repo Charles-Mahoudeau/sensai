@@ -366,7 +366,9 @@ To evaluate a prompt change against a real model, use
   [CLI](docs/database_cli.md)
 * Target user: [Titouan](docs/user-profile.md)
 * Scope: [what Sensai does and why](docs/scope.md),
-  [feature choices](docs/features.md)
+  [feature choices](docs/features/features.md)
+* Verification: [how each feature is checked](docs/features/verification.md), results in
+  `reports/`
 * Model benchmark: [method](docs/benchmark.md), results in `benchmarks/results/`
 * User stories: [index and traceability](docs/user-stories/README.md)
 
