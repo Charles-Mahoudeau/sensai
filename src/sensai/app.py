@@ -51,7 +51,7 @@ from sensai.core.prompts import (
     load_defaults,
 )
 from sensai.core.sessions import SessionRecorder
-from sensai.core.tools.builtin import memory, python, web_search
+from sensai.core.tools.builtin import calculator, memory, python, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import MeteredLLM, UsageMeter
@@ -156,6 +156,7 @@ async def build_tools(
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
+    calculator.register_self(tool_registry)
     memory.register_self(tool_registry, memory_repository)
     await _register_sandbox(tool_registry, config)
 

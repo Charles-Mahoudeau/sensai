@@ -35,4 +35,6 @@ Then choose the next action, in JSON:
 - to answer: {{"thought": "your sentences", "action": "answer"}}
 Choose "answer" only if you are ready to answer: the conversation already
 contains everything needed, including the output of every computation or plot
-the request asks for, or the request is simple small talk.
+the request asks for, or the request is simple small talk. A calculation
+never counts as known: until `calculator` has returned its result, set "ready"
+to false.
