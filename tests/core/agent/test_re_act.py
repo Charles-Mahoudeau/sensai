@@ -14,10 +14,11 @@ from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.models import Message, TextDelta, ThinkingEffort
 from sensai.core.models.llm import ChatOptions, ThinkingDelta
+from sensai.core.models.sandbox import CodeRun
 from sensai.core.ports import LLMResponseError
-from sensai.core.tools.builtin import web_search
+from sensai.core.tools.builtin import python, web_search
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeLLM
+from tests.fakes import FakeCodeRunner, FakeLLM
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -404,3 +405,28 @@ def test_the_thought_streams_as_its_json_arrives() -> None:
     ]
     assert deltas[-1].ready
     assert llm.options[1] is None
+
+
+def test_failing_code_is_fixed_without_the_user() -> None:
+    """A traceback goes back to the model, which corrects its code and answers."""
+    error = "Traceback (most recent call last):\nNameError: name 'y' is not defined"
+    runner = FakeCodeRunner([CodeRun("", error, 1, 0.3), CodeRun("4\n", "", 0, 0.3)])
+    registry = ToolRegistry()
+    python.register_self(registry, runner)
+    llm = FakeLLM(
+        [
+            _step("Compute it.", "run_python", code="print(y * 2)"),
+            _step(
+                "y is undefined, define it.", "run_python", code="y = 2\nprint(y * 2)"
+            ),
+            _step("The result is 4."),
+            [TextDelta("The result is 4.")],
+        ]
+    )
+
+    events = _run(ReActAgent(llm, registry, PROMPTS))
+
+    assert runner.codes == ["print(y * 2)", "y = 2\nprint(y * 2)"]
+    seen_by_retry = [m.content for m in llm.messages[1] if m.role == "tool"]
+    assert any("NameError" in content for content in seen_by_retry)
+    assert events[-1] == TurnCompleted([Message.assistant("The result is 4.")])

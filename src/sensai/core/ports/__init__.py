@@ -44,9 +44,11 @@ from sensai.core.ports.retrieval import (
     VectorStore,
     VectorStoreError,
 )
+from sensai.core.ports.sandbox import CodeRunner, SandboxError
 
 __all__ = [
     "LLM",
+    "CodeRunner",
     "DuplicateMemoryError",
     "Embedder",
     "EmbedderUnavailableError",
@@ -71,6 +73,7 @@ __all__ = [
     "PromptRepository",
     "PromptVersionNotFoundError",
     "RetrievalError",
+    "SandboxError",
     "SessionNotFoundError",
     "SessionRepository",
     "StorageError",

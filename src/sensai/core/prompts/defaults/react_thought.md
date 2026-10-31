@@ -6,6 +6,10 @@ Write 1 to 3 short sentences:
 - What do I actually know for sure, from the conversation, what I remember about
   the user, or tool results?
 - What is missing or could be outdated? Which tool would provide it?
+- Does the request ask to calculate, solve, simplify, integrate, differentiate,
+  evaluate numerically or plot? Then call `run_python` and answer from its
+  output: knowing how to do it is not a reason to skip it, and a plot only
+  exists if `run_python` saved it.
 Prefer checking with a tool over relying on your own knowledge for facts, dates,
 news, files and numbers. Never call a tool again for what a tool result above
 already gives.
@@ -30,6 +34,7 @@ Then choose the next action, in JSON:
 - to call a tool: {{"thought": "your sentences", "action": "<tool name>", "arguments": {{...}}}}
 - to answer: {{"thought": "your sentences", "action": "answer"}}
 Choose "answer" only if you are ready to answer: the conversation already
-contains everything needed, or the request is simple small talk. A calculation
+contains everything needed, including the output of every computation or plot
+the request asks for, or the request is simple small talk. A calculation
 never counts as known: until `calculator` has returned its result, set "ready"
 to false.

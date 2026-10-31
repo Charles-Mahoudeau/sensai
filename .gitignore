@@ -11,6 +11,8 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.log
+artifacts/
+.pytest-sandbox/
 
 # Local secrets
 .env

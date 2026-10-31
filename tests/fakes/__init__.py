@@ -7,8 +7,10 @@ from tests.fakes.monitor import FakeModelMonitor
 from tests.fakes.persona import InMemoryPersonaSource
 from tests.fakes.prompts import InMemoryPromptRepository
 from tests.fakes.retrieval import FakeEmbedder, InMemoryVectorStore
+from tests.fakes.sandbox import FakeCodeRunner
 
 __all__ = [
+    "FakeCodeRunner",
     "FakeEmbedder",
     "FakeLLM",
     "FakeMcpClient",
