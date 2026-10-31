@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from sensai.core.usage import UsageMeter
 
 
-_logger = logging.getLogger("SessionRecorder")
+_logger = logging.getLogger(__name__)
 
 
 class Titler(Protocol):

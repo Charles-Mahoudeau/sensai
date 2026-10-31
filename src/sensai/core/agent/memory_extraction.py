@@ -55,7 +55,7 @@ _FACT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_logger = logging.getLogger("MemoryExtractor")
+_logger = logging.getLogger(__name__)
 _output = JsonSchemaOutput(_FACT_SCHEMA)
 
 
