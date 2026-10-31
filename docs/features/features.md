@@ -1,9 +1,9 @@
 # Feature choices
 
-Sensai has one user: [Titouan](user-profile.md), 17, struggling in Terminale maths, revising alone
+Sensai has one user: [Titouan](../user-profile.md), 17, struggling in Terminale maths, revising alone
 in the evening on a laptop with no dedicated GPU. Every feature is kept or left out for what it
 does for him, under the project's constraints: a local Ollama model, no LLM framework, and his
-hardware, where the [benchmark](benchmark.md) measured 5 to 12 tokens/s and 35 to 70 s per answer.
+hardware, where the [benchmark](../benchmark.md) measured 5 to 12 tokens/s and 35 to 70 s per answer.
 
 That speed is the main constraint on the scope: every extra model call per turn costs Titouan tens
 of seconds. A few features that work together are worth more than a long list, and the grading
@@ -13,24 +13,24 @@ caps the feature total for the same reason.
 
 | Feature | What it does for Titouan | User stories |
 |---|---|---|
-| [B1] Base CLI chatbot | Streams the answer so he reads while it is written; clear errors he can fix alone; a model chosen for his laptop | [B1](user-stories/b1-base-loop.md) |
-| [M1] Sessions and profile | He resumes yesterday's exercise and never explains his level again | [M1](user-stories/m1-session-persistence-profile.md) |
-| [M3] Structured memory (SQLite) | Sensai remembers his weak points across sessions, and forgets them when he asks | [M3](user-stories/m3-structured-memory.md) |
-| [A1] ReAct loop | He sees the reasoning that leads to the method, not just a result to copy | [A1](user-stories/a1-react.md) |
-| [A5] Personas | Another way of explaining when the first one does not click, without losing the exercise | [A5](user-stories/a5-persona.md) |
-| [T2] Python sandbox | Results are computed, not guessed: a small model makes calculation errors (see the benchmark) | [T2](user-stories/t2-sandboxed-code-execution.md) |
-| [T3] Web search | Up-to-date facts about the bac (dates, curriculum, past papers) that a local model cannot know | [T3](user-stories/t3-web-search.md) |
-| [T1] MCP | External tool sources plugged in from the configuration | [T1](user-stories/t1-mcp.md) |
-| [T5] Structured output | A small model picks tools and writes memories in a format the code can check | [T5](user-stories/t5-structured-output.md) |
-| [A4] Prompt versioning | The team measures that a prompt change explains better before Titouan gets it | [A4](user-stories/a4-prompt-versioning.md) |
+| [B1] Base CLI chatbot | Streams the answer so he reads while it is written; clear errors he can fix alone; a model chosen for his laptop | [B1](../user-stories/b1-base-loop.md) |
+| [M1] Sessions and profile | He resumes yesterday's exercise and never explains his level again | [M1](../user-stories/m1-session-persistence-profile.md) |
+| [M3] Structured memory (SQLite) | Sensai remembers his weak points across sessions, and forgets them when he asks | [M3](../user-stories/m3-structured-memory.md) |
+| [A1] ReAct loop | He sees the reasoning that leads to the method, not just a result to copy | [A1](../user-stories/a1-react.md) |
+| [A5] Personas | Another way of explaining when the first one does not click, without losing the exercise | [A5](../user-stories/a5-persona.md) |
+| [T2] Python sandbox | Results are computed, not guessed: a small model makes calculation errors (see the benchmark) | [T2](../user-stories/t2-sandboxed-code-execution.md) |
+| [T3] Web search | Up-to-date facts about the bac (dates, curriculum, past papers) that a local model cannot know | [T3](../user-stories/t3-web-search.md) |
+| [T1] MCP | External tool sources plugged in from the configuration | [T1](../user-stories/t1-mcp.md) |
+| [T5] Structured output | A small model picks tools and writes memories in a format the code can check | [T5](../user-stories/t5-structured-output.md) |
+| [A4] Prompt versioning | The team measures that a prompt change explains better before Titouan gets it | [A4](../user-stories/a4-prompt-versioning.md) |
 
 ### Changed along the way
 
 | Feature | Change | Stories affected |
 |---|---|---|
-| [T5] Structured output | The `plan` mode was built but nothing in the chat turns it on. T5 now rests on the ReAct steps, the memory extraction and the prompt judge. | Former T5 stories on plans, replaced by [T5-1 to T5-3](user-stories/t5-structured-output.md) |
-| [T1] MCP | The only server of our own is `scripts/fake_mcp_server.py` (`echo`); a server useful to Titouan is still to be built, and the client only speaks HTTP | [T1-2](user-stories/t1-mcp.md) |
-| [X2] Branching | Only the interrupt part exists (`Esc`); there is no editing of a past message and no branch. Not presented as a feature. | Covered by [B1-1](user-stories/b1-base-loop.md) only |
+| [T5] Structured output | The `plan` mode was built but nothing in the chat turns it on. T5 now rests on the ReAct steps, the memory extraction and the prompt judge. | Former T5 stories on plans, replaced by [T5-1 to T5-3](../user-stories/t5-structured-output.md) |
+| [T1] MCP | The only server of our own is `scripts/fake_mcp_server.py` (`echo`); a server useful to Titouan is still to be built, and the client only speaks HTTP | [T1-2](../user-stories/t1-mcp.md) |
+| [X2] Branching | Only the interrupt part exists (`Esc`); there is no editing of a past message and no branch. Not presented as a feature. | Covered by [B1-1](../user-stories/b1-base-loop.md) only |
 
 ## Planned, not done yet
 

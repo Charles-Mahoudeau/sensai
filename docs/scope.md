@@ -49,4 +49,4 @@ We looked for something much simpler to build, and that would be useful to real 
   and we can judge whether it actually helps.
 
 How each catalog feature serves this scope, and which ones were left out and why, is in
-[docs/features.md](features.md).
+[docs/features/features.md](features/features.md).
