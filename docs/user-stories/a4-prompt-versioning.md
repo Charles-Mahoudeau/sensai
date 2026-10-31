@@ -1,28 +1,53 @@
-# [A4] Prompt Versioning: user stories
+# [A4] Prompt versioning: user stories
 
 Issue: #40. Design and usage: [docs/core/prompts.md](../core/prompts.md).
+End user: [Titouan](../user-profile.md). The prompts are tuned for him by the Sensai team.
 
-## Keep a history of every prompt version
+## A4-1 · Keep the history of the tutor's prompts
 
-As a developer, I want to keep a history of every prompt version with timestamps, so that I can
-see what changed and when.
+**As** a Sensai team member who tunes how the tutor explains maths to Titouan,
+**I want** every version of a prompt to be saved with its date and a note,
+**so that** I can find which change altered the tutor's behaviour, for example the day it started
+skipping calculation steps.
 
-Acceptance criteria:
-
-- Saving a new prompt creates a new version with a timestamp
-  (`sensai prompts new <name> <file>`, or editing a default in `core/prompts/defaults/`).
-- Versions can be listed (`sensai prompts list`, `sensai prompts history <name>`).
-- Two versions can be diffed (`sensai prompts diff <name> <old> <new>`).
-
-## Roll back and compare versions
-
-As a developer, I want to roll back to a previous prompt version and compare it with the current
-one, so that I can undo a regression and measure which version performs better.
+Link to the scenario: [his needs](../user-profile.md#what-he-needs-from-sensai), "understand the
+method": the `system` prompt is what asks for detailed steps.
 
 Acceptance criteria:
 
-- Rollback makes the old version active (`sensai prompts rollback <name> <version>`), and the chat
-  uses it from its next start.
-- A comparison run on the same inputs reports latency and quality per version
-  (`sensai prompts compare <name> <a> <b> --inputs <file>`).
-- Results are logged (`--output report.json` saves every answer, metric and judge verdict).
+- `uv run sensai prompts list` shows every prompt (`system`, `react_thought`,
+  `memory_extraction`…) with its active version.
+- `uv run sensai prompts new system my_prompt.md --note "detail every calculation"` creates a new
+  active version; `prompts history system` lists it with its number, date and note, the active
+  version marked `●`.
+- `uv run sensai prompts diff system 1 2` shows the lines changed between the two versions.
+- `prompts new` refuses a version that breaks a prompt template (for example `react_thought`
+  without its `{tools}` placeholder) with a message saying what is missing, and creates no version.
+
+Check: `uv run pytest tests/core/prompts tests/adapters/cli tests/adapters/storage/repositories/test_prompt_repository.py`
+
+## A4-2 · Measure whether a new version explains better, and roll back otherwise
+
+**As** a Sensai team member who changes the tutor's prompt,
+**I want** to compare two versions on the same exercises and go back to the old one if the new
+one is worse,
+**so that** Titouan only gets a version measured to explain better, without risking a worse tutor
+on a hunch.
+
+Link to the scenario: [constraints](../user-profile.md#constraints-this-puts-on-the-system), the
+Terminale curriculum as test data.
+
+Acceptance criteria:
+
+- `uv run sensai prompts compare system 1 2 --inputs <file> --model llama3.2:3b --config config/sensai.toml`
+  sends each line of the file to both versions and shows, per version, the mean latency, the
+  tokens, the answer length and the number of wins given by the judge.
+- The judge is asked twice with the answers swapped, to limit position bias; `--no-judge` only
+  computes the metrics.
+- `--output report.json` saves every answer, every metric and every reasoned verdict of the judge,
+  to replay or reread the comparison.
+- `uv run sensai prompts rollback system 1` makes version 1 active; the chat uses it from its next
+  start, and `prompts rollback system 2` brings version 2 back (nothing is deleted).
+
+Check: `uv run pytest tests/core/prompts/test_comparison.py tests/adapters/cli`, then a real
+comparison saved with `--output`.
