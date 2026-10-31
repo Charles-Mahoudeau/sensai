@@ -382,6 +382,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
             "/mcp",
             "/tools",
             "/usage",
+            "/logs",
             "/sessions",
             "/exit",
         ]
