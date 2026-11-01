@@ -378,6 +378,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
         assert _menu_labels(app) == [
             "/clear",
             "/effort",
+            "/model-settings",
             "/persona",
             "/mcp",
             "/tools",

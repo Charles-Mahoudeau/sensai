@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
 from sensai.adapters.tui.commands.builtin.logs import NO_LOGS_HINT
+from sensai.adapters.tui.commands.builtin.model_settings import USAGE
 from sensai.adapters.tui.log_buffer import LogBuffer
 from sensai.adapters.tui.panels import (
     LogsPanel,
@@ -20,6 +21,7 @@ from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import Message, ThinkingEffort
+from sensai.core.models.llm import ChatOptions
 from sensai.core.models.persona import Persona, PersonaEntry, PersonaSection
 from sensai.core.pipeline.base import Pipeline
 from sensai.core.ports import StorageError
@@ -37,6 +39,7 @@ def test_default_registry_lists_the_builtins_in_menu_order() -> None:
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
+        "/model-settings",
         "/persona",
         "/mcp",
         "/tools",
@@ -308,3 +311,44 @@ def test_logs_without_a_buffer_says_so() -> None:
 
     assert context.panels == []
     assert context.hints == [NO_LOGS_HINT]
+
+
+def test_model_settings_shows_sets_and_resets_values() -> None:
+    """A value is applied for the session, `default` unsets it, bare shows all."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    engine.chat_options = ChatOptions(num_ctx=8192)
+    context = FakeContext(engine)
+    registry = default_registry()
+
+    async def run() -> None:
+        await registry.run("/model-settings temperature 0.2", context)
+        await registry.run("/model-settings num_ctx default", context)
+        await registry.run("/model-settings", context)
+
+    asyncio.run(run())
+
+    assert engine.chat_options == ChatOptions(temperature=0.2)
+    assert context.hints[-1] == (
+        "Model settings: temperature 0.2 · top_p default · top_k default"
+        " · seed default · num_ctx default"
+    )
+
+
+def test_model_settings_rejects_bad_names_and_values() -> None:
+    """Unknown names, wrong types and out-of-range values change nothing."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    context = FakeContext(engine)
+    registry = default_registry()
+
+    async def run() -> None:
+        await registry.run("/model-settings temp 0.2", context)
+        await registry.run("/model-settings top_k many", context)
+        await registry.run("/model-settings top_p 1.5", context)
+
+    asyncio.run(run())
+
+    assert engine.chat_options == ChatOptions()
+    usage, wrong_type, out_of_range = context.hints
+    assert usage == USAGE
+    assert wrong_type.startswith("Invalid top_k 'many'")
+    assert out_of_range == "Invalid top_p '1.5': top_p must be at most 1"
