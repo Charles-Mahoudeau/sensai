@@ -8,6 +8,7 @@ import pytest
 
 from sensai.core.models.llm import (
     ChatDone,
+    ChatOptions,
     LoadedModel,
     Timings,
     Usage,
@@ -141,3 +142,15 @@ def test_context_ratio_is_unknown_without_a_window() -> None:
     assert UsageReport(context_used=250).context_ratio is None
     assert UsageReport(loaded_model=unknown, context_used=250).context_ratio is None
     assert UsageReport(loaded_model=empty, context_used=250).context_ratio is None
+
+
+def test_chat_options_reject_out_of_range_values() -> None:
+    """Values the model server would refuse or misread are rejected early."""
+    with pytest.raises(ValueError, match="temperature must be at least 0"):
+        ChatOptions(temperature=-0.1)
+    with pytest.raises(ValueError, match="top_p must be at most 1"):
+        ChatOptions(top_p=1.5)
+    with pytest.raises(ValueError, match="top_k must be at least 1"):
+        ChatOptions(top_k=0)
+    with pytest.raises(ValueError, match="num_ctx must be at least 1"):
+        ChatOptions(num_ctx=0)

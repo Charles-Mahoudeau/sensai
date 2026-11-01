@@ -96,7 +96,14 @@ class ChatOptions:
     think: bool | None = None
 
     def __post_init__(self) -> None:
-        """Freeze the response schema mapping."""
+        """Reject out-of-range values and freeze the response schema mapping."""
+        lowest = {"temperature": 0, "top_p": 0, "top_k": 1, "num_ctx": 1}
+        for name, minimum in lowest.items():
+            value = getattr(self, name)
+            if value is not None and value < minimum:
+                raise ValueError(f"{name} must be at least {minimum}")
+        if self.top_p is not None and self.top_p > 1:
+            raise ValueError("top_p must be at most 1")
         if self.response_schema is not None:
             object.__setattr__(
                 self, "response_schema", MappingProxyType(dict(self.response_schema))

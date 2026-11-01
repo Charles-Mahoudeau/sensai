@@ -160,42 +160,34 @@ def _parse_generation(data: object) -> ChatOptions:
         raise ConfigError(
             f"unknown generation.{unknown[0]}, expected one of: {choices}"
         )
-    top_p = _generation_number(data, "top_p", lowest=0)
-    if top_p is not None and top_p > 1:
-        raise ConfigError("generation.top_p must be at most 1")
-    return ChatOptions(
-        temperature=_generation_number(data, "temperature", lowest=0),
-        top_p=top_p,
-        top_k=_generation_integer(data, "top_k", lowest=1),
-        seed=_generation_integer(data, "seed"),
-        num_ctx=_generation_integer(data, "num_ctx", lowest=1),
-    )
+    try:
+        return ChatOptions(
+            temperature=_generation_number(data, "temperature"),
+            top_p=_generation_number(data, "top_p"),
+            top_k=_generation_integer(data, "top_k"),
+            seed=_generation_integer(data, "seed"),
+            num_ctx=_generation_integer(data, "num_ctx"),
+        )
+    except ValueError as error:
+        raise ConfigError(f"invalid generation.{error}") from None
 
 
-def _generation_number(
-    data: dict[str, Any], key: str, *, lowest: float
-) -> float | None:
+def _generation_number(data: dict[str, Any], key: str) -> float | None:
     value = data.get(key)
     if value is None:
         return None
     # bool is an int in Python, but `temperature = true` means nothing
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ConfigError(f"generation.{key} must be a number, got {value!r}")
-    if value < lowest:
-        raise ConfigError(f"generation.{key} must be at least {lowest}")
     return float(value)
 
 
-def _generation_integer(
-    data: dict[str, Any], key: str, *, lowest: int | None = None
-) -> int | None:
+def _generation_integer(data: dict[str, Any], key: str) -> int | None:
     value = data.get(key)
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ConfigError(f"generation.{key} must be an integer, got {value!r}")
-    if lowest is not None and value < lowest:
-        raise ConfigError(f"generation.{key} must be at least {lowest}")
     return value
 
 
