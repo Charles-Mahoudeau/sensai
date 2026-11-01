@@ -38,15 +38,16 @@ line that fails. Note the model used (`--model`) at the top.
 
 | Feature | Tests |
 |---|---|
-| [B1] Base chatbot | `tests/core/test_engine.py`, `tests/adapters/ollama/`, `tests/adapters/tui/test_chat_app.py`, `tests/test_cli.py`, `tests/test_config.py` |
+| [B1] Base chatbot | `tests/core/test_engine.py`, `tests/adapters/ollama/`, `tests/adapters/tui/test_chat_app.py`, `tests/adapters/tui/test_latex.py`, `tests/adapters/tui/widgets/test_math_markdown.py`, `tests/test_cli.py`, `tests/test_config.py` |
 | [M1] Sessions and profile | `tests/core/test_sessions.py`, `tests/adapters/storage/repositories/test_session_repository.py`, `tests/adapters/profile/` |
 | [M3] Structured memory | `tests/core/agent/test_memory_extraction.py`, `tests/core/agent/test_memory_recall.py`, `tests/core/agent/test_memory_tools.py`, `tests/core/tools/builtin/test_memory.py`, `tests/adapters/storage/repositories/test_memory_repository.py` |
 | [A1] ReAct | `tests/core/agent/test_re_act.py`, `tests/core/agent/test_step.py`, `tests/core/agent/test_thought_stream.py` |
 | [A4] Prompt versioning | `tests/core/prompts/`, `tests/adapters/cli/`, `tests/adapters/storage/repositories/test_prompt_repository.py` |
 | [A5] Personas | `tests/core/test_persona.py`, `tests/adapters/persona/` |
-| [T1] MCP and tools | `tests/adapters/mcp/`, `tests/core/tools/test_mcp.py`, `tests/core/tools/test_registry.py`, `tests/adapters/tui/commands/test_builtin.py` |
+| [T1] MCP and tools | `tests/adapters/mcp/`, `tests/core/tools/test_mcp.py`, `tests/core/tools/builtin/test_calculator.py`, `tests/core/tools/test_registry.py`, `tests/adapters/tui/commands/test_builtin.py` |
 | [T2] Python sandbox | `tests/core/tools/builtin/test_python.py`, `tests/adapters/sandbox/` |
 | [T3] Web search | None for the tool itself; the call loop is covered by `tests/core/agent/test_re_act.py` |
+| [EV3] Logging (partial) | `tests/adapters/tui/panels/test_logs.py`, `tests/adapters/tui/test_log_buffer.py`, `tests/adapters/tui/test_log_format.py` |
 | [T5] Structured output | `tests/core/agent/test_step.py`, `tests/core/agent/test_structured.py`, `tests/core/agent/structured/`, `tests/core/prompts/test_comparison.py` |
 
 Run one feature's tests by passing its paths, for example
@@ -125,6 +126,10 @@ never crash or make up a result.
   connected with its tool count.
 - [ ] « Utilise l'outil echo pour répéter "bonjour" » → a `fake__echo` call with its result; the
   server prints the request.
+- [ ] « Combien font (12,5 × 4)² / √16 ? » → a `calculator` call; the answer gives 625, the value
+  the tool returned.
+- [ ] **Negative**: « Calcule 1 / 0 avec la calculatrice » → the `calculator` call is shown as failed
+  (`ZeroDivisionError`), and the answer says the division is impossible.
 - [ ] `/tools`, disable `web_search` → the counts update; « Cherche sur internet la correction de cet
   exercice » triggers no `web_search` call.
 - [ ] **Negative**: start Sensai without the fake server → Sensai starts, `/mcp` shows the `fake`
@@ -153,10 +158,11 @@ Depends on the network: keep a recording for the defense.
 
 ### [T5] Structured output
 
-- [ ] Ask an exercise, then look for the last `Chat payload` in `sensai.log` → it has a `format`
-  field whose `action` only lists the enabled tools.
-- [ ] After « J'ai du mal avec les suites », the memory extraction `Chat payload` in `sensai.log`
-  has the `{facts, forget}` schema in `format`.
+- [ ] Ask an exercise, then open `/logs` → each ReAct step request reads
+  `→ <model> · <n> messages · step(<enabled tools>, answer)`.
+- [ ] Disable `web_search` in `/tools`, ask again → `web_search` is gone from the `step(…)` list.
+- [ ] After « J'ai du mal avec les suites », `/logs` shows the memory extraction request with
+  `schema(facts, forget)`.
 - [ ] **Negative**: covered by the automated tests (`tests/core/agent/test_step.py`): a step that is
   not valid JSON becomes an answer instead of looping; an invalid memory extraction writes nothing.
 

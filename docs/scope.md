@@ -12,7 +12,7 @@ its answer on what they return:
 - **`run_python`** (merged): runs Python in an isolated Docker sandbox, with `sympy`, `numpy`,
   `scipy`, `matplotlib` and `pandas`, to solve, simplify, integrate, simulate or plot
   ([docs/core/sandbox.md](core/sandbox.md)).
-- **`calculator`** (in review, PR #133): evaluates arithmetic expressions, and the prompts require
+- **`calculator`** (merged): evaluates arithmetic expressions, and the prompts require
   every number in an answer to come from a tool result.
 
 Requests outside maths are not what Sensai is built for: the tutor brings the conversation back
