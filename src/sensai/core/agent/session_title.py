@@ -21,7 +21,7 @@ _MAX_EXCHANGE = 1000
 _QUOTES = "\"'`«»\u201c\u201d\u2018\u2019 "
 _TRAILING_PUNCTUATION = ".!?…:;,"
 
-_logger = logging.getLogger("SessionTitler")
+_logger = logging.getLogger(__name__)
 
 
 class SessionTitler:

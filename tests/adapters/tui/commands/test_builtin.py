@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING
 
 from sensai.adapters.tui.commands.builtin import default_registry
 from sensai.adapters.tui.commands.builtin.clear import CLEARED_HINT
-from sensai.adapters.tui.panels import McpPanel, SessionsPanel, ToolsPanel, UsagePanel
+from sensai.adapters.tui.commands.builtin.logs import NO_LOGS_HINT
+from sensai.adapters.tui.log_buffer import LogBuffer
+from sensai.adapters.tui.panels import (
+    LogsPanel,
+    McpPanel,
+    SessionsPanel,
+    ToolsPanel,
+    UsagePanel,
+)
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
@@ -25,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def test_default_registry_lists_the_builtins_in_menu_order() -> None:
-    """The menu lists the builtins, /sessions after /usage and /exit last."""
+    """The menu lists the builtins, /logs after /usage and /exit last."""
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
@@ -33,6 +41,7 @@ def test_default_registry_lists_the_builtins_in_menu_order() -> None:
         "/mcp",
         "/tools",
         "/usage",
+        "/logs",
         "/sessions",
         "/exit",
     ]
@@ -277,3 +286,25 @@ def test_resuming_fails_with_a_hint_and_keeps_the_conversation() -> None:
     assert context.sessions_shown == []
     assert len(context.hints) == 1
     assert context.hints[0].startswith("Could not resume the session")
+
+
+def test_logs_opens_the_panel_on_the_buffer() -> None:
+    """/logs shows the buffered records in a panel."""
+    context = FakeContext(Engine(ScriptedRunner(()), Pipeline(), EventBus()))
+    buffer = LogBuffer()
+
+    asyncio.run(default_registry(log_buffer=buffer).run("/logs", context))
+
+    (panel,) = context.panels
+    assert isinstance(panel, LogsPanel)
+    assert panel._buffer is buffer
+
+
+def test_logs_without_a_buffer_says_so() -> None:
+    """Without a buffer wired, /logs only explains why."""
+    context = FakeContext(Engine(ScriptedRunner(()), Pipeline(), EventBus()))
+
+    asyncio.run(default_registry().run("/logs", context))
+
+    assert context.panels == []
+    assert context.hints == [NO_LOGS_HINT]

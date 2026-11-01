@@ -22,6 +22,8 @@ imports the agent, the pipeline, a port or an adapter. See
 | `commands/builtin/` | One module per built-in command, and `default_registry()` |
 | `panels/` | `Panel` and the panels commands open in place of the prompt (`McpPanel`, `ToolsPanel`) |
 | `widgets/` | One module per widget: the transcript lines, the prompt and its command menu |
+| `log_buffer.py` | `LogBuffer`: a logging handler keeping the latest records for `/logs`, and telling listeners of new ones |
+| `log_format.py` | `format_record()`: a record as one colored line (time, level, category, message) |
 | `companion.py` | `Companion`: the animated face drawn in the prompt border, and its `Mood` frames |
 | `sensai.tcss` | App stylesheet, loaded with `CSS_PATH` |
 
@@ -36,6 +38,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `/effort <level>` | Set the thinking effort (`/effort` alone shows it) |
 | `/mcp` | List the MCP servers and whether they connected |
 | `/tools` | List the tools, enable or disable them |
+| `/logs` | Show this session's log records, live and colored |
 | `esc` | Stop the answer being generated, keeping the partial text |
 | `ctrl+t` | Expand every reasoning group, or collapse them if all are expanded |
 | Click a reasoning header | Expand or collapse that group |
@@ -60,6 +63,7 @@ The built-in commands:
 | `/effort <level>` | Sets `engine.thinking_effort` to `none`, `low`, `medium`, `high` or `ultra`; a bare `/effort` shows the current one |
 | `/mcp` | Opens `McpPanel` with `engine.mcp_servers()` |
 | `/tools` | Opens `ToolsPanel`, which lists `engine.tools()` and toggles them |
+| `/logs` | Opens `LogsPanel` on the `LogBuffer` wired in `app.py`; without one, shows a hint |
 | `/exit` | Quits; `/quit` is a hidden alias |
 
 An unknown command shows an "Unknown command" hint.
@@ -77,6 +81,28 @@ or `✗ notion  failed: <reason>`, each with its URL.
 
 Panels keep their title (with the counts) in the top border and their key
 hints in the bottom one, so the content keeps the room in a small window.
+
+`LogsPanel` shows the records kept by the `LogBuffer` (the last 1,000, from
+INFO), then each new one **as it is logged**, while the panel is open:
+
+```text
+21:35:41  WARN   app        GITHUB_TOKEN not set, skipping the GitHub MCP server
+21:35:42  INFO   ollama     → qwen2.5:7b · 3 messages · step(web_search, run_python, answer)
+21:35:44  INFO   ollama     ← 2.3 s · 1036 in / 69 out · stop · {"thought": "…"}
+```
+
+The time is dimmed, the level colored (WARN yellow, ERROR red, DEBUG dim) and
+the category too: the logger name without `sensai.`, `adapters.` and `core.`,
+cut at its first dot (`sensai.adapters.ollama.chat` → `ollama`). The panel
+subscribes to the buffer when mounted and unsubscribes when removed; records
+logged from worker threads reach it through `post_message`, which is
+thread-safe.
+
+| Key | Effect |
+| --- | --- |
+| Typing | Show only the records whose message or logger name contains the text |
+| `ctrl+l` | Cycle the lowest level shown: DEBUG, INFO, WARNING, ERROR (INFO first) |
+| `esc` | Close the panel |
 
 `ToolsPanel` shows `Tools · n/m enabled`, a filter with Enable/Disable all
 buttons on the same line, then the tools grouped by source (`builtin`, then one group per MCP server, each
@@ -152,7 +178,9 @@ await recorder.save()
 
 `run_async()` runs Textual inside the loop started by `asyncio.run()`, so the
 engine task, the HTTP client and the UI share one event loop. The HTTP client is
-closed when the app exits. The `on_clear` hook and the final `save()` keep
+closed when the app exits. `app.py` also attaches a `LogBuffer` to the root
+logger and passes it as `default_registry(log_buffer=...)`, then detaches it
+when the app exits. The `on_clear` hook and the final `save()` keep
 the stored sessions in step with `/clear` (see
 [Session recording](../core/engine.md#session-recording)).
 
