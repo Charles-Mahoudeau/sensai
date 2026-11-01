@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 # of a small model's context to the conversation.
 _DEFAULT_LIMIT = 20
 
-_logger = logging.getLogger("MemoryRecall")
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
