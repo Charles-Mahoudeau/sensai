@@ -26,7 +26,7 @@ from sensai.core.events import (
 )
 from sensai.core.events.types import ToolRunFinished, ToolRunStarted
 from sensai.core.models import Message, TextDelta, ThinkingEffort
-from sensai.core.models.llm import ThinkingDelta, UsageTotals
+from sensai.core.models.llm import ChatOptions, ThinkingDelta, UsageTotals
 from sensai.core.persona import render_persona
 from sensai.core.pipeline.base import Pipeline, ShortCircuit
 from sensai.core.ports import PersonaNotFoundError
@@ -67,6 +67,13 @@ class ModalRunner(Protocol):
     """A runner that can answer in another mode, such as a plan of the method."""
 
     mode: AgentMode
+
+
+@runtime_checkable
+class TunableRunner(Protocol):
+    """A runner whose generation options can be changed between turns."""
+
+    chat_options: ChatOptions
 
 
 class Engine:
@@ -133,6 +140,22 @@ class Engine:
     def thinking_effort(self, value: ThinkingEffort) -> None:
         if isinstance(self._runner, ThinkingRunner):
             self._runner.thinking_effort = value
+
+    @property
+    def chat_options(self) -> ChatOptions:
+        """The runner's generation options (temperature, top_p…).
+
+        Empty when the runner has none, so the model server's defaults apply.
+        Changes apply from the next submission.
+        """
+        if isinstance(self._runner, TunableRunner):
+            return self._runner.chat_options
+        return ChatOptions()
+
+    @chat_options.setter
+    def chat_options(self, value: ChatOptions) -> None:
+        if isinstance(self._runner, TunableRunner):
+            self._runner.chat_options = value
 
     def cycle_thinking_effort(self) -> ThinkingEffort:
         """Switch the runner to the next thinking effort, wrapping after the highest."""

@@ -11,6 +11,7 @@ from sensai.adapters.tui.commands.builtin import (
     logs,
     mcp,
     mode,
+    model_settings,
     persona,
     sessions,
     tools,
@@ -50,6 +51,7 @@ def default_registry(
     clear.register_self(registry, on_clear=on_clear)
     effort.register_self(registry)
     mode.register_self(registry)
+    model_settings.register_self(registry)
     persona.register_self(registry, names=persona_names)
     mcp.register_self(registry)
     tools.register_self(registry)

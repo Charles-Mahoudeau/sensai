@@ -100,6 +100,7 @@ def test_payload_maps_options_to_ollama_names() -> None:
     options = ChatOptions(
         temperature=0.2,
         top_p=0.9,
+        top_k=40,
         seed=7,
         num_ctx=4096,
         max_tokens=128,
@@ -112,6 +113,7 @@ def test_payload_maps_options_to_ollama_names() -> None:
     assert payload["options"] == {
         "temperature": 0.2,
         "top_p": 0.9,
+        "top_k": 40,
         "seed": 7,
         "num_ctx": 4096,
         "num_predict": 128,

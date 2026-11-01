@@ -38,6 +38,7 @@ imports the agent, the pipeline, a port or an adapter. See
 | `/clear` | Clear the conversation and start a new session |
 | `/effort <level>` | Set the thinking effort (`/effort` alone shows it) |
 | `/mode <mode>` | Answer fully (`default`) or only plan the method (`plan`); `/mode` alone shows it |
+| `/model-settings <name> <value>` | Set temperature, top_p, top_k, seed or num_ctx for the session (`default` unsets one; alone, shows them) |
 | `/mcp` | List the MCP servers and whether they connected |
 | `/tools` | List the tools, enable or disable them |
 | `/logs` | Show this session's log records, live and colored |
@@ -64,6 +65,7 @@ The built-in commands:
 | `/clear` | Awaits the `on_clear` hook (which saves the session and starts a new one), calls `engine.clear()` and empties the transcript |
 | `/effort <level>` | Sets `engine.thinking_effort` to `none`, `low`, `medium`, `high` or `ultra`; a bare `/effort` shows the current one |
 | `/mode <mode>` | Calls `engine.set_mode` with `answer` (`default`) or `plan`; a refusal (no structured output, answer running) is shown as a hint, and `ModeLabel` shows `Plan mode` in the status bar |
+| `/model-settings <name> <value>` | Sets one field of `engine.chat_options` with `dataclasses.replace`, so `ChatOptions` validates it; `default` unsets it, a bare command shows all five (see [Model Settings](../model-settings.md)) |
 | `/mcp` | Opens `McpPanel` with `engine.mcp_servers()` |
 | `/tools` | Opens `ToolsPanel`, which lists `engine.tools()` and toggles them |
 | `/logs` | Opens `LogsPanel` on the `LogBuffer` wired in `app.py`; without one, shows a hint |

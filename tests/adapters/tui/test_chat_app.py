@@ -381,6 +381,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
             "/clear",
             "/effort",
             "/mode",
+            "/model-settings",
             "/persona",
             "/mcp",
             "/tools",

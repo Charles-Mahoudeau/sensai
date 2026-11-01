@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /home/matthieu/Galaxie/Year3/ia/sensai/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/matthieu/Galaxie/Year3/ia/sensai
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 3 items
+
+tests/adapters/ollama/test_live.py::test_a_real_answer_streams_and_ends_with_chat_done PASSED [ 33%]
+tests/adapters/ollama/test_live.py::test_a_real_tool_call_is_requested_with_an_id PASSED [ 66%]
+tests/adapters/ollama/test_live.py::test_an_unknown_model_is_model_not_found PASSED [100%]
+
+============================== 3 passed in 9.75s ===============================
