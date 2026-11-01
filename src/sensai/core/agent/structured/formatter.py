@@ -21,7 +21,7 @@ def format_structured_output(name: OutputSchemaName, value: Any) -> str:
 
 
 def _format_plan(value: dict[str, Any]) -> str:
-    """Render a plan title and its ordered steps."""
+    """Render a plan of the method: its title, ordered steps and final check."""
     title = _string_field(value, "title")
     steps = value.get("steps")
     if not isinstance(steps, list):
@@ -33,14 +33,16 @@ def _format_plan(value: dict[str, Any]) -> str:
             raise ValueError("plan steps must be JSON objects")
         step_title = _string_field(step, "title")
         description = _string_field(step, "description")
-        priority = _string_field(step, "priority")
+        notion = _string_field(step, "notion")
         lines.extend(
             [
                 "",
-                f"{index}. **{step_title}** ({priority} priority)",
+                f"{index}. **{step_title}**",
                 f"   {description}",
+                f"   *{notion}*",
             ]
         )
+    lines.extend(["", f"**✓** {_string_field(value, 'check')}"])
     return "\n".join(lines)
 
 

@@ -10,6 +10,7 @@ from sensai.core.prompts.defaults import (
     MEMORY_RECALL,
     REACT_ANSWER,
     REACT_NOTES,
+    REACT_PLAN,
     REACT_THOUGHT,
     load_defaults,
 )
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class AgentPrompts:
-    """The three ReAct prompts, usually the active versions from the library.
+    """The ReAct prompts, usually the active versions from the library.
 
     Attributes:
         thought: Asks for a private thought and its action, a tool or the
@@ -28,11 +29,14 @@ class AgentPrompts:
         notes: Wraps the turn's previous thoughts for the next thought and the
             answer; filled with `{thought}`.
         answer: Asks for the final answer after tool results.
+        plan: Asks for the plan of the method instead of the answer, in plan
+            mode; nothing is added when empty.
     """
 
     thought: str
     notes: str
     answer: str
+    plan: str = ""
 
     @classmethod
     def defaults(cls) -> Self:
@@ -42,6 +46,7 @@ class AgentPrompts:
             thought=texts[REACT_THOUGHT],
             notes=texts[REACT_NOTES],
             answer=texts[REACT_ANSWER],
+            plan=texts[REACT_PLAN],
         )
 
     @classmethod
@@ -55,6 +60,7 @@ class AgentPrompts:
             thought=(await library.active(REACT_THOUGHT)).content,
             notes=(await library.active(REACT_NOTES)).content,
             answer=(await library.active(REACT_ANSWER)).content,
+            plan=(await library.active(REACT_PLAN)).content,
         )
 
 
