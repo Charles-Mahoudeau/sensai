@@ -32,7 +32,7 @@ An `assistant` message may contain multiple `ToolCall` objects and a reasoning s
 
 ### `ChatOptions`
 
-`ChatOptions` contains optional generation parameters: temperature, `top_p`, seed, context size, token limit, response schema, and model thinking mode. A value of `None` means that the model's default configuration is used.
+`ChatOptions` contains optional generation parameters: temperature, `top_p`, `top_k`, seed, context size, token limit, response schema, and model thinking mode. A value of `None` means that the model's default configuration is used.
 
 ### `Usage`
 

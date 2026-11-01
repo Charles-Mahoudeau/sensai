@@ -88,6 +88,7 @@ class ChatOptions:
 
     temperature: float | None = None
     top_p: float | None = None
+    top_k: int | None = None
     seed: int | None = None
     num_ctx: int | None = None
     max_tokens: int | None = None
