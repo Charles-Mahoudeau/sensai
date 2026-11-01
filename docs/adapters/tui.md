@@ -232,11 +232,11 @@ assertions.
 
 `AssistantMessage` and the expanded `ThoughtStep` are `MathMarkdown` widgets
 (`widgets/math_markdown.py`). Their parser reads LaTeX math, inline as `$…$` or
-`\(…\)` and displayed as `$$…$$` or `\[…\]`, and turns each formula into
+`\(…\)` and displayed as `$$…$$` (on its own lines) or `\[…\]`, and turns each formula into
 Unicode text with `latex_to_unicode()`, since a terminal can't typeset it:
 `$\frac{-b \pm \sqrt{\Delta}}{2a}$` shows as *(-b ± √Δ)/(2a)*. Inline formulas
 are shown in italics; displayed ones get their own indented `MarkdownMath`
-block. A `$` only opens a formula when followed by a non-space and only closes
+block. A `$$…$$` written inside a line of text is treated as inline. A `$` only opens a formula when followed by a non-space and only closes
 one when preceded by a non-space and not followed by a digit, so "$5 or $10"
 stays plain text. While a formula streams in, its raw LaTeX shows until the
 closing delimiter arrives.
