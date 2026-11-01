@@ -11,7 +11,7 @@ path = "config/personas"
 default = "sensai"
 
 [structured_output]
-enabled = false
+enabled = true
 
 [agent]
 # none | low | medium | high | ultra
