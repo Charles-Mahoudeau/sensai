@@ -17,6 +17,14 @@ enabled = false
 # none | low | medium | high | ultra
 thinking_effort = "medium"
 
+[generation]
+# A key left out keeps the model's default.
+temperature = 0.1
+# num_ctx = 8192
+# top_p = 0.9
+# top_k = 40
+# seed = 42                 # same seed + same settings = same answer
+
 [sandbox]
 # docker build -t sensai-sandbox src/sensai/adapters/sandbox/image
 enabled = true
