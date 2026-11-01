@@ -430,3 +430,19 @@ def test_failing_code_is_fixed_without_the_user() -> None:
     seen_by_retry = [m.content for m in llm.messages[1] if m.role == "tool"]
     assert any("NameError" in content for content in seen_by_retry)
     assert events[-1] == TurnCompleted([Message.assistant("The result is 4.")])
+
+
+@pytest.mark.usefixtures("searches")
+def test_chat_options_go_with_the_steps_and_the_answer() -> None:
+    """Steps keep their schema and gain the options; the answer gets them too."""
+    llm = FakeLLM(TOOL_TURN)
+    agent = ReActAgent(llm, _tools(), PROMPTS)
+    agent.chat_options = ChatOptions(temperature=0.1, num_ctx=8192)
+
+    _run(agent)
+
+    step, _, answer = llm.options
+    assert step is not None
+    assert (step.temperature, step.num_ctx) == (0.1, 8192)
+    assert _actions(step) == ["web_search", "answer"]
+    assert answer == ChatOptions(temperature=0.1, num_ctx=8192)

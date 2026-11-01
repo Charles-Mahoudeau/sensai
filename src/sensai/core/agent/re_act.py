@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING, Literal
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, Literal
 
 from sensai.core.agent import Agent
 from sensai.core.agent.events import (
@@ -29,7 +30,7 @@ from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta
 from sensai.core.ports import LLMResponseError
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import AsyncIterator, Mapping, Sequence
 
     from sensai.core.agent.base import AgentRun
     from sensai.core.agent.memory_extraction import MemoryExtractor
@@ -102,6 +103,10 @@ class ReActAgent(Agent):
     text. Once the agent can answer, or its budget is spent, a last call
     without tools writes the answer, which is the only text streamed to the
     user.
+
+    Attributes:
+        chat_options: Generation settings (temperature, top_p…) sent with the
+            steps and the answer; the model server's defaults where unset.
     """
 
     def __init__(
@@ -131,6 +136,7 @@ class ReActAgent(Agent):
         super().__init__(llm, tool_registry)
         self._prompts = prompts or AgentPrompts.defaults()
         self._thinking_effort = ThinkingEffort.MEDIUM
+        self.chat_options = ChatOptions()
         self._mode = mode
         self._structured_output = structured_output
         self._memory_extractor = memory_extractor
@@ -147,6 +153,14 @@ class ReActAgent(Agent):
     @thinking_effort.setter
     def thinking_effort(self, value: ThinkingEffort) -> None:
         self._thinking_effort = value
+
+    def _options(self, schema: Mapping[str, Any] | None = None) -> ChatOptions | None:
+        """The configured generation options, with `schema` for the reply.
+
+        None when nothing is set, so the model server's defaults apply.
+        """
+        options = replace(self.chat_options, response_schema=schema)
+        return None if options == ChatOptions() else options
 
     async def _loop(self, run: AgentRun) -> AsyncIterator[AgentEvent]:
         self._flat_steps = False
@@ -236,7 +250,7 @@ class ReActAgent(Agent):
             shown = False
             try:
                 async for event in self._llm.chat(
-                    messages, options=ChatOptions(response_schema=schema)
+                    messages, options=self._options(schema)
                 ):
                     if isinstance(event, TextDelta):
                         parts.append(event.text)
@@ -301,7 +315,7 @@ class ReActAgent(Agent):
 
         output_name: OutputSchemaName | None = "plan" if self._mode == "plan" else None
         output = self._output_for(output_name) if output_name is not None else None
-        options = ChatOptions(response_schema=output.schema) if output else None
+        options = self._options(output.schema if output else None)
 
         parts: list[str] = []
         async for event in self._llm.chat(messages, options=options):
