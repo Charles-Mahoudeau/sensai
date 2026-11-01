@@ -386,6 +386,7 @@ To evaluate a prompt change against a real model, use
 * Verification: [how each feature is checked](docs/features/verification.md), results in
   `reports/`
 * Model benchmark: [method](docs/benchmark.md), results in `benchmarks/results/`
+* Limits: [where Sensai breaks, with examples](docs/limits.md)
 * User stories: [index and traceability](docs/user-stories/README.md)
 
 ## Development
