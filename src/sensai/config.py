@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from sensai.core.models import SOURCE_SEPARATOR, ThinkingEffort
+from sensai.core.models.llm import ChatOptions
 from sensai.exceptions import ConfigError
 
 SUPPORTED_STRUCTURED_OUTPUT_SCHEMAS = frozenset({"permission_decision", "plan"})
@@ -121,6 +122,7 @@ class Config:
     user_profile: ProfileConfig
     personas: PersonasConfig = PersonasConfig()
     agent: AgentConfig = AgentConfig()
+    generation: ChatOptions = field(default_factory=ChatOptions)
     structured_output: StructuredOutputConfig = field(
         default_factory=StructuredOutputConfig
     )
@@ -144,6 +146,49 @@ def _parse_sandbox(data: dict[str, Any], base: Path) -> SandboxConfig:
     if config.timeout <= 0 or config.cpus <= 0:
         raise ConfigError("sandbox.timeout and sandbox.cpus must be positive")
     return config
+
+
+_GENERATION_KEYS = ("temperature", "top_p", "top_k", "seed", "num_ctx")
+
+
+def _parse_generation(data: object) -> ChatOptions:
+    """Read the generation settings; an unset key keeps the model's default."""
+    if not isinstance(data, dict):
+        raise ConfigError("[generation] must be a table")
+    if unknown := sorted(set(data) - set(_GENERATION_KEYS)):
+        choices = ", ".join(_GENERATION_KEYS)
+        raise ConfigError(
+            f"unknown generation.{unknown[0]}, expected one of: {choices}"
+        )
+    try:
+        return ChatOptions(
+            temperature=_generation_number(data, "temperature"),
+            top_p=_generation_number(data, "top_p"),
+            top_k=_generation_integer(data, "top_k"),
+            seed=_generation_integer(data, "seed"),
+            num_ctx=_generation_integer(data, "num_ctx"),
+        )
+    except ValueError as error:
+        raise ConfigError(f"invalid generation.{error}") from None
+
+
+def _generation_number(data: dict[str, Any], key: str) -> float | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    # bool is an int in Python, but `temperature = true` means nothing
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(f"generation.{key} must be a number, got {value!r}")
+    return float(value)
+
+
+def _generation_integer(data: dict[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"generation.{key} must be an integer, got {value!r}")
+    return value
 
 
 def _parse_thinking_effort(value: object) -> ThinkingEffort:
@@ -275,6 +320,7 @@ def load_config(path: Path, overrides: dict[str, Any] | None = None) -> Config:
                 data.get("agent", {}).get("thinking_effort", "medium")
             )
         ),
+        generation=_parse_generation(data.get("generation", {})),
         structured_output=StructuredOutputConfig(
             enabled=structured_output.get("enabled", False),
             schemas=schemas,

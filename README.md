@@ -86,6 +86,7 @@ Type `/` in the prompt to get completions.
 |-----------------------|------------------------------------------------------------|
 | `/persona <name>`     | Switch persona (see [Personas](#personas))                 |
 | `/effort <level>`     | Change how much the agent reasons (see [ReAct](#react-agent-and-thinking-effort)) |
+| `/model-settings`     | Show or set temperature, top_p, top_k, seed and num_ctx for the session (see [model settings](docs/model-settings.md)) |
 | `/tools`              | Open a panel to enable or disable each tool                |
 | `/mcp`                | List MCP servers and their connection status               |
 | `/clear`              | Clear the conversation and start a new session             |
@@ -320,7 +321,14 @@ default = "sensai"               # persona at start-up; remove it to use the bas
 
 [agent]
 thinking_effort = "medium"       # none | low | medium | high | ultra
+
+[generation]
+temperature = 0.1                # low: consistent, reproducible math answers
+num_ctx = 4096                   # context length, in tokens
 ```
+
+`[generation]` also accepts `top_p`, `top_k` and `seed`. Why these values, with measurements:
+[docs/model-settings.md](docs/model-settings.md).
 
 The model is chosen on the command line with `--model`.
 
@@ -378,6 +386,7 @@ To evaluate a prompt change against a real model, use
 * Architecture: [engine](docs/core/engine.md), [agent](docs/core/agent.md),
   [models](docs/core/models.md), [ports](docs/core/ports.md), [prompts](docs/core/prompts.md),
   [TUI](docs/adapters/tui.md)
+* Model settings, with measurements: [docs/model-settings.md](docs/model-settings.md)
 * Database: [design](docs/database.md), [schema](docs/database_schema.md),
   [CLI](docs/database_cli.md)
 * Target user: [Titouan](docs/user-profile.md)

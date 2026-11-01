@@ -110,6 +110,7 @@ def chat_payload(
     sampling = {
         "temperature": options.temperature,
         "top_p": options.top_p,
+        "top_k": options.top_k,
         "seed": options.seed,
         "num_ctx": options.num_ctx,
         "num_predict": options.max_tokens,

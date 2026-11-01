@@ -243,6 +243,7 @@ async def build_agent(
         ),
     )
     agent.thinking_effort = config.agent.thinking_effort
+    agent.chat_options = config.generation
     return agent
 
 

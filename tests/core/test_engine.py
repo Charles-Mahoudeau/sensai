@@ -27,6 +27,7 @@ from sensai.core.models import (
     ThinkingEffort,
 )
 from sensai.core.models.llm import (
+    ChatOptions,
     LoadedModel,
     ThinkingDelta,
     UsageTotals,
@@ -250,6 +251,27 @@ def test_thinking_effort_works_with_runners_that_do_not_support_it() -> None:
     engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
 
     assert engine.cycle_thinking_effort() is ThinkingEffort.NONE
+
+
+def test_chat_options_reach_the_runner() -> None:
+    """The engine reads and sets the runner's generation options."""
+    agent = ReActAgent(FakeLLM([]), ToolRegistry())
+    engine = Engine(agent, Pipeline(), EventBus())
+    assert engine.chat_options == ChatOptions()
+
+    engine.chat_options = ChatOptions(temperature=0.1)
+
+    assert agent.chat_options == ChatOptions(temperature=0.1)
+    assert engine.chat_options.temperature == 0.1
+
+
+def test_chat_options_are_empty_for_runners_without_them() -> None:
+    """Without runner support the options stay empty and setting is a no-op."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    engine.chat_options = ChatOptions(temperature=0.1)
+
+    assert engine.chat_options == ChatOptions()
 
 
 def test_engine_lists_and_toggles_its_tools() -> None:
