@@ -92,7 +92,7 @@ class HttpMcpClient:
         """
         # Protocol 2026-07-28 is stateless: no initialize/initialized handshake,
         # `server/discover` replaces it, and every request carries its own `_meta`.
-        self._logger.info(f"initializing MCP {self._name}: discover phase")
+        self._logger.info("initializing MCP %s: discover phase", self._name)
         try:
             resp, resp_json = await self._request("server/discover")
             protocol_version = resp.headers.get("Mcp-Protocol-Version")
@@ -101,25 +101,31 @@ class HttpMcpClient:
             result = self._result("server/discover", resp_json)
             server_info = result["_meta"]["io.modelcontextprotocol/serverInfo"]
         except Exception as e:
-            self._logger.error(f"failed to initialize MCP server at {self._url}: {e}")
+            self._logger.error(
+                "failed to initialize MCP server at %s: %s", self._url, e
+            )
             raise McpUnavailableError(
                 f"failed to initialize MCP server at {self._url}: {e}"
             ) from e
         # A missing header means the server accepted the version we sent.
         if protocol_version is not None and protocol_version != PROTOCOL_VERSION:
             self._logger.error(
-                f"MCP server at {self._url} uses unsupported protocol version "
-                f"{protocol_version} (expected {PROTOCOL_VERSION})"
+                "MCP server at %s uses unsupported protocol version %s (expected %s)",
+                self._url,
+                protocol_version,
+                PROTOCOL_VERSION,
             )
             raise McpUnavailableError(
                 f"{self._name}: unsupported protocol version {protocol_version!r}, "
                 f"expected {PROTOCOL_VERSION!r}"
             )
         self._logger.info(
-            f"initialized MCP {self._name}: "
-            f"{server_info.get('name')} {server_info.get('version')} "
-            f"with protocol version {PROTOCOL_VERSION} "
-            f"and session id {self._session_id}"
+            "initialized MCP %s: %s %s with protocol version %s and session id %s",
+            self._name,
+            server_info.get("name"),
+            server_info.get("version"),
+            PROTOCOL_VERSION,
+            self._session_id,
         )
 
     async def aclose(self) -> None:
@@ -285,10 +291,12 @@ class HttpMcpClient:
                 "POST", "", json=payload, headers=headers
             ) as resp:
                 self._logger.info(
-                    f"request to MCP {self._name}: "
-                    f"method={payload['method']} id={payload['id']}"
+                    "request to MCP %s: method=%s id=%s",
+                    self._name,
+                    payload["method"],
+                    payload["id"],
                 )
-                self._logger.debug(f"request payload to MCP {self._name}: {payload}")
+                self._logger.debug("request payload to MCP %s: %s", self._name, payload)
                 if resp.is_error:
                     body = (await resp.aread()).decode(errors="replace")
                     raise McpUnavailableError(

@@ -31,6 +31,7 @@ from sensai.adapters.storage.repositories import (
 from sensai.adapters.storage.sqlite import SqliteDatabase
 from sensai.adapters.tui import SensaiApp
 from sensai.adapters.tui.commands.builtin import default_registry
+from sensai.adapters.tui.log_buffer import LogBuffer
 from sensai.config import Config, load_config
 from sensai.core.agent.memory_extraction import MemoryExtractor
 from sensai.core.agent.memory_recall import MemoryRecall
@@ -51,7 +52,7 @@ from sensai.core.prompts import (
     load_defaults,
 )
 from sensai.core.sessions import SessionRecorder
-from sensai.core.tools.builtin import memory, python, web_search
+from sensai.core.tools.builtin import calculator, memory, python, web_search
 from sensai.core.tools.mcp import register_mcp_server
 from sensai.core.tools.registry import ToolRegistry
 from sensai.core.usage import MeteredLLM, UsageMeter
@@ -156,6 +157,7 @@ async def build_tools(
     """
     tool_registry = ToolRegistry()
     web_search.register_self(tool_registry)
+    calculator.register_self(tool_registry)
     memory.register_self(tool_registry, memory_repository)
     await _register_sandbox(tool_registry, config)
 
@@ -368,12 +370,18 @@ async def _serve(config: Config, options: ChatOptions) -> None:
         )
         watcher = asyncio.create_task(recorder.watch())
         await asyncio.sleep(0)  # subscribed before the first message
+        log_buffer = LogBuffer(logging.INFO)
+        logging.getLogger().addHandler(log_buffer)
         commands = default_registry(
             on_clear=recorder.start_new,
             on_resume=recorder.resume,
             persona_names=engine.persona_names,
+            log_buffer=log_buffer,
         )
-        await SensaiApp(engine, model=config.model, commands=commands).run_async()
+        try:
+            await SensaiApp(engine, model=config.model, commands=commands).run_async()
+        finally:
+            logging.getLogger().removeHandler(log_buffer)
         await _cancel(watcher)
         await recorder.save()
 

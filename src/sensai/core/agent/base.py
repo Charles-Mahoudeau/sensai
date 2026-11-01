@@ -78,7 +78,7 @@ class Agent:
         self._llm = llm
         self._tool_registry = tool_registry
         self._max_tool_calls = 10
-        self._logger = logging.getLogger("Agent")
+        self._logger = logging.getLogger(__name__)
 
     async def run(self, messages: tuple[Message, ...]) -> AsyncIterator[AgentEvent]:
         """Relay LLM events and translate LLM failures to a core error.

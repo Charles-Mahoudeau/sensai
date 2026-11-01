@@ -69,3 +69,23 @@ Acceptance criteria:
   `--model and --config are required to start the chat`.
 
 Check: `uv run pytest tests/test_cli.py tests/test_config.py`
+
+## B1-4 · Read formulas as maths, not as LaTeX code
+
+**As** Titouan, who has never written LaTeX,
+**I want** the formulas in Sensai's answers to look like the maths in my textbook,
+**so that** I read `x = (−b ± √Δ)/(2a)` instead of `\frac{-b \pm \sqrt{\Delta}}{2a}`, and follow the
+calculation instead of decoding it.
+
+Link to the scenario: [constraints](../user-profile.md#constraints-this-puts-on-the-system),
+notation used in French *lycée* maths.
+
+Acceptance criteria:
+
+- An answer containing `$\frac{-b \pm \sqrt{\Delta}}{2a}$` is shown as `(-b ± √Δ)/(2a)`.
+- Powers and indices become superscripts and subscripts: `x^2 + y^{10} = z_1` is shown as
+  `x² + y¹⁰ = z₁`.
+- Symbols are shown as such: `\mathbb{R}` as `ℝ`, `\leq` as `≤`, `\sqrt{x^2+1}` as `√(x²+1)`.
+- An incomplete formula, for example cut by an interruption, is shown without crashing the chat.
+
+Check: `uv run pytest tests/adapters/tui/test_latex.py tests/adapters/tui/widgets/test_math_markdown.py`

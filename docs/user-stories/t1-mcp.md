@@ -96,3 +96,46 @@ Acceptance criteria:
 - Every tool is enabled again at the next start, except with `--no-tools`.
 
 Check: `uv run pytest tests/adapters/tui/commands/test_builtin.py tests/core/tools/test_registry.py`
+
+## T1-5 · Sensai uses a calculator instead of calculating in its head
+
+**As** Titouan, who checks his homework against Sensai's numbers,
+**I want** Sensai to call a calculator for every calculation and give its result as returned,
+**so that** I never copy a wrong number that a small model made up while calculating mentally.
+
+Link to the scenario: [his needs](../user-profile.md#what-he-needs-from-sensai), "trust what he
+reads", and [typical session](../user-profile.md#a-typical-session), step 4 (checking his answer).
+
+Acceptance criteria:
+
+- « Combien font (12,5 × 4)² / √16 ? » shows a `calculator` call in the reasoning block, and the
+  answer gives 625, the value the tool returned.
+- An exact result is returned after `=` (`2 ^ 10 = 1024`), a rounded one after `≈`
+  (`sqrt 2 ≈ 1.4142135623731`), so Titouan knows when a value is approximate.
+- `calculator` is listed in `/tools` and can be disabled there like any other tool.
+
+Check: `uv run pytest tests/core/tools/builtin/test_calculator.py`
+
+## T1-6 · A calculator that refuses instead of giving a wrong number
+
+**As** Titouan, who sometimes types an impossible or badly written calculation,
+**I want** the calculator to report an error instead of returning a result,
+**so that** Sensai tells me what is wrong with my calculation rather than answering with a number
+that means nothing.
+
+Link to the scenario: [his needs](../user-profile.md#what-he-needs-from-sensai), "trust what he
+reads".
+
+Acceptance criteria:
+
+- `1 / 0` returns a `ZeroDivisionError` error result, even inside a longer expression
+  (`1 / 0 + 1`).
+- An empty, malformed (`5 +`) or non-arithmetic expression (`__import__('os')`) is refused as an
+  error; nothing is executed.
+- An equation with an unknown (`x + 2 = 5`) is refused: the calculator does not solve equations.
+- A result too large (`10 ^ 4001`) or one that underflows to zero (`e ^ -800`) is refused instead of
+  being returned as a false value.
+- After an error, the turn still ends with an answer that says what went wrong (see
+  [A1-3](a1-react.md)).
+
+Check: `uv run pytest tests/core/tools/builtin/test_calculator.py`
