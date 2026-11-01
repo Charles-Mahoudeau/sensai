@@ -7,6 +7,7 @@ from sensai.adapters.tui.widgets.command_menu import CommandMenu
 from sensai.adapters.tui.widgets.effort_label import EffortLabel
 from sensai.adapters.tui.widgets.error_message import ErrorMessage
 from sensai.adapters.tui.widgets.hint_message import HintMessage
+from sensai.adapters.tui.widgets.mode_label import ModeLabel
 from sensai.adapters.tui.widgets.persona_label import PersonaLabel
 from sensai.adapters.tui.widgets.prompt_input import PromptInput
 from sensai.adapters.tui.widgets.reasoning_group import (
@@ -25,6 +26,7 @@ __all__ = [
     "EffortLabel",
     "ErrorMessage",
     "HintMessage",
+    "ModeLabel",
     "PersonaLabel",
     "PromptInput",
     "ReasoningGroup",
