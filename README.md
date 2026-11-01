@@ -86,6 +86,7 @@ Type `/` in the prompt to get completions.
 |-----------------------|------------------------------------------------------------|
 | `/persona <name>`     | Switch persona (see [Personas](#personas))                 |
 | `/effort <level>`     | Change how much the agent reasons (see [ReAct](#react-agent-and-thinking-effort)) |
+| `/mode <mode>`        | Answer fully (`default`) or only give the steps to follow (`plan`, see [Plan mode](#plan-mode)) |
 | `/model-settings`     | Show or set temperature, top_p, top_k, seed and num_ctx for the session (see [model settings](docs/model-settings.md)) |
 | `/tools`              | Open a panel to enable or disable each tool                |
 | `/mcp`                | List MCP servers and their connection status               |
@@ -244,6 +245,26 @@ Set the default with `[agent] thinking_effort`, or change it live:
 /effort high
 ```
 
+### Plan mode
+
+In plan mode, Sensai does not solve the exercise: it gives the steps to follow, how to do each
+one and the course notion it uses, then how to check the result, without any calculation or
+result. The student does the work with a guide.
+
+```text
+/mode plan
+Résous x² − 5x + 6 = 0
+/mode default
+```
+
+The plan is a structured output: the model answers in JSON under `config/schemas/plan.json`,
+Sensai validates it and shows it as a numbered list. It needs `[structured_output] enabled = true`
+(the default in `config/sensai.toml`); otherwise `/mode plan` is refused. In plan mode there is no
+reasoning step and no tool call, so no tool result can give the answer away. The instruction sent
+with the exercise is the versioned prompt `react_plan`. Sensai always starts in the default mode,
+and the plan stays in the conversation when you switch back. Details:
+[docs/structured-output.md](docs/structured-output.md).
+
 ### Prompt versioning
 
 Every prompt Sensai sends to the model is versioned: each version is stored in `sensai.db` with
@@ -259,6 +280,7 @@ Versioned prompts:
 | `react_thought`     | ReAct agent: private thought before acting                     |
 | `react_notes`       | ReAct agent: passes that thought to the acting call            |
 | `react_answer`      | ReAct agent: final answer after tool results                   |
+| `react_plan`        | Plan mode: asks for the steps of the method, without results   |
 | `memory_extraction` | Memory: extracts the facts to save / forget from a message     |
 | `memory_recall`     | Memory: title above the recalled memories                      |
 | `judge`             | `prompts compare`: judges which of two answers is better       |

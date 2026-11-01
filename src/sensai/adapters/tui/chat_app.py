@@ -20,6 +20,7 @@ from sensai.adapters.tui.widgets import (
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    ModeLabel,
     PersonaLabel,
     PromptInput,
     ReasoningGroup,
@@ -110,6 +111,7 @@ class SensaiApp(App[None]):
         )
         with Horizontal(id="statusbar"):
             yield Static(id="status", markup=False)
+            yield ModeLabel(self._engine.mode)
             yield PersonaLabel(self._engine.persona)
             yield EffortLabel(self._engine.thinking_effort)
 
@@ -178,7 +180,8 @@ class SensaiApp(App[None]):
         await transcript.mount(Banner(subtitle))
 
     def refresh_status(self) -> None:
-        """Show the engine's current persona and effort in the status bar."""
+        """Show the engine's current mode, persona and effort in the status bar."""
+        self.query_one(ModeLabel).set_mode(self._engine.mode)
         self.query_one(PersonaLabel).set_persona(self._engine.persona)
         self.query_one(EffortLabel).set_effort(self._engine.thinking_effort)
 

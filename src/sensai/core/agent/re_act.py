@@ -25,6 +25,7 @@ from sensai.core.agent.step import (
 )
 from sensai.core.agent.structured import format_structured_output
 from sensai.core.agent.thought_stream import ThoughtStream
+from sensai.core.errors import ModeUnavailableError
 from sensai.core.models import TextDelta, ThinkingEffort, ToolResult
 from sensai.core.models.llm import ChatOptions, Message, ThinkingDelta
 from sensai.core.ports import LLMResponseError
@@ -154,6 +155,24 @@ class ReActAgent(Agent):
     def thinking_effort(self, value: ThinkingEffort) -> None:
         self._thinking_effort = value
 
+    @property
+    def mode(self) -> AgentMode:
+        """How the agent answers: `"answer"`, or `"plan"` for the method only.
+
+        Raises:
+            ModeUnavailableError: When set to `"plan"` without structured output.
+        """
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: AgentMode) -> None:
+        if value == "plan" and self._structured_output is None:
+            raise ModeUnavailableError(
+                "plan mode needs structured output: set enabled = true under "
+                "[structured_output] in the configuration"
+            )
+        self._mode = value
+
     def _options(self, schema: Mapping[str, Any] | None = None) -> ChatOptions | None:
         """The configured generation options, with `schema` for the reply.
 
@@ -179,7 +198,10 @@ class ReActAgent(Agent):
         seen: set[tuple[str, str]] = set()
         failures: Counter[str] = Counter()
         retry_cut = True
-        for _ in range(self._thinking_effort.level):
+        # A plan only describes the method: no reasoning step, so no tool result
+        # can give the answer away.
+        cycles = 0 if self._mode == "plan" else self._thinking_effort.level
+        for _ in range(cycles):
             steps: list[Step] = []
             async for event in self._think(
                 run, tools, notes, steps, retry_cut=retry_cut
@@ -304,9 +326,12 @@ class ReActAgent(Agent):
         Free-form answers stream as they come; in plan mode the answer follows
         the plan schema and is shown once formatted.
         """
-        block = (
-            self._prompts.notes.format(thought=_describe_notes(notes)) if notes else ""
-        )
+        if self._mode == "plan" and self._prompts.plan:
+            block = "\n\n" + self._prompts.plan
+        elif notes:
+            block = self._prompts.notes.format(thought=_describe_notes(notes))
+        else:
+            block = ""
         last = run.messages[-1]
         if last.role == "user":
             messages = [*run.messages[:-1], Message.user(last.content + block)]

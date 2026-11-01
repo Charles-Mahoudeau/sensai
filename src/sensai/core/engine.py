@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from sensai.core import agent
 from sensai.core.agent.events import TurnCompleted
-from sensai.core.errors import EngineError, SensaiError, SubmissionInProgressError
+from sensai.core.errors import (
+    EngineError,
+    ModeUnavailableError,
+    SensaiError,
+    SubmissionInProgressError,
+)
 from sensai.core.events import (
     Done,
     ErrorEvent,
@@ -31,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Sequence
 
     from sensai.core.agent.events import AgentEvent
+    from sensai.core.agent.re_act import AgentMode
     from sensai.core.model_memory import ModelMemory
     from sensai.core.models import McpServerStatus, ToolInfo
     from sensai.core.models.llm import LoadedModel, UsageReport
@@ -54,6 +60,13 @@ class ThinkingRunner(Protocol):
     """A runner whose reasoning effort can be changed between turns."""
 
     thinking_effort: ThinkingEffort
+
+
+@runtime_checkable
+class ModalRunner(Protocol):
+    """A runner that can answer in another mode, such as a plan of the method."""
+
+    mode: AgentMode
 
 
 @runtime_checkable
@@ -148,6 +161,32 @@ class Engine:
         """Switch the runner to the next thinking effort, wrapping after the highest."""
         self.thinking_effort = self.thinking_effort.next()
         return self.thinking_effort
+
+    @property
+    def mode(self) -> AgentMode:
+        """How the runner answers: `"answer"`, or `"plan"` for the method only.
+
+        A runner without modes always answers.
+        """
+        if isinstance(self._runner, ModalRunner):
+            return self._runner.mode
+        return "answer"
+
+    def set_mode(self, mode: AgentMode) -> None:
+        """Switch the runner to another mode, keeping the history.
+
+        Applies from the next submission.
+
+        Raises:
+            SubmissionInProgressError: A submission is still running.
+            ModeUnavailableError: The runner cannot answer in that mode.
+        """
+        if self._tasks:
+            raise SubmissionInProgressError("A submission is already in progress.")
+        if isinstance(self._runner, ModalRunner):
+            self._runner.mode = mode
+        elif mode != "answer":
+            raise ModeUnavailableError(f"this runner has no {mode} mode")
 
     def tools(self) -> tuple[ToolInfo, ...]:
         """Every tool the runner may be offered, enabled or not."""

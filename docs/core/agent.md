@@ -37,7 +37,7 @@ adapter-specific failures to front-ends.
 The agent adds no system message: the Engine prepends it (the active `system`
 prompt followed by the user profile), so the model receives exactly one.
 
-`ReActAgent` takes its three prompts as an `AgentPrompts` value
+`ReActAgent` takes its prompts as an `AgentPrompts` value
 (`core/agent/prompts.py`):
 
 | Field | Prompt name | Used for |
@@ -45,6 +45,7 @@ prompt followed by the user profile), so the model receives exactly one.
 | `thought` | `react_thought` | Private thought and its action; `{tools}` is filled in |
 | `notes` | `react_notes` | Wraps the turn's previous thoughts for the next thought and the answer; `{thought}` is filled in |
 | `answer` | `react_answer` | Final "answer now" request after tool results |
+| `plan` | `react_plan` | Appended to the user's message in plan mode; empty adds nothing |
 
 `app.py` builds it from the active versions in the prompt library;
 `AgentPrompts.defaults()` uses the texts shipped with the code (tests, or any

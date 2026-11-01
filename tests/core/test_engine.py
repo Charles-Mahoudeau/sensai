@@ -9,8 +9,9 @@ import pytest
 
 from sensai.core.agent.events import TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
-from sensai.core.errors import SubmissionInProgressError
+from sensai.core.errors import ModeUnavailableError, SubmissionInProgressError
 from sensai.core.events import (
     Done,
     EventBus,
@@ -496,3 +497,47 @@ def test_restore_replaces_the_history() -> None:
 
     assert [m.content for m in engine.history] == ["b", "c"]
     assert not engine.busy
+
+
+def test_mode_reaches_the_runner_and_keeps_the_history() -> None:
+    """The engine switches its agent to plan mode; the conversation stays."""
+    agent = ReActAgent(
+        FakeLLM([]),
+        ToolRegistry(),
+        structured_output=StructuredOutputCatalog({"plan": {}}),
+    )
+    engine = Engine(agent, Pipeline(), EventBus(), history=[Message.user("Hi")])
+    assert engine.mode == "answer"
+
+    engine.set_mode("plan")
+
+    assert agent.mode == "plan"
+    assert engine.mode == "plan"
+    assert engine.history == (Message.user("Hi"),)
+
+
+def test_runners_without_modes_only_answer() -> None:
+    """A runner that has no modes stays in the default one."""
+    engine = Engine(ScriptedRunner(()), Pipeline(), EventBus())
+
+    engine.set_mode("answer")
+    with pytest.raises(ModeUnavailableError):
+        engine.set_mode("plan")
+
+    assert engine.mode == "answer"
+
+
+def test_set_mode_is_refused_while_a_submission_runs() -> None:
+    """The mode can't change under a running turn."""
+
+    async def run() -> None:
+        engine = Engine(WaitingRunner(), Pipeline(), EventBus())
+        submission_id = engine.submit("Hello")
+
+        with pytest.raises(SubmissionInProgressError):
+            engine.set_mode("plan")
+
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+
+    asyncio.run(run())

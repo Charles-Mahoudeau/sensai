@@ -16,16 +16,18 @@
           "description": {
             "type": "string"
           },
-          "priority": {
-            "type": "string",
-            "enum": ["low", "medium", "high"]
+          "notion": {
+            "type": "string"
           }
         },
-        "required": ["title", "description", "priority"],
+        "required": ["title", "description", "notion"],
         "additionalProperties": false
       }
+    },
+    "check": {
+      "type": "string"
     }
   },
-  "required": ["title", "steps"],
+  "required": ["title", "steps", "check"],
   "additionalProperties": false
 }

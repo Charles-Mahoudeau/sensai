@@ -18,6 +18,7 @@ from sensai.adapters.tui.panels import (
     UsagePanel,
 )
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.models import Message, ThinkingEffort
@@ -39,6 +40,7 @@ def test_default_registry_lists_the_builtins_in_menu_order() -> None:
     assert [spec.name for spec in default_registry().specs()] == [
         "/clear",
         "/effort",
+        "/mode",
         "/model-settings",
         "/persona",
         "/mcp",
@@ -98,6 +100,78 @@ def test_effort_shows_what_the_runner_really_uses() -> None:
     asyncio.run(default_registry().run("/effort ultra", context))
 
     assert context.hints == ["Thinking effort: No thinking"]
+
+
+def _planner() -> Engine:
+    """An engine whose agent can answer in plan mode."""
+    agent = ReActAgent(
+        FakeLLM([]),
+        ToolRegistry(),
+        structured_output=StructuredOutputCatalog({"plan": {}}),
+    )
+    return Engine(agent, Pipeline(), EventBus())
+
+
+def test_mode_shows_sets_and_rejects_modes() -> None:
+    """Bare shows the mode and the choices; a mode is applied; a bad one is listed."""
+    engine = _planner()
+    context = FakeContext(engine)
+    registry = default_registry()
+
+    async def run() -> None:
+        await registry.run("/mode", context)
+        await registry.run("/mode plan", context)
+        await registry.run("/mode bogus", context)
+
+    asyncio.run(run())
+
+    assert engine.mode == "plan"
+    assert context.refreshed == 1
+    assert context.hints == [
+        "Mode: default (available: default, plan)",
+        "Mode: plan",
+        "Unknown mode 'bogus'. Use one of: default, plan",
+    ]
+
+    asyncio.run(registry.run("/mode default", context))
+
+    assert engine.mode == "answer"
+    assert context.hints[-1] == "Mode: default"
+
+
+def test_mode_plan_is_refused_without_structured_output() -> None:
+    """The setting to change is named, and the default mode stays."""
+    engine = Engine(ReActAgent(FakeLLM([]), ToolRegistry()), Pipeline(), EventBus())
+    context = FakeContext(engine)
+
+    asyncio.run(default_registry().run("/mode plan", context))
+
+    assert engine.mode == "answer"
+    assert context.refreshed == 0
+    assert context.hints == [
+        "Could not change the mode: plan mode needs structured output: set "
+        "enabled = true under [structured_output] in the configuration"
+    ]
+
+
+def test_mode_is_not_changed_during_an_answer() -> None:
+    """A running answer keeps the mode it started with."""
+
+    async def run() -> FakeContext:
+        engine = Engine(WaitingRunner(), Pipeline(), EventBus())
+        context = FakeContext(engine)
+        submission_id = engine.submit("Résous x² = 4")
+        await default_registry().run("/mode plan", context)
+        engine.interrupt(submission_id)
+        await asyncio.sleep(0)
+        return context
+
+    context = asyncio.run(run())
+
+    assert context.engine.mode == "answer"
+    assert context.hints == [
+        "Could not change the mode: A submission is already in progress."
+    ]
 
 
 def test_exit_and_its_alias_close_the_front_end() -> None:

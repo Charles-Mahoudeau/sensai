@@ -11,3 +11,7 @@ class EngineError(SensaiError):
 
 class SubmissionInProgressError(SensaiError):
     """Raised when a submission is requested while another is running."""
+
+
+class ModeUnavailableError(SensaiError):
+    """Raised when the runner cannot answer in the requested mode."""

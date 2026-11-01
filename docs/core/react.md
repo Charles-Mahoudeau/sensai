@@ -231,8 +231,10 @@ turn's notes:
   the tool results.
 
 In the default mode the answer streams to the user as `TextDelta` events. In
-plan mode it follows the `plan` schema and is shown once, formatted as Markdown
-(see [Structured Output](../structured-output.md)).
+plan mode there is no step at all: `_answer` is the only call, with `react_plan`
+appended to the user's message; the reply follows the `plan` schema and is shown
+once, formatted as Markdown (see [Structured Output](../structured-output.md)).
+The mode is changed with `/mode`, through `Engine.set_mode`.
 
 ## Remembering
 
