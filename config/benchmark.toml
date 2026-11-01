@@ -1,0 +1,37 @@
+[machine]
+name = "matthieu-laptop"
+description = "Intel Core i5-1335U, 16 GB RAM, integrated graphics only (CPU inference)"
+
+[ollama]
+url = "http://localhost:11434"
+
+[run]
+cases = "benchmarks/cases.toml"
+results_dir = "benchmarks/results"
+models = [
+    "llama3.2:3b",
+    "llama3.1:8b",
+    "qwen2.5:7b",
+]
+
+[generation]
+temperature = 0.0     # deterministic: the same inputs give the same answers
+seed = 42
+num_ctx = 4096        # context window loaded by Ollama; it changes the memory used
+num_predict = 1024    # cap on generated tokens: a longer answer counts as truncated
+
+# Optional: a model grades how well each answer explains the method (1 to 5).
+# It runs after every benchmarked model, so it never competes with them for memory.
+[judge]
+enabled = false
+model = "llama3.1:8b"
+
+[prompt]
+system = """
+Tu es Sensai, un professeur de mathématiques patient qui aide Titouan, un élève de
+Terminale en spécialité mathématiques qui a beaucoup de difficultés.
+Explique la méthode avant de calculer, puis résous l'exercice étape par étape en
+montrant chaque calcul intermédiaire. Réponds en français, avec les notations du lycée.
+Termine toujours ta réponse par une dernière ligne de la forme :
+Réponse finale : <le résultat>
+"""

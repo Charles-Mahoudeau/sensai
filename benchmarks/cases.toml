@@ -1,0 +1,123 @@
+# Benchmark questions.
+#
+# `use_case` questions come from the Terminale maths speciality curriculum (see
+# docs/user-profile.md); `generic` questions are outside it, for comparison.
+#
+# An answer is correct when its final line ("Réponse finale : …") matches every
+# `must_match` regex and no `must_not_match` regex. Both are applied to a normalized
+# text: lowercase, no spaces, "−" read as "-", "^2" as "²", "^3" as "³", "ˣ" as
+# "^x", decimal commas as dots, and no "*", "·", "$" or "\". A case without
+# `must_match` has no single checkable result (a proof): only the judge grades it.
+
+[[cases]]
+id = "second-degre"
+category = "use_case"
+topic = "Second degré"
+prompt = "Résous dans ℝ l'équation x² − 5x + 6 = 0."
+must_match = ['(?<![\d.])2(?![\d.])', '(?<![\d.])3(?![\d.])']
+
+[[cases]]
+id = "derivee-polynome"
+category = "use_case"
+topic = "Dérivation"
+prompt = "Calcule la dérivée de la fonction f définie sur ℝ par f(x) = x³ − 3x² + 2x − 1."
+must_match = ['3x²-6x\+2']
+
+[[cases]]
+id = "derivee-exponentielle"
+category = "use_case"
+topic = "Fonction exponentielle"
+prompt = "Calcule la dérivée de la fonction f définie sur ℝ par f(x) = x·eˣ."
+must_match = ['\((x\+1|1\+x)\)|e\^x\+xe\^x|xe\^x\+e\^x']
+
+[[cases]]
+id = "limite-quotient"
+category = "use_case"
+topic = "Limites"
+prompt = "Calcule la limite en +∞ de f(x) = (2x² + 1) / (x² − 3)."
+must_match = ['(?<![\d.x])2(?![\d.²x])']
+must_not_match = ['\+∞$', '\+inf']
+
+[[cases]]
+id = "suite-arithmetique"
+category = "use_case"
+topic = "Suites"
+prompt = """
+Soit (uₙ) la suite arithmétique de premier terme u₀ = 3 et de raison 4.
+Calcule u₁₀, puis la somme S = u₀ + u₁ + … + u₁₀.
+"""
+# The final line gives the last thing asked, the sum; u₁₀ = 43 comes before it.
+must_match = ['(?<![\d.])253(?![\d.])']
+
+[[cases]]
+id = "recurrence"
+category = "use_case"
+topic = "Raisonnement par récurrence"
+prompt = "Démontre par récurrence que pour tout entier naturel n, 2ⁿ ≥ n + 1."
+
+[[cases]]
+id = "integrale"
+category = "use_case"
+topic = "Intégration"
+prompt = "Calcule l'intégrale de 0 à 2 de (3x² + 2x) dx."
+must_match = ['(?<![\d.])12(?![\d.])']
+
+[[cases]]
+id = "logarithme-domaine"
+category = "use_case"
+topic = "Fonction logarithme"
+prompt = "Résous dans ℝ l'équation ln(x) + ln(x − 2) = ln(3)."
+must_match = ['(?<![\d.\-])3(?![\d.])']
+must_not_match = ['-1;3|3;-1|x=-1oux=3|x=3oux=-1']
+
+[[cases]]
+id = "loi-binomiale"
+category = "use_case"
+topic = "Probabilités"
+prompt = """
+On lance 10 fois une pièce équilibrée. X est le nombre de « pile » obtenus.
+Calcule P(X = 5), sous forme de fraction irréductible puis arrondie à 10⁻³.
+"""
+must_match = ['63/256|252/1024|frac\{63\}\{256\}|0\.246']
+
+[[cases]]
+id = "probabilites-totales"
+category = "use_case"
+topic = "Probabilités conditionnelles"
+prompt = """
+On a P(A) = 0,3, P_A(B) = 0,6 et P_Ā(B) = 0,2.
+Calcule P(B) avec la formule des probabilités totales.
+"""
+must_match = ['0\.32(?!\d)|(?<![\d.])32%']
+
+[[cases]]
+id = "vecteurs-orthogonaux"
+category = "use_case"
+topic = "Géométrie dans l'espace"
+prompt = """
+Dans un repère orthonormé de l'espace, les vecteurs u(1 ; 2 ; −1) et v(2 ; −1 ; 0)
+sont-ils orthogonaux ? Justifie.
+"""
+must_match = ['orthogon|^oui']
+must_not_match = ['pasorthogon', 'nonorthogon', 'nesontpas', '^non']
+
+[[cases]]
+id = "capitale"
+category = "generic"
+topic = "Culture générale"
+prompt = "Quelle est la capitale de l'Australie ?"
+must_match = ['canberra']
+
+[[cases]]
+id = "duree-trajet"
+category = "generic"
+topic = "Raisonnement"
+prompt = "Un train part à 14 h 10 et arrive à 16 h 45. Combien de temps dure le trajet ?"
+must_match = ['2h35|2heures?(et)?35|(?<![\d.])155(?![\d.])']
+
+[[cases]]
+id = "lettres"
+category = "generic"
+topic = "Comptage"
+prompt = "Combien de lettres « r » y a-t-il dans le mot « arrière » ?"
+must_match = ['(?<![\d.])3(?![\d.])|trois']
