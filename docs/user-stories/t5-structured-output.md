@@ -16,9 +16,9 @@ hardware (a small local model).
 
 Acceptance criteria:
 
-- Every ReAct step request sends a JSON schema in Ollama's `format` field (visible in the
-  `Chat payload` of `sensai.log`); its `action` field only accepts the enabled tools and the final
-  answer.
+- Every ReAct step request sends a JSON schema in Ollama's `format` field; its `action` field only
+  accepts the enabled tools and the final answer. In `/logs`, each step request reads
+  `→ <model> · <n> messages · step(<enabled tools>, answer)`.
 - A tool disabled in `/tools` disappears from that list from the next message.
 - Arguments that do not match the tool's parameters are refused before running, and the error is
   sent back to the model.
@@ -41,9 +41,9 @@ Link to the scenario: [typical session](../user-profile.md#a-typical-session), s
 
 Acceptance criteria:
 
-- The memory extraction request sends a `{facts, forget}` schema in `format`; each fact has a
-  `subject`, a `fact` and a `category` among `preference`, `identity`, `project`, `habit`, `goal`,
-  `other` (visible in `sensai.log`).
+- The memory extraction request sends a `{facts, forget}` schema in `format` (shown as
+  `schema(facts, forget)` in `/logs`); each fact has a `subject`, a `fact` and a `category` among
+  `preference`, `identity`, `project`, `habit`, `goal`, `other`.
 - The answer is parsed and validated against this schema before anything is written to the
   database.
 - Invalid or non-conforming JSON writes nothing: the error is written to `sensai.log` and the

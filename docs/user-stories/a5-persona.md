@@ -39,8 +39,8 @@ Acceptance criteria:
 
 - A `config/personas/examinateur.toml` file with free sections (`[identity]`, `[method]`,
   `[tone]`…) appears in `/persona` right away, without restarting.
-- Its sections become titles in the system message, in the order of the file (visible in the
-  `Chat payload` of `sensai.log`).
+- Its sections become titles in the system message, in the order of the file
+  (`tests/core/test_persona.py`).
 - A value outside a section, or an empty one, makes the selection fail with an error naming the
   file and the faulty key; the active persona does not change.
 - `[personas] default = "examinateur"` in `config/sensai.toml` makes it active at start-up;
