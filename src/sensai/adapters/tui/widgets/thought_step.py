@@ -7,9 +7,10 @@ import time
 from typing import TYPE_CHECKING
 
 from textual.containers import Vertical
-from textual.widgets import Markdown, Static
+from textual.widgets import Static
 
 from sensai.adapters.tui.widgets._text import trim
+from sensai.adapters.tui.widgets.math_markdown import MathMarkdown
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -37,7 +38,7 @@ class ThoughtStep(Vertical):
         self._title_line = Static(markup=False, classes="thought-title")
         self._live_line = Static(markup=False, classes="thought-live")
         self._summary_line = Static(markup=False, classes="thought-summary")
-        self._full_text = Markdown(classes="thought-full")
+        self._full_text = MathMarkdown(classes="thought-full")
         self.add_class("-streaming")
 
     def compose(self) -> ComposeResult:

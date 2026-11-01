@@ -347,3 +347,66 @@ def test_missing_or_odd_max_context_is_unknown() -> None:
 
     with pytest.raises(LLMResponseError):
         _wire.max_context_from_show([])
+
+
+def test_request_summary_names_the_model_size_and_tools() -> None:
+    """A request line gives the model, the message count and the tools offered."""
+    tool = ToolSpec("web_search", "Search.", {"type": "object"})
+
+    summary = _wire.request_summary("llama3", [Message.user("Hi")], [tool], None)
+
+    assert summary == "→ llama3 · 1 message · tools: web_search"
+
+
+def test_request_summary_names_the_step_actions() -> None:
+    """A step schema is shown by the actions it allows."""
+    schema = {
+        "anyOf": [
+            {"properties": {"action": {"const": "run_python"}}},
+            {"properties": {"action": {"const": "answer"}}},
+        ]
+    }
+    messages = [Message.system("S"), Message.user("Hi")]
+
+    summary = _wire.request_summary(
+        "llama3", messages, [], ChatOptions(response_schema=schema)
+    )
+
+    assert summary == "→ llama3 · 2 messages · step(run_python, answer)"
+
+
+def test_request_summary_lists_the_fields_of_other_schemas() -> None:
+    """Any other schema is shown by its top-level fields."""
+    schema = {"type": "object", "properties": {"facts": {}, "forget": {}}}
+
+    summary = _wire.request_summary(
+        "llama3", [Message.user("Hi")], [], ChatOptions(response_schema=schema)
+    )
+
+    assert summary.endswith(" · schema(facts, forget)")
+
+
+def test_reply_summary_gives_time_tokens_reason_and_a_preview() -> None:
+    """A reply line has its duration, tokens, stop reason, calls and text."""
+    zero = timedelta(0)
+    done = ChatDone(
+        Usage(completion_tokens=69, prompt_tokens=1036),
+        "stop",
+        Timings(total=timedelta(seconds=2.34), load=zero, prompt_eval=zero, eval=zero),
+    )
+    calls = [ToolCall("run_python", {"code": "print(1)"})]
+
+    summary = _wire.reply_summary("The\n  answer", calls, done)
+
+    assert summary == (
+        "← 2.3 s · 1036 in / 69 out · stop · calls: run_python · The answer"
+    )
+
+
+def test_reply_summary_cuts_long_replies() -> None:
+    """Only the start of a long reply is kept, ending with an ellipsis."""
+    summary = _wire.reply_summary("x" * 500, [], ChatDone(Usage(1, 2)))
+
+    preview = summary.rsplit(" · ", 1)[1]
+    assert len(preview) == _wire.REPLY_PREVIEW
+    assert preview.endswith("…")

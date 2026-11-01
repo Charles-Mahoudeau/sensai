@@ -41,8 +41,8 @@ Acceptance criteria:
   sections, with free keys and non-empty string values.
 - With `instruction.style = "Réponds en français et détaille chaque calcul"`, a question asked in
   English gets an answer in French with the intermediate calculations.
-- The profile is sent in the system message, after the persona, on every turn: it is visible in
-  the `Chat payload` written to `sensai.log`.
+- The profile is sent in the system message, after the persona, on every turn
+  (`tests/core/test_engine.py`).
 - An unknown section (for example `[hobbies]`) stops the start-up with `unknown section [hobbies]`
   and the list of allowed sections.
 - Without a profile file, Sensai starts with an empty profile.

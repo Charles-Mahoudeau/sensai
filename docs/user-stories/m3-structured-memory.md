@@ -22,7 +22,7 @@ Acceptance criteria:
   proof by induction.
 - A message with no information about the user (« Combien font 12 × 7 ? ») saves nothing.
 - The memories are added to the system message of every turn, under
-  "What you remember about the user" (visible in the `Chat payload` of `sensai.log`).
+  "What you remember about the user" (`tests/core/agent/test_memory_recall.py`).
 
 Check: `uv run pytest tests/core/agent/test_memory_extraction.py tests/core/agent/test_memory_recall.py tests/adapters/storage/repositories/test_memory_repository.py`
 

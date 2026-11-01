@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 
 from sensai.adapters.ollama import OllamaChat
-from sensai.app import _preload, build_agent, build_engine
+from sensai.app import _preload, build_agent, build_engine, build_tools
 from sensai.config import Config, OllamaConfig, ProfileConfig
 from sensai.core.engine import Engine
 from sensai.core.models.llm import LoadedModel
 from sensai.core.tools.registry import ToolRegistry
-from tests.fakes import FakeModelMonitor
+from tests.fakes import FakeModelMonitor, InMemoryMemoryStore
 
 if TYPE_CHECKING:
     import pytest
@@ -57,6 +58,22 @@ def test_build_engine_reads_the_configured_model_from_the_monitor() -> None:
             return await engine.loaded_model()
 
     assert asyncio.run(run()) == model
+
+
+def test_build_tools_registers_the_calculator() -> None:
+    """The calculator is among the built-in tools offered to the model."""
+
+    async def run() -> set[str]:
+        config = Config(
+            model="test-model",
+            ollama=OllamaConfig("http://ollama"),
+            user_profile=ProfileConfig(profile=Path()),
+        )
+        async with contextlib.AsyncExitStack() as stack:
+            registry, _ = await build_tools(config, stack, InMemoryMemoryStore())
+            return {spec.name for spec in registry.spec()}
+
+    assert "calculator" in asyncio.run(run())
 
 
 def test_preload_failure_is_only_logged(caplog: pytest.LogCaptureFixture) -> None:

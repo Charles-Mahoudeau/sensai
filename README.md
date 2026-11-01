@@ -16,6 +16,7 @@ for the optional web search and GitHub tools), and it costs nothing to use.
 * Python 3.14+
 * [uv](https://docs.astral.sh/uv/)
 * [Ollama](https://ollama.com), running locally (default: `http://localhost:11434`)
+* [Docker](https://docs.docker.com/engine/install/), optional: needed by the `run_python` tool
 
 ## Installation
 
@@ -44,6 +45,19 @@ Pick the model according to your hardware:
 ```bash
 ollama pull llama3.2:3b   # or qwen3:8b, or gpt-oss:20b
 ```
+
+### Code sandbox image (for `run_python` tool)
+
+`run_python` runs the model's Python in a Docker container, from an image built locally
+(it is not published on a registry, and `uv sync` only installs Python packages):
+
+```bash
+docker build -t sensai-sandbox src/sensai/adapters/sandbox/image
+```
+
+It takes a few minutes the first time (Python 3.13 with sympy, numpy, scipy, matplotlib and
+pandas, about 580 MB). Run it again after the `Dockerfile` changes. Without Docker or the image,
+Sensai still starts: `run_python` is skipped and the reason is logged.
 
 ## Usage
 
@@ -197,6 +211,7 @@ Disabling the memory tools in `/tools` also stops the automatic memory writes.
 |-------------------------|----------------------------------------------------------------|
 | `web_search`            | Searches the web (DuckDuckGo) and returns the top results      |
 | `memory_*`              | Create, read, update and delete long-term memories             |
+| `run_python`            | Runs Python in an isolated Docker sandbox (math, plots); needs the [sandbox image](#code-sandbox-image-for-run_python) |
 | GitHub tools (MCP)      | The tools exposed by the GitHub MCP server, if `GITHUB_TOKEN` is set |
 
 ```text
@@ -317,6 +332,7 @@ The model is chosen on the command line with `--model`.
 | One tool             | `/tools`, then toggle it                                       |
 | Long-term memory     | Disable the `memory_*` tools in `/tools`                       |
 | GitHub MCP server    | Leave `GITHUB_TOKEN` unset                                     |
+| Code sandbox         | `enabled = false` under `[sandbox]` in `config/sensai.toml`    |
 | ReAct reasoning      | `thinking_effort = "none"` or `/effort none`                   |
 | Persona              | Remove `default` from `[personas]`                             |
 
