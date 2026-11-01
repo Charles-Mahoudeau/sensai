@@ -18,22 +18,33 @@ current context.
 
 File: `config/schemas/plan.json`.
 
-The agent selects this schema in plan mode. It returns a title and at least one
-step. Every step has a title, description, and a priority of `low`, `medium`,
-or `high`.
+The agent selects this schema in plan mode (`/mode plan`), where Sensai gives the
+method to solve an exercise instead of the answer. The plan has a title, at least
+one step, and how to check the result. Every step has a title (what to do), a
+description (how to do it) and the course notion it relies on.
 
 ```json
 {
-  "title": "Prepare a release",
+  "title": "Résoudre x² − 5x + 6 = 0",
   "steps": [
     {
-      "title": "Run tests",
-      "description": "Execute the project test suite.",
-      "priority": "high"
+      "title": "Calculer le discriminant",
+      "description": "Identifie a, b et c, puis calcule Δ.",
+      "notion": "Δ = b² − 4ac"
     }
-  ]
+  ],
+  "check": "Remplace chaque solution dans l'équation."
 }
 ```
+
+It is shown as a numbered list: each step's title in bold, its description, its
+notion in italics, then the check after `✓`.
+
+In plan mode the agent makes a single call: no reasoning step and no tool, so no
+tool result can give the answer away. The versioned prompt `react_plan` is
+appended to the user's message for that call only; it asks for the method and
+forbids any calculation or result. Without structured output, the agent refuses
+plan mode (`ModeUnavailableError`) and stays in the default mode.
 
 ## `permission_decision`
 

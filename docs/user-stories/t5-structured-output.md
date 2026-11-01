@@ -69,3 +69,57 @@ Acceptance criteria:
 - The total of wins per version is shown at the end of the comparison.
 
 Check: `uv run pytest tests/core/prompts/test_comparison.py`
+
+## T5-4 · A plan of the method, without the answer
+
+**As** Titouan, who copies the solution as soon as he sees it and is stuck again on the next
+exercise,
+**I want** Sensai to give me only the steps to follow to solve an exercise, without doing the
+calculations or giving the result,
+**so that** I do the work myself, with a guide, and actually learn the method.
+
+Link to the scenario: [his problem](../user-profile.md#his-problem), "they give the answer, not
+the method", and [typical session](../user-profile.md#a-typical-session), step 4 (trying on his
+own).
+
+Acceptance criteria:
+
+- In plan mode, « Résous x² − 5x + 6 = 0 » gets a numbered plan: a title, then each step with what
+  to do, how to do it and the course notion it uses, then how to check the result.
+- The plan gives neither the solutions (2 and 3) nor the intermediate values (Δ = 1): only what to
+  compute and how.
+- The plan is requested with the `plan` JSON schema in Ollama's `format` field (shown as
+  `schema(title, steps, check)` in `/logs`), validated, then shown as readable text: the JSON is
+  never displayed.
+- In plan mode, no reasoning step and no tool runs: the plan comes from a single model call.
+- The plan stays in the conversation: back in the default mode, « J'ai trouvé Δ = 1, c'est
+  bon ? » gets an answer about this exercise.
+- A reply that does not follow the schema is reported as an error in the chat; Sensai keeps
+  running.
+
+Check: `uv run pytest tests/core/agent/test_structured.py tests/core/agent/structured`
+
+## T5-5 · Switch between the default mode and the plan mode
+
+**As** Titouan, who sometimes wants a full explanation and sometimes only a guide to try alone,
+**I want** to switch between the default mode and the plan mode during the conversation,
+**so that** I choose, exercise by exercise, how much help I get, without losing the exercise in
+progress.
+
+Link to the scenario: [his needs](../user-profile.md#what-he-needs-from-sensai), "understand the
+method".
+
+Acceptance criteria:
+
+- `/mode` shows `Mode: default (available: default, plan)`.
+- `/mode plan` switches to plan mode from the next message, shows `Mode: plan`, and the status bar
+  shows `Plan mode`; `/mode default` goes back and the label disappears.
+- The conversation is kept when the mode changes.
+- **Negative**: `/mode bogus` shows `Unknown mode 'bogus'. Use one of: default, plan` and the mode
+  does not change.
+- **Negative**: changing mode while an answer is running is refused, and the mode does not change.
+- **Negative**: with `[structured_output] enabled = false`, `/mode plan` is refused with a message
+  naming that setting, and Sensai stays in the default mode.
+- Sensai always starts in the default mode.
+
+Check: `uv run pytest tests/adapters/tui/commands/test_builtin.py tests/core/test_engine.py`

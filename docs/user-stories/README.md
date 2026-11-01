@@ -28,5 +28,5 @@ Example messages are written in French, the language Titouan uses with Sensai.
 | [T1] MCP and tools | [T1-1 to T1-6](t1-mcp.md) | Reliable tools, knowing what is available, practising without answers from the web, exact calculations from a calculator |
 | [T2] Python sandbox | [T2-1 to T2-5](t2-sandboxed-code-execution.md) | Exact calculations, simulations and plots, with no risk to his machine |
 | [T3] Web search | [T3-1, T3-2](t3-web-search.md) | Up-to-date information about the bac, nothing made up |
-| [T5] Structured output | [T5-1 to T5-3](t5-structured-output.md) | A reliable small model, a clean memory, measurable comparisons |
+| [T5] Structured output | [T5-1 to T5-5](t5-structured-output.md) | A reliable small model, a clean memory, measurable comparisons, a plan of the method without the answer |
 | [EV3] Logging (partial) | [EV3-1, EV3-2](ev3-logging.md) | The team finds what went wrong and what is slow in his sessions |

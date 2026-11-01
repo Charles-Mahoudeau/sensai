@@ -21,6 +21,7 @@ Prompts in use today:
 | `react_thought` | ReAct agent: asks for a private thought and its action, a tool or the answer (`{tools}` is filled in) |
 | `react_notes` | ReAct agent: wraps the turn's previous thoughts for the next thought and the answer (`{thought}` is filled in) |
 | `react_answer` | ReAct agent: asks for the final answer after tool results |
+| `react_plan` | Plan mode: appended to the user's message, asks for the steps of the method without any result |
 | `judge` | `sensai prompts compare`: judges which of two answers is better |
 | `memory_extraction` | Memory: asks for the facts and subjects to forget of a message (`{memories}` is filled in) |
 | `memory_recall` | Memory: the title above the memories appended to the system message |
