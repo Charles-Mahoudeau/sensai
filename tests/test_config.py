@@ -8,6 +8,7 @@ import pytest
 
 from sensai.config import McpServerConfig, load_config
 from sensai.core.models import ThinkingEffort
+from sensai.core.models.llm import ChatOptions
 from sensai.exceptions import ConfigError
 
 if TYPE_CHECKING:
@@ -176,3 +177,42 @@ def test_invalid_sandbox_values_are_rejected(tmp_path: Path, body: str) -> None:
     """A non-positive or non-numeric limit raises a ConfigError."""
     with pytest.raises(ConfigError, match="sandbox"):
         load_config(_write(tmp_path, f"[sandbox]\n{body}\n"))
+
+
+def test_generation_defaults_to_the_model_settings(tmp_path: Path) -> None:
+    """Without `[generation]`, no option is set: the model's defaults apply."""
+    assert load_config(_write(tmp_path, "")).generation == ChatOptions()
+
+
+def test_generation_section_is_read(tmp_path: Path) -> None:
+    """Each key becomes the ChatOptions field of the same name."""
+    body = (
+        "[generation]\ntemperature = 0\ntop_p = 0.9\ntop_k = 40\n"
+        "seed = 42\nnum_ctx = 8192\n"
+    )
+
+    generation = load_config(_write(tmp_path, body)).generation
+
+    assert generation == ChatOptions(
+        temperature=0.0, top_p=0.9, top_k=40, seed=42, num_ctx=8192
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "message"),
+    [
+        ("temp = 0.1", "unknown generation.temp"),
+        ("temperature = 'low'", "must be a number"),
+        ("top_k = 2.5", "must be an integer"),
+        ("num_ctx = true", "must be an integer"),
+        ("temperature = -1", "at least 0"),
+        ("top_k = 0", "at least 1"),
+        ("top_p = 1.5", "at most 1"),
+    ],
+)
+def test_invalid_generation_values_are_rejected(
+    tmp_path: Path, line: str, message: str
+) -> None:
+    """Unknown keys, wrong types and out-of-range values raise a ConfigError."""
+    with pytest.raises(ConfigError, match=message):
+        load_config(_write(tmp_path, f"[generation]\n{line}\n"))
