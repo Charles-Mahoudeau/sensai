@@ -22,6 +22,12 @@ from sensai.adapters.tui.latex import latex_to_unicode
         (r"\sqrt[3]{8}", "³√8"),
         (r"\cos^2\theta + \sin^2\theta = 1", "cos²θ + sin²θ = 1"),
         (r"\left( \frac{1}{2} \right)", "(1/2)"),
+        (r"x^{\text{big cat}}", "x^(big cat)"),
+        (r"\sqrt[n+k]{x}", "ⁿ⁺ᵏ√x"),
+        (r"\sqrt[q+1]{x}", "(q+1)√x"),
+        (r"\frac{x", "/x"),
+        (r"\frac", "/"),
+        (r"\frac{}{}", "/"),
         (r"\text{if } x \neq 0", "if x ≠ 0"),
     ],
 )

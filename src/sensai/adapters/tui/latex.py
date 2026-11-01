@@ -130,7 +130,7 @@ def _script(table: dict[int, int], marker: str) -> Callable[..., str]:
         [argument] = _arguments(node, 1)
         if argument is None:
             return marker
-        text = "".join(l2tobj.nodelist_to_text([argument]).split())
+        text = l2tobj.nodelist_to_text([argument]).strip()
         if text and all(ord(char) in table for char in text):
             return text.translate(table)
         return marker + (text if len(text) == 1 else f"({text})")
@@ -141,10 +141,9 @@ def _script(table: dict[int, int], marker: str) -> Callable[..., str]:
 def _fraction(node: Node, l2tobj: LatexNodes2Text) -> str:
     """Write a fraction inline, bracketing a numerator or denominator if needed."""
     arguments = _arguments(node, 2)
-    if None in arguments:
-        return ""
     numerator, denominator = (
-        l2tobj.nodelist_to_text([argument]).strip() for argument in arguments
+        "" if argument is None else l2tobj.nodelist_to_text([argument]).strip()
+        for argument in arguments
     )
     if not numerator.isalnum():
         numerator = _grouped(numerator)
@@ -158,7 +157,11 @@ def _root(node: Node, l2tobj: LatexNodes2Text) -> str:
         return "√"
     degree = "" if index is None else l2tobj.nodelist_to_text([index]).strip()
     text = l2tobj.nodelist_to_text([radicand]).strip()
-    return f"{degree.translate(SUPERSCRIPTS)}√{_grouped(text)}"
+    if degree and all(ord(char) in SUPERSCRIPTS for char in degree):
+        degree = degree.translate(SUPERSCRIPTS)
+    elif degree:
+        degree = _grouped(degree)
+    return f"{degree}√{_grouped(text)}"
 
 
 def _arguments(node: Node, count: int) -> list[LatexNode | None]:
