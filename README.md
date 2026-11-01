@@ -380,8 +380,8 @@ To evaluate a prompt change against a real model, use
   [TUI](docs/adapters/tui.md)
 * Database: [design](docs/database.md), [schema](docs/database_schema.md),
   [CLI](docs/database_cli.md)
-* User stories: [prompt versioning](docs/user-stories/a4-prompt-versioning.md),
-  [tools and MCP commands](docs/user-stories/tools-and-mcp-commands.md)
+* Target user: [Titouan](docs/user-profile.md)
+* User stories: [index and traceability](docs/user-stories/README.md)
 
 ## Development
 
