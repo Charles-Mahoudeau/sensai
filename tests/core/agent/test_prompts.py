@@ -10,7 +10,7 @@ from tests.fakes import InMemoryPromptRepository
 
 
 def test_defaults_are_the_shipped_react_prompts() -> None:
-    """`defaults()` reads the three ReAct defaults from the code."""
+    """`defaults()` reads the ReAct defaults from the code."""
     texts = load_defaults()
 
     prompts = AgentPrompts.defaults()
@@ -19,6 +19,7 @@ def test_defaults_are_the_shipped_react_prompts() -> None:
         thought=texts["react_thought"],
         notes=texts["react_notes"],
         answer=texts["react_answer"],
+        plan=texts["react_plan"],
     )
 
 

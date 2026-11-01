@@ -29,6 +29,7 @@ from sensai.adapters.tui.widgets import (
     EffortLabel,
     ErrorMessage,
     HintMessage,
+    ModeLabel,
     PersonaLabel,
     PromptInput,
     ReasoningGroup,
@@ -40,6 +41,7 @@ from sensai.adapters.tui.widgets.banner import MOTDS
 from sensai.core.agent import Agent
 from sensai.core.agent.events import ToolRunFinished, ToolRunStarted, TurnCompleted
 from sensai.core.agent.re_act import ReActAgent
+from sensai.core.agent.structured import StructuredOutputCatalog
 from sensai.core.engine import Engine
 from sensai.core.events import EventBus
 from sensai.core.model_memory import ModelMemory
@@ -378,6 +380,7 @@ def test_completion_menu_follows_the_typed_command() -> None:
         assert _menu_labels(app) == [
             "/clear",
             "/effort",
+            "/mode",
             "/persona",
             "/mcp",
             "/tools",
@@ -1250,5 +1253,31 @@ def test_the_banner_shows_a_random_splash_line() -> None:
         [motd] = app.query(".banner-motd")
         assert str(motd.render()) in MOTDS
         assert str(Banner("x", "Hello!").motd) == "Hello!"
+
+    _run(app, scenario)
+
+
+def test_mode_command_shows_plan_mode_in_the_status_bar() -> None:
+    """/mode plan shows the label; /mode default hides it again."""
+    agent = ReActAgent(
+        FakeLLM([]),
+        ToolRegistry(),
+        structured_output=StructuredOutputCatalog({"plan": {}}),
+    )
+    app = SensaiApp(Engine(agent, Pipeline(), EventBus()), model="test-model")
+
+    async def scenario(pilot: Pilot[None]) -> None:
+        label = app.query_one(ModeLabel)
+        assert not label.display
+
+        await _send(pilot, "/mode plan")
+        await pilot.pause()
+        assert label.display
+        assert agent.mode == "plan"
+
+        await _send(pilot, "/mode default")
+        await pilot.pause()
+        assert not label.display
+        assert _texts(app, HintMessage) == ["Mode: plan", "Mode: default"]
 
     _run(app, scenario)

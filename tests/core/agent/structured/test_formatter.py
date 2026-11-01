@@ -8,19 +8,22 @@ def test_plan_is_rendered_as_markdown() -> None:
     rendered = format_structured_output(
         "plan",
         {
-            "title": "Release checklist",
+            "title": "Solve x² - 5x + 6 = 0",
             "steps": [
                 {
-                    "title": "Run tests",
-                    "description": "Execute the test suite.",
-                    "priority": "high",
+                    "title": "Compute the discriminant",
+                    "description": "Read a, b and c, then compute it.",
+                    "notion": "Δ = b² - 4ac",
                 }
             ],
+            "check": "Put each solution back into the equation.",
         },
     )
 
     assert rendered == (
-        "## Release checklist\n\n"
-        "1. **Run tests** (high priority)\n"
-        "   Execute the test suite."
+        "## Solve x² - 5x + 6 = 0\n\n"
+        "1. **Compute the discriminant**\n"
+        "   Read a, b and c, then compute it.\n"
+        "   *Δ = b² - 4ac*\n\n"
+        "**✓** Put each solution back into the equation."
     )

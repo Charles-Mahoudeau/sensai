@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from sensai.core.agent.events import TurnCompleted
+from sensai.core.agent.prompts import AgentPrompts
 from sensai.core.agent.re_act import ReActAgent
 from sensai.core.agent.structured import (
     JsonSchemaOutput,
     StructuredOutputCatalog,
     StructuredOutputError,
+    format_structured_output,
 )
+from sensai.core.errors import ModeUnavailableError
 from sensai.core.models import ChatDone, Message, TextDelta
 from sensai.core.models.llm import ChatOptions
+from sensai.core.tools.builtin import web_search
 from sensai.core.tools.registry import ToolRegistry
 from tests.fakes import FakeLLM
 
@@ -61,6 +67,21 @@ PLAN_SCHEMA = {
     "additionalProperties": False,
 }
 SCHEMAS = {"plan": PLAN_SCHEMA}
+SHIPPED_PLAN_SCHEMA = json.loads(
+    (Path(__file__).parents[3] / "config" / "schemas" / "plan.json").read_text()
+)
+METHOD_PLAN = (
+    '{"title": "Solve x² - 5x + 6 = 0", "steps": [{"title": "Compute the '
+    'discriminant", "description": "Read a, b and c.", "notion": "Δ = b² - 4ac"}], '
+    '"check": "Put each solution back into the equation."}'
+)
+METHOD_PLAN_TEXT = (
+    "## Solve x² - 5x + 6 = 0\n\n"
+    "1. **Compute the discriminant**\n"
+    "   Read a, b and c.\n"
+    "   *Δ = b² - 4ac*\n\n"
+    "**✓** Put each solution back into the equation."
+)
 
 
 def test_react_agent_streams_an_ordinary_answer_without_a_schema() -> None:
@@ -123,45 +144,81 @@ def test_json_schema_output_validates_nested_plan() -> None:
         )
 
 
-def test_react_agent_uses_plan_schema_in_plan_mode() -> None:
-    """Plan mode selects the plan schema without any configuration choice."""
+def test_plan_mode_writes_the_method_in_one_call() -> None:
+    """Plan mode skips the reasoning steps and asks for the plan schema at once.
+
+    No step means no tool can run, so no tool result can give the answer away.
+    """
+    llm = FakeLLM([[TextDelta(METHOD_PLAN), ChatDone()]])
+    registry = ToolRegistry()
+    web_search.register_self(registry)
+    agent = ReActAgent(
+        llm,
+        registry,
+        AgentPrompts(thought="THINK {tools}", notes="{thought}", answer="", plan="P"),
+        mode="plan",
+        structured_output=StructuredOutputCatalog({"plan": SHIPPED_PLAN_SCHEMA}),
+    )
+
+    events = asyncio.run(_collect(agent.run((Message.user("Résous x² - 5x + 6 = 0"),))))
+
+    assert llm.options == [ChatOptions(response_schema=SHIPPED_PLAN_SCHEMA)]
+    assert llm.tools == [[]]
+    # The plan instruction follows the user's message, for this call only.
+    assert llm.messages[0][-1] == Message.user("Résous x² - 5x + 6 = 0\n\nP")
+    assert events[-2:] == [
+        TextDelta(METHOD_PLAN_TEXT),
+        TurnCompleted([Message.assistant(METHOD_PLAN_TEXT)]),
+    ]
+
+
+def test_plan_mode_is_refused_without_structured_output() -> None:
+    """Without a schema catalog, the agent stays in the default mode."""
+    agent = ReActAgent(FakeLLM([]), ToolRegistry())
+
+    with pytest.raises(ModeUnavailableError, match=r"\[structured_output\]"):
+        agent.mode = "plan"
+
+    assert agent.mode == "answer"
+
+
+def test_switching_back_from_plan_mode_reasons_again() -> None:
+    """Back in the default mode, the agent thinks and answers in free form."""
     llm = FakeLLM(
         [
             [TextDelta('{"thought": "All known.", "action": "answer"}'), ChatDone()],
-            [
-                TextDelta(
-                    '{"title":"Plan the work","steps":[{"title":"Write tests",'
-                    '"description":"Cover the new behavior.","priority":"high"}]}'
-                ),
-                ChatDone(),
-            ],
+            [TextDelta("x = 2 ou x = 3"), ChatDone()],
         ]
     )
+    agent = ReActAgent(
+        llm, ToolRegistry(), structured_output=StructuredOutputCatalog(SCHEMAS)
+    )
+    agent.mode = "plan"
+    agent.mode = "answer"
+
+    events = asyncio.run(_collect(agent.run((Message.user("Résous"),))))
+
+    assert _asks_for_a_thought(llm.options[0])
+    assert llm.options[1:] == [None]
+    assert events[-1] == TurnCompleted([Message.assistant("x = 2 ou x = 3")])
+
+
+def test_a_plan_that_breaks_the_schema_is_an_error() -> None:
+    """A reply without the final check is not shown as a plan."""
+    llm = FakeLLM([[TextDelta('{"title": "Plan", "steps": []}'), ChatDone()]])
     agent = ReActAgent(
         llm,
         ToolRegistry(),
         mode="plan",
-        structured_output=StructuredOutputCatalog(SCHEMAS),
+        structured_output=StructuredOutputCatalog({"plan": SHIPPED_PLAN_SCHEMA}),
     )
 
-    events = asyncio.run(_collect(agent.run((Message.user("Plan the work"),))))
+    with pytest.raises(StructuredOutputError):
+        asyncio.run(_collect(agent.run((Message.user("Résous"),))))
 
-    # Mode selection happens in the agent, not in the TOML configuration.
-    assert _asks_for_a_thought(llm.options[0])
-    assert llm.options[1:] == [ChatOptions(response_schema=PLAN_SCHEMA)]
-    assert events[-2:] == [
-        TextDelta(
-            "## Plan the work\n\n"
-            "1. **Write tests** (high priority)\n"
-            "   Cover the new behavior."
-        ),
-        TurnCompleted(
-            [
-                Message.assistant(
-                    "## Plan the work\n\n"
-                    "1. **Write tests** (high priority)\n"
-                    "   Cover the new behavior."
-                )
-            ]
-        ),
-    ]
+
+def test_the_shipped_plan_schema_fits_the_formatter() -> None:
+    """A plan valid under `config/schemas/plan.json` renders without error."""
+    value = JsonSchemaOutput(SHIPPED_PLAN_SCHEMA).parse(METHOD_PLAN)
+
+    assert format_structured_output("plan", value) == METHOD_PLAN_TEXT
